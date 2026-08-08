@@ -32,12 +32,13 @@ def get_geojson_dest(gml_file: Path) -> Path:
 
 def convert_file(input_path: Path, output_path: Path):
     tree = ET.parse(str(input_path))
+    # get the root XML element -> tags root with source filename
     root = tree.getroot()
     root.set("sourceFile", input_path.name)
-    feature_collection = build_feature_collection(root, input_path.name)
+    feature_collection = build_feature_collection(root, input_path.name) #turns the XML features into GeoJSON data
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
-        json.dump(feature_collection, handle, indent=2)
+        json.dump(feature_collection, handle, indent=2) # write the GeoJSON to disk
     return output_path
 
 def build_feature_collection():
