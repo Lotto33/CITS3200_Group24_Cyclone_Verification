@@ -26,6 +26,13 @@ def infer_state(input_path: Path) -> str:
             return "WA"
     return "UNKNOWN"
 
+def text_of(element) -> str:
+    return (element.text or "").strip() if element is not None else ""
+
+def qname(namespace: str, local: str) -> str:
+    return f"{{{namespace}}}{local}"
+
+
 def get_geojson_dest(gml_file: Path) -> Path:
     state = infer_state(gml_file)
     return Path("data/geojson") / state / f"{gml_file.stem}.geojson"
@@ -41,9 +48,44 @@ def convert_file(input_path: Path, output_path: Path):
         json.dump(feature_collection, handle, indent=2) # write the GeoJSON to disk
     return output_path
 
-def build_feature_collection():
-    # TODO
-    return 0
+def build_feature_collection(root):
+    features = collect_features(root)
+    root_metadata = {
+        "fcastTime": text_of(root.find(qname(TC_NS, "fcastTime"))),
+        "issueTime": text_of(root.find(qname(TC_NS, "issueTime"))),
+        "expiryHrs": parse_text_number(text_of(root.find(qname(TC_NS, "expiryHrs")))),
+        "distId": text_of(root.find(qname(TC_NS, "distId"))),
+        "distName": text_of(root.find(qname(TC_NS, "distName"))),
+    }
+    feature_collection = {
+        "type": "FeatureCollection",
+        "metadata": root_metadata,
+        "features": features,
+    }
+    bbox = collect_boundingbox(features)
+    if bbox is not None:
+        feature_collection["bbox"] = bbox
+    return feature_collection
+
+def collect_features(element):
+    features = []
+    # TODO  Iterate through the supported tcData feature elements in the XML,
+    #       build their GeoJSON geometry and properties, and append each as a
+    #       GeoJSON Feature to the features list.
+    return features
+
+def parse_text_number(text: str):
+    value = (text or "").strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+def collect_boundingbox(features):
+    #TODO calculate the bounding box of all the geometries in a given GeoJSON features.
+    return
 
 def main() -> None:
     #NOTE: PATH YET TO BE FINALISED.
