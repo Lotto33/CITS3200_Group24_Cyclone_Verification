@@ -42,7 +42,7 @@ def convert_file(input_path: Path, output_path: Path):
     # get the root XML element -> tags root with source filename
     root = tree.getroot()
     root.set("sourceFile", input_path.name)
-    feature_collection = build_feature_collection(root, input_path.name) #turns the XML features into GeoJSON data
+    feature_collection = build_feature_collection(root) #turns the XML features into GeoJSON data
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(feature_collection, handle, indent=2) # write the GeoJSON to disk
