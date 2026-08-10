@@ -32,7 +32,6 @@ def text_of(element) -> str:
 def qname(namespace: str, local: str) -> str:
     return f"{{{namespace}}}{local}"
 
-
 def get_geojson_dest(gml_file: Path) -> Path:
     state = infer_state(gml_file)
     return Path("data/geojson") / state / f"{gml_file.stem}.geojson"
@@ -84,8 +83,245 @@ def parse_text_number(text: str):
         return None
 
 def collect_boundingbox(features):
-    #TODO calculate the bounding box of all the geometries in a given GeoJSON features.
-    return
+    # TODO:
+    # Calculate the bounding box containing all coordinates from the
+    # geometries in the supplied GeoJSON features.
+    #
+    # Parameters:
+    #   features: A list of GeoJSON Feature dictionaries. Each feature
+    #             contains a geometry whose coordinates should be examined.
+    #
+    # Returns:
+    #   A list in the form:
+    #       [min_longitude, min_latitude, max_longitude, max_latitude]
+    #   representing the bounding box of all features.
+    #   Return None if there are no coordinates.
+    pass
+
+
+def normalize_longitude(lon: float) -> float:
+    # TODO:
+    # Take a longitude value and normalize it into the standard
+    # GeoJSON longitude range of -180 to 180 degrees.
+    #
+    # Parameters:
+    #   lon: The longitude value to normalize.
+    #
+    # Returns:
+    #   The normalized longitude as a float.
+    pass
+
+def normalize_coords(coords):
+    # TODO:
+    # Iterate through a collection of [longitude, latitude] coordinate
+    # pairs and normalize the longitude of each coordinate using
+    # normalize_longitude().
+    #
+    # Parameters:
+    #   coords: A list of [longitude, latitude] coordinate pairs.
+    #
+    # Returns:
+    #   A new list containing the coordinates with normalized longitudes.
+    pass
+
+
+def split_at_antimeridian(coords):
+    # TODO:
+    # Split a sequence of coordinates into separate line segments whenever
+    # consecutive coordinates cross the antimeridian. This prevents GeoJSON
+    # geometries from incorrectly drawing a line across the entire map.
+    #
+    # Parameters:
+    #   coords: A list of [longitude, latitude] coordinate pairs.
+    #
+    # Returns:
+    #   A list of coordinate segments, where each segment contains at least
+    #   two coordinates.
+    pass
+
+
+def ensure_ring_closed(ring):
+    # TODO:
+    # Ensure that a polygon ring is closed by making its final coordinate
+    # equal to its first coordinate. If the ring is empty, return it unchanged.
+    #
+    # Parameters:
+    #   ring: A list of [longitude, latitude] coordinates representing
+    #         a polygon ring.
+    #
+    # Returns:
+    #   The closed polygon ring.
+    pass
+
+
+def signed_area(ring):
+    # TODO:
+    # Calculate the signed area of a polygon ring using the shoelace formula.
+    # The sign of the result is used to determine the ring's winding direction.
+    #
+    # Parameters:
+    #   ring: A closed list of [longitude, latitude] coordinates.
+    #
+    # Returns:
+    #   The signed area as a float. Return 0.0 if the ring does not contain
+    #   enough coordinates to form a valid polygon.
+    pass
+
+
+def enforce_winding(ring, exterior: bool):
+    # TODO:
+    # Ensure that a polygon ring has the required winding direction.
+    # Reverse the coordinates when necessary based on whether the ring is
+    # an exterior boundary or an interior hole.
+    #
+    # Parameters:
+    #   ring: A polygon ring represented as [longitude, latitude] coordinates.
+    #   exterior: True if the ring represents an exterior boundary;
+    #             False if it represents an interior hole.
+    #
+    # Returns:
+    #   The ring with the correct winding direction.
+    pass
+
+
+def parse_coordinate_pairs(text):
+    # TODO:
+    # Parse a string containing longitude,latitude coordinate pairs into
+    # a list of [longitude, latitude] coordinates.
+    # Validate that each coordinate contains both longitude and latitude
+    # values and that the values are finite numbers.
+    #
+    # Parameters:
+    #   text: A string containing whitespace-separated coordinate pairs,
+    #         where each pair is formatted as "longitude,latitude".
+    #
+    # Returns:
+    #   A list of [longitude, latitude] coordinate pairs with normalized
+    #   longitudes.
+    pass
+
+
+def build_ring(coords, exterior: bool):
+    # TODO:
+    # Build one or more valid polygon rings from the supplied coordinates.
+    # Split coordinates at the antimeridian, normalize the coordinates,
+    # close each ring, and enforce the appropriate winding direction.
+    #
+    # Parameters:
+    #   coords: A list of [longitude, latitude] coordinate pairs.
+    #   exterior: True if the ring is an exterior polygon boundary;
+    #             False if it is an interior hole.
+    #
+    # Returns:
+    #   A list of processed polygon rings.
+    pass
+
+
+def parse_polygon_geometry(geometry_elem):
+    # TODO:
+    # Find polygon members within the GML geometry element and parse their
+    # exterior and interior boundaries into GeoJSON-compatible polygon rings.
+    #
+    # Parameters:
+    #   geometry_elem: The XML element containing the GML polygon geometry.
+    #
+    # Returns:
+    #   A list of polygons, where each polygon contains its exterior ring
+    #   and any interior hole rings.
+    pass
+
+
+def build_geometry_for_feature(feature_elem, feature_type: str):
+    # TODO:
+    # Build the appropriate GeoJSON geometry for a supported BOM tcData
+    # feature. Polygon-based feature types should produce MultiPolygon
+    # geometries, tcFix should produce a Point, and tcTrack should produce
+    # a LineString or MultiLineString when it crosses the antimeridian.
+    #
+    # Parameters:
+    #   feature_elem: The XML element representing the BOM feature.
+    #   feature_type: The name of the BOM feature type, such as tcFix,
+    #                 tcTrack, tcForecastArea, tcWarningArea, tcWatchArea,
+    #                 or tcWindArea.
+    #
+    # Returns:
+    #   A GeoJSON geometry dictionary, or None if the feature has no valid
+    #   geometry.
+    pass
+
+
+def coerce_optional_number(value) -> float | None:
+    # TODO:
+    # Extract the text from an XML element and convert it to a float.
+    # Return None when the element is missing or contains no value.
+    #
+    # Parameters:
+    #   value: An XML element containing an optional numeric value,
+    #          or None.
+    #
+    # Returns:
+    #   The numeric value as a float, or None when no value is present.
+    pass
+
+
+def coerce_optional_text(value):
+    # TODO:
+    # Extract and strip the text from an optional XML element.
+    # Return None when the element is missing or contains no text.
+    #
+    # Parameters:
+    #   value: An XML element containing optional text, or None.
+    #
+    # Returns:
+    #   The stripped text as a string, or None when no text is present.
+    pass
+
+
+def coerce_optional_category(value):
+    # TODO:
+    # Extract the text from an optional category XML element.
+    # Convert it to a float when it contains a numeric value; otherwise
+    # preserve it as text.
+    #
+    # Parameters:
+    #   value: An XML element containing an optional category value,
+    #          or None.
+    #
+    # Returns:
+    #   A float if the category is numeric, a string if it is non-numeric,
+    #   or None when no value is present.
+    pass
+
+
+def build_feature_properties(root, feature_elem, feature_type: str):
+    # TODO:
+    # Build the properties dictionary for a GeoJSON Feature.
+    # Include metadata from the GML root and feature-specific properties
+    # depending on the feature type.
+    #
+    # Parameters:
+    #   root: The root XML element containing shared cyclone metadata.
+    #   feature_elem: The XML element representing the individual feature.
+    #   feature_type: The name of the BOM feature type.
+    #
+    # Returns:
+    #   A dictionary containing the GeoJSON feature properties.
+    pass
+
+
+def collect_bbox(features):
+    # TODO:
+    # Calculate the bounding box containing all geometries in the supplied
+    # GeoJSON features. Handle Point, LineString, MultiLineString and
+    # MultiPolygon geometries.
+    #
+    # Parameters:
+    #   features: A list of GeoJSON Feature dictionaries containing geometry.
+    #
+    # Returns:
+    #   A bounding box in the form [min_longitude, min_latitude,
+    #   max_longitude, max_latitude], or None if there are no coordinates.
+    pass
 
 def main() -> None:
     #NOTE: PATH YET TO BE FINALISED.
