@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Original data
+/data/
+
+# Generated GML -> JSON dataset for visualize.html (regenerate with build_gml_dataset.py)
+/viz_data/
