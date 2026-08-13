@@ -296,7 +296,6 @@ def coerce_optional_text(value):
 
 
 def coerce_optional_category(value):
-    # TODO:
     # Extract the text from an optional category XML element.
     # Convert it to a float when it contains a numeric value; otherwise
     # preserve it as text.
