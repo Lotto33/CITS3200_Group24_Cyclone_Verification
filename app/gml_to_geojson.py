@@ -278,7 +278,7 @@ def coerce_optional_number(value) -> float | None:
 
 
 def coerce_optional_text(value):
-    # TODO:
+    
     # Extract and strip the text from an optional XML element.
     # Return None when the element is missing or contains no text.
     #
@@ -287,7 +287,12 @@ def coerce_optional_text(value):
     #
     # Returns:
     #   The stripped text as a string, or None when no text is present.
-    pass
+    if value is None:
+        return None
+    text = (value.text or "").strip()
+    if not text:
+        return None
+    return text
 
 
 def coerce_optional_category(value):
