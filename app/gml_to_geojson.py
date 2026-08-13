@@ -256,7 +256,6 @@ def build_geometry_for_feature(feature_elem, feature_type: str):
 
 
 def coerce_optional_number(value) -> float | None:
-    # TODO:
     # Extract the text from an XML element and convert it to a float.
     # Return None when the element is missing or contains no value.
     #
@@ -266,7 +265,13 @@ def coerce_optional_number(value) -> float | None:
     #
     # Returns:
     #   The numeric value as a float, or None when no value is present.
-    pass
+
+    if value is None:
+        return None
+    text = (value.text or "").strip()
+    if not text:
+        return None
+    return float(text)
 
 
 def coerce_optional_text(value):
