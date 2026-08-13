@@ -308,7 +308,15 @@ def coerce_optional_category(value):
     # Returns:
     #   A float if the category is numeric, a string if it is non-numeric,
     #   or None when no value is present.
-    pass
+    if value is None:
+            return None
+    text = (value.text or "").strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return text
 
 
 def build_feature_properties(root, feature_elem, feature_type: str):
