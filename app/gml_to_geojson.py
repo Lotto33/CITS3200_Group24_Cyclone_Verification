@@ -67,6 +67,9 @@ def build_feature_collection(root):
     return feature_collection
 
 def collect_features(root):
+    #Iterate through the supported tcData feature elements in the XML,
+    #       build their GeoJSON geometry and properties, and append each as a
+    #       GeoJSON Feature to the features list.
     features = []
 
     for feature_type in [qname(TC_NS, "tcfix"),qname(TC_NS, "tcTrack"), qname(TC_NS, "tcfix"), qname(TC_NS, "tcForecastArea"),qname(TC_NS, "tcWarningArea"), qname(TC_NS, "tcWatchArea"), qname(TC_NS, "tcWindArea") ]:
