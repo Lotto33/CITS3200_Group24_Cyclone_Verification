@@ -66,11 +66,16 @@ def build_feature_collection(root):
         feature_collection["bbox"] = bbox
     return feature_collection
 
-def collect_features(element):
+def collect_features(root):
     features = []
-    # TODO  Iterate through the supported tcData feature elements in the XML,
-    #       build their GeoJSON geometry and properties, and append each as a
-    #       GeoJSON Feature to the features list.
+
+    for feature_type in [qname(TC_NS, "tcfix"),qname(TC_NS, "tcTrack"), qname(TC_NS, "tcfix"), qname(TC_NS, "tcForecastArea"),qname(TC_NS, "tcWarningArea"), qname(TC_NS, "tcWatchArea"), qname(TC_NS, "tcWindArea") ]:
+        for element in root.findall(f".//{feature_type}"):
+            geometry = build_geometry_for_feature(element,feature_type.split("}", 1)[1]) 
+            if geometry is None:
+                continue
+            properties = build_feature_properties(root, element, feature_type.split("}", 1)[1])
+            features.append({"type": "Feature", "properties":properties, "geometry": geometry})       
     return features
 
 def parse_text_number(text: str):
