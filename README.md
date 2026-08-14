@@ -30,6 +30,12 @@ This writes `viz_data/index.json` plus one JSON file per cyclone under
 `viz_data/<REGION>/<distId>.json`. `viz_data/` is git-ignored — regenerate
 it locally rather than committing it.
 
+# **Warning:** This is a working but wrong conversion
+
+# **Warning:** This is a working but wrong conversion
+
+# **Warning:** This is a working but wrong conversion
+
 ### 2. Serve the page
 
 Browsers block `fetch()` of local files opened via `file://`, so serve the
@@ -39,8 +45,8 @@ folder with any simple static server, e.g.:
 python -m http.server 8000
 ```
 
-Then open <http://localhost:8000/visualize.html> (Leaflet) or
-<http://localhost:8000/visualize_ol.html> (OpenLayers).
+Then open [http://localhost:8000/visualize.html](http://localhost:8000/visualize.html) (Leaflet) or
+[http://localhost:8000/visualize_ol.html](http://localhost:8000/visualize_ol.html) (OpenLayers).
 
 ### Data retention
 
