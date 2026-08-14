@@ -319,7 +319,6 @@ def coerce_optional_category(value):
 
 
 def build_feature_properties(root, feature_elem, feature_type: str):
-    # TODO:
     # Build the properties dictionary for a GeoJSON Feature.
     # Include metadata from the GML root and feature-specific properties
     # depending on the feature type.
@@ -331,11 +330,54 @@ def build_feature_properties(root, feature_elem, feature_type: str):
     #
     # Returns:
     #   A dictionary containing the GeoJSON feature properties.
-    pass
+    
+    props = {
+        "featureType": feature_type, 
+        "source_file":  Path(root.get("sourceFile", "")).name, #NOTE THIS WILL SILENTLY FAIL # TODO SOMEONE DOUBLE CHECK IF THIS IS OK
+        "fcastTime": text_of(root.find(qname(TC_NS, "fcastTime"))),
+        "issueTime": text_of(root.find(qname(TC_NS, "issueTime"))),
+        "expiryHrs": parse_text_number(text_of(root.find(qname(TC_NS, "expiryHrs")))),
+        "distId": text_of(root.find(qname(TC_NS, "distId"))),
+        "distName": text_of(root.find(qname(TC_NS, "distName"))),
+    }
+    if feature_type == "tcFix":
+        props.update(
+            {
+                "fixType": text_of(feature_elem.find(qname(TC_NS, "fixType"))),
+                "fixTime": text_of(feature_elem.find(qname(TC_NS, "fixTime"))),
+                "symbol": text_of(feature_elem.find(qname(TC_NS, "symbol"))),
+                "category": coerce_optional_category(feature_elem.find(qname(TC_NS, "category"))),
+                "timeOffset": coerce_optional_number(feature_elem.find(qname(TC_NS, "timeOffset"))),
+            }
+        )
+    elif feature_type == "tcTrack":
+        props.update(
+            {
+                "trackType": text_of(feature_elem.find(qname(TC_NS, "trackType"))),
+                "startTime": text_of(feature_elem.find(qname(TC_NS, "startTime"))),
+                "endTime": text_of(feature_elem.find(qname(TC_NS, "endTime"))),
+            }
+        )
+    elif feature_type in {"tcForecastArea", "tcWarningArea", "tcWatchArea"}:
+        props.update(
+            {
+                "areaType": text_of(feature_elem.find(qname(TC_NS, "areaType"))),
+                "extent": coerce_optional_text(feature_elem.find(qname(TC_NS, "extent"))),
+            }
+        )
+    elif feature_type == "tcWindArea":
+        props.update(
+            {
+                "windType": text_of(feature_elem.find(qname(TC_NS, "windType"))),
+                "marineType": text_of(feature_elem.find(qname(TC_NS, "marineType"))),
+                "fixTime": text_of(feature_elem.find(qname(TC_NS, "fixTime"))),
+                "fixType": text_of(feature_elem.find(qname(TC_NS, "fixType"))),
+            }
+        )
+    return props
 
 
 def collect_bbox(features):
-    # TODO:
     # Calculate the bounding box containing all geometries in the supplied
     # GeoJSON features. Handle Point, LineString, MultiLineString and
     # MultiPolygon geometries.
@@ -346,7 +388,27 @@ def collect_bbox(features):
     # Returns:
     #   A bounding box in the form [min_longitude, min_latitude,
     #   max_longitude, max_latitude], or None if there are no coordinates.
-    pass
+    coords = []
+    for feature in features:
+        geometry = feature["geometry"]
+        if geometry["type"] == "Point":
+            coords.append(geometry["coordinates"])
+        elif geometry["type"] == "LineString":
+            # For a Point, coordinates is already a single [lon, lat] — append it directly.
+            coords.extend(geometry["coordinates"])
+        elif geometry["type"] == "MultiLineString":
+            for line in geometry["coordinates"]:
+                coords.extend(line)
+        elif geometry["type"] == "MultiPolygon":
+            for polygon in geometry["coordinates"]:
+                for ring in polygon:
+                    coords.extend(ring)
+    if not coords:
+        return None
+
+    lons = [coord[0] for coord in coords]
+    lats = [coord[1] for coord in coords]
+    return [min(lons), min(lats), max(lons), max(lats)]
 
 def main() -> None:
     #NOTE: PATH YET TO BE FINALISED.
