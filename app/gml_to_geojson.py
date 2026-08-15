@@ -93,7 +93,7 @@ def build_feature_collection(root):
         "metadata": root_metadata,
         "features": features,
     }
-    bbox = collect_boundingbox(features)
+    bbox = collect_bbox(features)
     if bbox is not None:
         feature_collection["bbox"] = bbox
     return feature_collection
@@ -121,23 +121,6 @@ def parse_text_number(text: str):
         return float(value)
     except ValueError:
         return None
-
-def collect_boundingbox(features):
-    # TODO:
-    # Calculate the bounding box containing all coordinates from the
-    # geometries in the supplied GeoJSON features.
-    #
-    # Parameters:
-    #   features: A list of GeoJSON Feature dictionaries. Each feature
-    #             contains a geometry whose coordinates should be examined.
-    #
-    # Returns:
-    #   A list in the form:
-    #       [min_longitude, min_latitude, max_longitude, max_latitude]
-    #   representing the bounding box of all features.
-    #   Return None if there are no coordinates.
-    pass
-
 
 def normalize_longitude(lon: float) -> float:
     # TODO:
