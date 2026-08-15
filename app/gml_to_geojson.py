@@ -32,9 +32,41 @@ def text_of(element) -> str:
 def qname(namespace: str, local: str) -> str:
     return f"{{{namespace}}}{local}"
 
+def sanitize_output_name(value: str) -> str:
+    cleaned = (value or "").strip()
+    cleaned = cleaned.replace(" ", "_")
+    cleaned = "".join(ch for ch in cleaned if ch.isalnum() or ch in {"_", "-", "."})
+    return cleaned
+
+
+def get_gml_identifier(gml_file: Path) -> str:
+    try:
+        root = ET.parse(str(gml_file)).getroot()
+    except (ET.ParseError, OSError):
+        return gml_file.stem
+
+    for key in ("name", "identifier", "id"):
+        value = root.attrib.get(key)
+        if value:
+            sanitized = sanitize_output_name(value)
+            if sanitized:
+                return sanitized
+
+    for elem in root.iter():
+        local_name = elem.tag.rsplit("}", 1)[-1].lower()
+        if local_name in {"name", "identifier", "id", "cyclonename", "cycloneid"}:
+            value = text_of(elem)
+            sanitized = sanitize_output_name(value)
+            if sanitized:
+                return sanitized
+
+    return gml_file.stem
+
+
 def get_geojson_dest(gml_file: Path) -> Path:
     state = infer_state(gml_file)
-    return Path("data/geojson") / state / f"{gml_file.stem}.geojson"
+    identifier = get_gml_identifier(gml_file)
+    return Path("data/geojson") / state / f"{identifier}.geojson"
 
 def convert_file(input_path: Path, output_path: Path):
     tree = ET.parse(str(input_path))
