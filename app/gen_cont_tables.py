@@ -1,0 +1,24 @@
+from pathlib import Path
+import pandas as pd
+import geopandas as gpd
+
+BEST_TRACK_CSV = Path("app/data/best_track.csv")
+BEST_TRACK_SKIPROWS = 4  # 3 copyright lines + 1 blank before the header
+
+# Columns that interpolate normally (continuous quantities)
+LINEAR_COLS = ["LAT", "LON", "MAX_WIND_SPD", "POSITION_UNCERTAINTY", "CENTRAL_PRES"]
+
+_best_track_cache: pd.DataFrame | None = None #TODO make some way to udate this cache when new dataset is added
+
+#NOTE pd.DataFrame A collection of labelled columns, where each column is essentially an array of values.
+def load_full_best_track() -> pd.DataFrame: 
+    global _best_track_cache
+    if _best_track_cache == None:
+        _best_track_cache = pd.read_csv(BEST_TRACK_CSV, skip_rows = BEST_TRACK_SKIPROWS, low_memory=False)
+    return _best_track_cache
+
+def load_best_track(cyclone_id: str) -> pd.DataFrame:
+    df = load_full_best_track()
+    df = df[df.DISTURBANCE_ID == cyclone_id].copy()
+    df["TM"] = pd.to_datetime(df["TM"])
+    return df.sort_values("TM").reset_index(drop = True)
