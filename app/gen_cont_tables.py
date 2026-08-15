@@ -22,3 +22,19 @@ def load_best_track(cyclone_id: str) -> pd.DataFrame:
     df = df[df.DISTURBANCE_ID == cyclone_id].copy()
     df["TM"] = pd.to_datetime(df["TM"])
     return df.sort_values("TM").reset_index(drop = True)
+
+def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataFrame:
+    # NOTE THIS FUNCTION IS TEMPORARY. USE SIYUS VIA IMPORT -> TODO
+    indexed = df.set_index("TM")
+
+    # Build a regular grid, merged with the original observation timestamps
+    # so you don't lose the real observed points.
+    grid = pd.date_range(indexed.index.min(), indexed.index.max(), freq=f"{step_minutes}min")
+    full_index = indexed.index.union(grid).sort_values()
+    reindexed = indexed.reindex(full_index)
+
+    for col in LINEAR_COLS:
+        reindexed[col] = pd.to_numeric(reindexed[col], errors="coerce").interpolate(method="time")
+
+    reindexed = reindexed.reset_index().rename(columns={"index": "TM"})
+    return reindexed[reindexed.TM.isin(grid)].reset_index(drop=True)
