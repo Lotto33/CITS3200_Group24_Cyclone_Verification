@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 import sys
 
 #relative path
-gml_inputPath = "../data/"
+gml_inputPath = "data/"
 
 TC_NS = "http://www.bom.gov.au/dtd/tc"
 GML_NS = "http://www.opengis.net/gml"
