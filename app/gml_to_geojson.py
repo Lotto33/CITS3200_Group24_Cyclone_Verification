@@ -104,7 +104,7 @@ def collect_features(root):
     #       GeoJSON Feature to the features list.
     features = []
 
-    for feature_type in [qname(TC_NS, "tcfix"),qname(TC_NS, "tcTrack"), qname(TC_NS, "tcfix"), qname(TC_NS, "tcForecastArea"),qname(TC_NS, "tcWarningArea"), qname(TC_NS, "tcWatchArea"), qname(TC_NS, "tcWindArea") ]:
+    for feature_type in [qname(TC_NS, "tcFix"),qname(TC_NS, "tcTrack"), qname(TC_NS, "tcForecastArea"),qname(TC_NS, "tcWarningArea"), qname(TC_NS, "tcWatchArea"), qname(TC_NS, "tcWindArea") ]:
         for element in root.findall(f".//{feature_type}"):
             geometry = build_geometry_for_feature(element,feature_type.split("}", 1)[1]) 
             if geometry is None:
