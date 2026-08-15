@@ -14,7 +14,7 @@ _best_track_cache: pd.DataFrame | None = None #TODO make some way to udate this 
 def load_full_best_track() -> pd.DataFrame: 
     global _best_track_cache
     if _best_track_cache == None:
-        _best_track_cache = pd.read_csv(BEST_TRACK_CSV, skip_rows = BEST_TRACK_SKIPROWS, low_memory=False)
+        _best_track_cache = pd.read_csv(BEST_TRACK_CSV, skiprows = BEST_TRACK_SKIPROWS, low_memory=False)
     return _best_track_cache
 
 def load_best_track(cyclone_id: str) -> pd.DataFrame:
@@ -38,3 +38,6 @@ def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataF
 
     reindexed = reindexed.reset_index().rename(columns={"index": "TM"})
     return reindexed[reindexed.TM.isin(grid)].reset_index(drop=True)
+
+raw = load_best_track("AU202526_34U")   # use a real disturbance ID from your own CSV
+print(len(raw), raw.TM.min(), raw.TM.max())
