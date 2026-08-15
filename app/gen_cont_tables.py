@@ -39,5 +39,3 @@ def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataF
     reindexed = reindexed.reset_index().rename(columns={"index": "TM"})
     return reindexed[reindexed.TM.isin(grid)].reset_index(drop=True)
 
-raw = load_best_track("AU202526_34U")   # use a real disturbance ID from your own CSV
-print(len(raw), raw.TM.min(), raw.TM.max())
