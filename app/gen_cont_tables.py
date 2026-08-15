@@ -21,6 +21,8 @@ def load_best_track(cyclone_id: str) -> pd.DataFrame:
     df = load_full_best_track()
     df = df[df.DISTURBANCE_ID == cyclone_id].copy()
     df["TM"] = pd.to_datetime(df["TM"])
+    for col in LINEAR_COLS:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
     return df.sort_values("TM").reset_index(drop = True)
 
 def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataFrame:
@@ -39,3 +41,15 @@ def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataF
     reindexed = reindexed.reset_index().rename(columns={"index": "TM"})
     return reindexed[reindexed.TM.isin(grid)].reset_index(drop=True)
 
+# TESTING
+# raw = load_best_track("AU202526_34U")
+# print(len(raw), raw.TM.min(), raw.TM.max())
+# interp = interpolate_best_track(raw)
+# print(interp[["TM", "LAT", "LON", "MAX_WIND_SPD"]].head(10))
+# # pick a timestamp you know is a real observation, not an interpolated one
+# real_row = raw[raw.TM == raw.TM.iloc[5]]
+# interp_row = interp[interp.TM == raw.TM.iloc[5]]
+# print(real_row[["LAT","LON","MAX_WIND_SPD"]])
+# print(interp_row[["LAT","LON","MAX_WIND_SPD"]])
+# changed = raw[raw.MAX_WIND_SPD.diff() != 0]
+# print(changed[["TM", "MAX_WIND_SPD"]].head())
