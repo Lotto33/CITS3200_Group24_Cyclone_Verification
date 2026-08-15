@@ -45,8 +45,15 @@ def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataF
 
 
 def _geojson_index() -> dict:
-    """(distId, fcastTime) -> filepath, built once by scanning what gml_to_geojson.py already wrote."""
-    """NOTE that logic in gml_to_geojson.py has to be run prior to this so that there are jeojson files for each cyclone"""
+    """(distId, fcastTime) -> filepath, built once by scanning what gml_to_geojson.py already wrote.
+    
+    Builds a lookup dict once by scanning data/geojson/ recursively (across
+    WA/QLD/NT subfolders), reading just each file's metadata to key it by
+    disturbance ID and forecast issue time, without loading full feature data 
+    until load_forecast_geojson() actually needs a specific file.\
+    
+    NOTE that logic in gml_to_geojson.py has to be run prior to this so that there are jeojson files for each cyclone"""
+    
     global _geojson_index_cache
     if _geojson_index_cache is None:
         _geojson_index_cache = {}
