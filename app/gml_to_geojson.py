@@ -123,44 +123,50 @@ def parse_text_number(text: str):
         return None
 
 def normalize_longitude(lon: float) -> float:
-    # TODO:
     # Take a longitude value and normalize it into the standard
     # GeoJSON longitude range of -180 to 180 degrees.
-    #
     # Parameters:
     #   lon: The longitude value to normalize.
-    #
     # Returns:
     #   The normalized longitude as a float.
-    pass
+    normalized = (lon + 180.0) % 360.0 - 180.0
+    if normalized == -180.0 and lon > 0:
+        normalized = 180.0
+    return normalized
 
 def normalize_coords(coords):
-    # TODO:
     # Iterate through a collection of [longitude, latitude] coordinate
     # pairs and normalize the longitude of each coordinate using
     # normalize_longitude().
-    #
     # Parameters:
     #   coords: A list of [longitude, latitude] coordinate pairs.
-    #
     # Returns:
     #   A new list containing the coordinates with normalized longitudes.
-    pass
+    return [[normalize_longitude(lon), lat] for lon, lat in coords]
 
 
 def split_at_antimeridian(coords):
-    # TODO:
     # Split a sequence of coordinates into separate line segments whenever
     # consecutive coordinates cross the antimeridian. This prevents GeoJSON
     # geometries from incorrectly drawing a line across the entire map.
-    #
     # Parameters:
     #   coords: A list of [longitude, latitude] coordinate pairs.
-    #
     # Returns:
     #   A list of coordinate segments, where each segment contains at least
     #   two coordinates.
-    pass
+    if not coords:
+        return []
+    segments = []
+    current_segment = [coords[0]]
+    for prev_coord, curr_coord in zip(coords, coords[1:]):
+        if abs(curr_coord[0] - prev_coord[0]) > 180:
+            segments.append(current_segment)
+            current_segment = [curr_coord]
+        else:
+            current_segment.append(curr_coord)
+    segments.append(current_segment)
+
+    return [segment for segment in segments if len(segment) >= 2]            
 
 
 def ensure_ring_closed(ring):
