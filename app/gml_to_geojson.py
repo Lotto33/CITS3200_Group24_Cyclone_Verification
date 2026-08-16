@@ -15,17 +15,6 @@ def iter_gml_files(root: Path):
     #NOTE CAN REMOVE SORT IF PERFOMANCE IS AN ISSUE.
     return sorted(path for path in root.rglob("*.gml") if path.is_file())
 
-def infer_state(input_path: Path) -> str:
-    for path in [input_path, *input_path.parents]:
-        parent_name = path.name.upper()
-        if "QLD" in parent_name:
-            return "QLD"
-        if "NT" in parent_name:
-            return "NT"
-        if "WA" in parent_name:
-            return "WA"
-    return "UNKNOWN"
-
 def text_of(element) -> str:
     return (element.text or "").strip() if element is not None else ""
 
@@ -64,9 +53,8 @@ def get_gml_identifier(gml_file: Path) -> str:
 
 
 def get_geojson_dest(gml_file: Path) -> Path:
-    state = infer_state(gml_file)
     identifier = get_gml_identifier(gml_file)
-    return Path("data/geojson") / state / f"{identifier}.geojson"
+    return Path("data/geojson") / f"{identifier}.geojson"
 
 def convert_file(input_path: Path, output_path: Path):
     tree = ET.parse(str(input_path))
@@ -447,6 +435,12 @@ def main() -> None:
     outputs = []
     for gml_file in gml_files:
         geojson_dest = get_geojson_dest(gml_file)
+
+        # THIS IS USED FOR CYCLONES ACROSS MULTIPLE STATES THAT APPEAR IN MORE THAN 1 GML
+        # IF WE ENCOUNTER IT AGAIN WE SKIP PROCESSING IT AGAIN
+        if geojson_dest.exists():
+            continue
+
         try:
             out = convert_file(gml_file, geojson_dest)
             outputs.append(out)
