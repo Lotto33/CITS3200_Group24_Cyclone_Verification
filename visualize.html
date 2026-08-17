@@ -64,6 +64,9 @@
   .layer-row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 5px 0; }
   .layer-row input { accent-color: var(--accent); }
   .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
+  .swatch-line { width: 18px; height: 0; border-top-width: 3px; border-top-style: solid; display: inline-block; flex-shrink: 0; }
+  .swatch-line.dashed { border-top-style: dashed; }
+  .layer-subrow { display: flex; align-items: center; gap: 8px; padding-left: 22px; font-size: 12px; color: var(--text); opacity: 0.85; margin: 3px 0; }
 
   #bulletinBar {
     display: flex; flex-direction: column; gap: 6px;
@@ -107,7 +110,7 @@
   </div>
 
   <div class="field">
-    <label for="cycloneSelect">Cyclone / event (distId)</label>
+    <label for="cycloneSelect">Cyclone / event (distId) — ★ has best track</label>
     <select id="cycloneSelect"></select>
   </div>
 
@@ -125,7 +128,11 @@
   <fieldset>
     <legend>Layers</legend>
     <div class="layer-row"><input type="checkbox" id="layer-tracks" checked>
-      <span class="swatch" style="background:#4fa8ff"></span> Track (observed / forecast)</div>
+      <span class="swatch" style="background:#4fa8ff"></span> Tracks (forecast / observed)</div>
+    <div class="layer-subrow">
+      <span class="swatch-line" style="border-color:#4fa8ff"></span> Forecast (solid)</div>
+    <div class="layer-subrow">
+      <span class="swatch-line dashed" style="border-color:#ffd24f"></span> Observed (dashed)</div>
     <div class="layer-row"><input type="checkbox" id="layer-fixes" checked>
       <span class="swatch" style="background:#ffd24f"></span> Fixes (position points)</div>
     <div class="layer-row"><input type="checkbox" id="layer-windArea" checked>
@@ -138,6 +145,8 @@
       <span class="swatch" style="background:#ffe14f"></span> Watch area</div>
     <div class="layer-row"><input type="checkbox" id="layer-allBulletins">
       <span class="swatch" style="background:#8892a6"></span> Show all bulletins' tracks (ghost trails)</div>
+    <div class="layer-row"><input type="checkbox" id="layer-bestTrack" checked>
+      <span class="swatch" style="background:#3ddc84"></span> Best track (post-event)</div>
   </fieldset>
 
   <fieldset>
@@ -193,6 +202,7 @@
       warningArea: document.getElementById("layer-warningArea"),
       watchArea: document.getElementById("layer-watchArea"),
       allBulletins: document.getElementById("layer-allBulletins"),
+      bestTrack: document.getElementById("layer-bestTrack"),
     },
   };
 
@@ -212,9 +222,11 @@
 
   const bulletinLayer = L.layerGroup().addTo(map);
   const ghostLayer = L.layerGroup().addTo(map);
+  const bestTrackLayer = L.layerGroup().addTo(map);
 
   let index = null;
   let currentBulletins = [];
+  let currentBestTrack = null;
   let currentIdx = 0;
   let playTimer = null;
 
@@ -256,7 +268,7 @@
     const region = els.region.value;
     const cyclones = (index.regions[region] || []);
     els.cyclone.innerHTML = cyclones.map(c => {
-      const label = `${c.distName || c.distId} — ${c.distId} (${c.bulletinCount} bulletins, ${c.firstIssue ? c.firstIssue.slice(0,10) : "?"})`;
+      const label = `${c.distName || c.distId} — ${c.distId} (${c.bulletinCount} bulletins, ${c.firstIssue ? c.firstIssue.slice(0,10) : "?"})${c.hasBestTrack ? " ★" : ""}`;
       return `<option value="${c.distId}">${label}</option>`;
     }).join("");
     if (cyclones.length) {
@@ -285,6 +297,16 @@
       setStatus(`Could not load data (are you running a local server? see README) — ${err.message}`, true);
     }
 
+    // Best track is per-cyclone (not per-region), post-event reanalysis data.
+    // Not every cyclone has one, so a missing file (404) is expected, not an error.
+    currentBestTrack = null;
+    try {
+      const btRes = await fetch(`viz_data/best_track/${distId}.json`);
+      if (btRes.ok) currentBestTrack = await btRes.json();
+    } catch (err) {
+      currentBestTrack = null;
+    }
+
     currentIdx = 0;
     els.slider.min = 0;
     els.slider.max = Math.max(0, currentBulletins.length - 1);
@@ -300,10 +322,40 @@
         if (track.coords.length < 2) return;
         L.polyline(toLatLngs(track.coords), {
           color: i === currentIdx ? "transparent" : "#8892a6",
-          weight: 1, opacity: 0.35, dashArray: track.trackType === "Forecast" ? "3,4" : null,
+          weight: 1, opacity: 0.35, dashArray: track.trackType === "Observed" ? "3,4" : null,
         }).addTo(ghostLayer);
       });
     });
+  }
+
+  function drawBestTrack(bounds) {
+    bestTrackLayer.clearLayers();
+    if (!els.layers.bestTrack.checked || !currentBestTrack) return;
+    const points = currentBestTrack.points || [];
+    if (points.length < 2) return;
+
+    const latlngs = points.map(p => [p.coord[1], p.coord[0]]);
+    L.polyline(latlngs, {
+      color: "#3ddc84", weight: 3, opacity: 0.9,
+    }).bindPopup(`
+      <b>Best track</b>${currentBestTrack.name ? ` — ${currentBestTrack.name}` : ""}<br>
+      ${points.length} points, ${fmtTime(points[0].time)} → ${fmtTime(points[points.length - 1].time)}
+    `).addTo(bestTrackLayer);
+
+    points.forEach(p => {
+      const [lon, lat] = p.coord;
+      L.circleMarker([lat, lon], {
+        radius: 3, color: "#111826", weight: 1,
+        fillColor: "#3ddc84", fillOpacity: 0.95,
+      }).bindPopup(`
+        <b>Best track fix</b><br>
+        Time: ${fmtTime(p.time)}<br>
+        Pressure: ${p.pressure ?? "—"} hPa<br>
+        Max wind: ${p.windSpeed ?? "—"} kn
+      `).addTo(bestTrackLayer);
+    });
+
+    bounds.push(...latlngs);
   }
 
   function renderBulletin(fitBounds) {
@@ -315,6 +367,7 @@
       els.label.textContent = "No bulletins available.";
       els.info.textContent = "Select a region and cyclone to begin.";
       els.prev.disabled = els.next.disabled = true;
+      drawBestTrack([]);
       return;
     }
 
@@ -329,7 +382,8 @@
       Forecast base time: ${fmtTime(b.fcastTime)}<br>
       Issue time: ${fmtTime(b.issueTime)}<br>
       Expiry: ${b.expiryHrs || "?"} hrs<br>
-      Tracks: ${b.tracks.length}, Fixes: ${b.fixes.length}, Areas: ${b.areas.length}
+      Tracks: ${b.tracks.length}, Fixes: ${b.fixes.length}, Areas: ${b.areas.length}<br>
+      Best track: ${currentBestTrack ? `${currentBestTrack.points.length} points (post-event)` : "not available"}
     `;
 
     const bounds = [];
@@ -339,9 +393,9 @@
         if (track.coords.length < 2) return;
         const latlngs = toLatLngs(track.coords);
         L.polyline(latlngs, {
-          color: track.trackType === "Observed" ? "#4fa8ff" : "#ffd24f",
+          color: track.trackType === "Forecast" ? "#4fa8ff" : "#ffd24f",
           weight: 3, opacity: 0.9,
-          dashArray: track.trackType === "Forecast" ? "6,5" : null,
+          dashArray: track.trackType === "Observed" ? "6,5" : null,
         }).bindPopup(`<b>${track.trackType || "Track"}</b><br>${fmtTime(track.startTime)} → ${fmtTime(track.endTime)}`)
           .addTo(bulletinLayer);
         bounds.push(...latlngs);
@@ -385,6 +439,8 @@
       poly.addTo(bulletinLayer);
       latlngPolys.forEach(rings => rings.forEach(ring => bounds.push(...ring)));
     });
+
+    drawBestTrack(bounds);
 
     if (fitBounds && bounds.length) {
       map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 9 });

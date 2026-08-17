@@ -6,7 +6,8 @@
 `tcData` GML bulletins. Two self-contained map viewers (no build step, no
 framework) browse them interactively — pick a region, pick a cyclone/event,
 and step or play through its bulletins to see the track, position fixes,
-and wind/forecast/warning/watch areas:
+and wind/forecast/warning/watch areas. Where available, the post-event
+**best track** (see below) is overlaid too.
 
 - `visualize.html` — built on [Leaflet](https://leafletjs.com/).
 - `visualize_ol.html` — the same viewer built on
@@ -29,6 +30,16 @@ python build_gml_dataset.py
 This writes `viz_data/index.json` plus one JSON file per cyclone under
 `viz_data/<REGION>/<distId>.json`. `viz_data/` is git-ignored — regenerate
 it locally rather than committing it.
+
+It also parses `data/Database of Past tropical cyclone tracks.csv` — BOM's
+**best track** database (the track as re-analysed after the event, distinct
+from the `Observed`/`Forecast` tracks in the GML bulletins) — and writes one
+`viz_data/best_track/<distId>.json` per disturbance the CSV covers, matched
+to GML cyclones by `distId`/`DISTURBANCE_ID`. Not every cyclone has a match:
+best track is only published for seasons BOM has fully reanalysed, so recent
+cyclones typically won't have one yet. Cyclones with a match are flagged
+`"hasBestTrack": true` in `viz_data/index.json`. Pass `--best-track-csv ''`
+to skip this step, or `--best-track-csv <path>` to point at a different CSV.
 
 # **Warning:** This is a working but wrong conversion
 
@@ -61,6 +72,12 @@ dropped except the fixed `xsi:schemaLocation`/namespace declarations, which
 carry no per-bulletin data. `visualize_ol.html`'s "Data-retention check"
 panel verifies this live, per bulletin, against the raw JSON.
 
+Best track (`viz_data/best_track/<distId>.json`) captures every point BOM's
+CSV records for that disturbance: `time`, `coord` (`[lon, lat]`),
+`pressure` (`CENTRAL_PRES`), and `windSpeed` (`MAX_WIND_SPD`), sorted by
+time. It's per-cyclone, not per-bulletin — one fixed post-event track,
+independent of which bulletin is currently on screen.
+
 ### Notes
 
 - `convert_bom_gml_to_geojson.py` converts a single GML file's wind-area
@@ -68,3 +85,8 @@ panel verifies this live, per bulletin, against the raw JSON.
   bulk viewers above.
 - `build_gml_dataset.py --data-dir data --out-dir viz_data` accepts custom
   input/output paths if needed.
+- In the viewers, GML `tcTrack` styling distinguishes the two `trackType`
+  values: **Forecast** is solid, **Observed** is dashed. The best-track
+  overlay (green, toggleable via the "Best track (post-event)" layer) is a
+  separate line drawn from the CSV data described above, not a `trackType`
+  value — cyclones with one are marked ★ in the cyclone dropdown.

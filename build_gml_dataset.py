@@ -27,6 +27,18 @@ writes:
                      "marineType": str, "fixType": str, "fixTime": str}, ... ]
       }
 
+  viz_data/best_track/<distId>.json
+      Present only when the BOM "past tropical cyclone tracks" CSV (best
+      track / post-event reanalysis) has rows for that distId. Shaped as:
+
+      {
+        "distId": str, "name": str,
+        "points": [ {"time": str, "coord": [lon, lat],
+                     "pressure": float | null, "windSpeed": float | null}, ... ]
+      }
+      points are sorted by time. This is independent of region/bulletins —
+      it's one fixed post-event track per cyclone, not per-bulletin data.
+
 Every polygon is kept as a list of rings so holes (gml:innerBoundaryIs) are
 preserved alongside the outer boundary (gml:outerBoundaryIs); this matches
 how visualize.html feeds L.polygon (outer ring first, holes after).
@@ -34,9 +46,11 @@ how visualize.html feeds L.polygon (outer ring first, holes after).
 Usage:
     python build_gml_dataset.py
     python build_gml_dataset.py --data-dir data --out-dir viz_data
+    python build_gml_dataset.py --best-track-csv "data/Database of Past tropical cyclone tracks.csv"
 """
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -169,12 +183,71 @@ def parse_bulletin(path):
     }
 
 
+def parse_float(text):
+    if text is None:
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def load_best_tracks(csv_path):
+    """Parse the BOM 'past tropical cyclone tracks' CSV (best track / post-event
+    reanalysis) into {distId: {"distId", "name", "points": [...]}}.
+
+    The file starts with a few copyright/generated-on lines before the real
+    header row, so we scan for the row containing DISTURBANCE_ID rather than
+    assuming it's the first line.
+    """
+    if not csv_path or not os.path.isfile(csv_path):
+        return {}
+
+    with open(csv_path, encoding="utf-8", errors="ignore") as f:
+        lines = f.readlines()
+
+    header_idx = next((i for i, line in enumerate(lines) if "DISTURBANCE_ID" in line), None)
+    if header_idx is None:
+        print(f"  ! {csv_path}: no DISTURBANCE_ID header found, skipping best track", file=sys.stderr)
+        return {}
+
+    reader = csv.DictReader(lines[header_idx:])
+    by_dist_id = {}
+    for row in reader:
+        dist_id = (row.get("DISTURBANCE_ID") or "").strip()
+        lat = parse_float(row.get("LAT"))
+        lon = parse_float(row.get("LON"))
+        tm = (row.get("TM") or "").strip()
+        if not dist_id or lat is None or lon is None or not tm:
+            continue
+        point = {
+            "time": tm,
+            "coord": [lon, lat],
+            "pressure": parse_float(row.get("CENTRAL_PRES")),
+            "windSpeed": parse_float(row.get("MAX_WIND_SPD")),
+        }
+        entry = by_dist_id.setdefault(dist_id, {
+            "distId": dist_id,
+            "name": (row.get("NAME") or "").strip() or None,
+            "points": [],
+        })
+        entry["points"].append(point)
+
+    for entry in by_dist_id.values():
+        entry["points"].sort(key=lambda p: p["time"])
+
+    return by_dist_id
+
+
 def region_name(dir_name):
     # "NT_GMLs" -> "NT"
     return dir_name[:-len("_GMLs")] if dir_name.endswith("_GMLs") else dir_name
 
 
-def build(data_dir, out_dir):
+def build(data_dir, out_dir, best_track_csv=None):
     if not os.path.isdir(data_dir):
         raise SystemExit(f"Error: data directory not found: {data_dir}")
 
@@ -189,6 +262,13 @@ def build(data_dir, out_dir):
     index = {"regions": {}}
     total_files = 0
     total_errors = 0
+
+    best_tracks = load_best_tracks(best_track_csv)
+    if best_track_csv:
+        if best_tracks:
+            print(f"Best track CSV: {best_track_csv} -> {len(best_tracks)} disturbances")
+        else:
+            print(f"Best track CSV: {best_track_csv} -> no usable rows found", file=sys.stderr)
 
     for dir_name in region_dirs:
         region = region_name(dir_name)
@@ -228,6 +308,7 @@ def build(data_dir, out_dir):
                 "bulletinCount": len(bulletins),
                 "firstIssue": min(issue_times) if issue_times else None,
                 "lastIssue": max(issue_times) if issue_times else None,
+                "hasBestTrack": dist_id in best_tracks,
             })
 
         cyclone_entries.sort(key=lambda c: c["firstIssue"] or "")
@@ -237,8 +318,20 @@ def build(data_dir, out_dir):
     with open(os.path.join(out_dir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2)
 
+    best_track_written = 0
+    if best_tracks:
+        best_track_out_dir = os.path.join(out_dir, "best_track")
+        os.makedirs(best_track_out_dir, exist_ok=True)
+        for dist_id, entry in sorted(best_tracks.items()):
+            out_path = os.path.join(best_track_out_dir, f"{dist_id}.json")
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(entry, f)
+            best_track_written += 1
+
     print(f"\nParsed {total_files} GML files ({total_errors} errors).")
     print(f"Wrote {out_dir}/index.json and per-cyclone JSON under {out_dir}/<REGION>/.")
+    if best_track_csv:
+        print(f"Wrote {best_track_written} best-track file(s) under {out_dir}/best_track/.")
 
 
 def main():
@@ -248,9 +341,16 @@ def main():
     )
     parser.add_argument("--data-dir", default="data", help="Input directory containing <REGION>_GMLs/ subfolders (default: data)")
     parser.add_argument("--out-dir", default="viz_data", help="Output directory for the built dataset (default: viz_data)")
+    parser.add_argument(
+        "--best-track-csv",
+        default="data/Database of Past tropical cyclone tracks.csv",
+        help="Path to the BOM past-tropical-cyclone-tracks CSV (best track / "
+             "post-event reanalysis) used to build viz_data/best_track/. "
+             "Pass '' to skip.",
+    )
     args = parser.parse_args()
 
-    build(args.data_dir, args.out_dir)
+    build(args.data_dir, args.out_dir, best_track_csv=args.best_track_csv or None)
 
 
 if __name__ == "__main__":
