@@ -4,7 +4,8 @@ import xml.etree.ElementTree as ET
 import sys
 
 #relative path
-gml_inputPath = "data/"
+DEFAULT_GML_INPUT_PATH = "data/"
+DEFAULT_GEOJSON_OUTPUT_PATH = "data/geojson"
 
 TC_NS = "http://www.bom.gov.au/dtd/tc"
 GML_NS = "http://www.opengis.net/gml"
@@ -52,9 +53,9 @@ def get_gml_identifier(gml_file: Path) -> str:
     return gml_file.stem
 
 
-def get_geojson_dest(gml_file: Path) -> Path:
+def get_geojson_dest(gml_file: Path, output_dir: Path) -> Path:
     identifier = get_gml_identifier(gml_file)
-    return Path("data/geojson") / f"{identifier}.geojson"
+    return output_dir / f"{identifier}.geojson"
 
 def convert_file(input_path: Path, output_path: Path):
     tree = ET.parse(str(input_path))
@@ -419,10 +420,43 @@ def collect_bbox(features):
     lats = [coord[1] for coord in coords]
     return [min(lons), min(lats), max(lons), max(lats)]
 
+def run_conversion(data_dir: str | Path, output_dir: str | Path | None = None) -> list[Path]:
+    """Convert every GML bulletin under data_dir into GeoJSON output files.
+
+    Returns the list of output GeoJSON paths generated.
+    """
+    gml_src = Path(data_dir).expanduser().resolve()
+    geojson_root = Path(output_dir).expanduser().resolve() if output_dir is not None else (gml_src / "geojson")
+
+    if not gml_src.is_dir():
+        raise SystemExit(f"Expected a directory containing GML state folders: {gml_src}")
+    gml_files = iter_gml_files(gml_src)
+    outputs = []
+    for gml_file in gml_files:
+        # NOTE MAY NOT NEED THIS FUNCTION CALL. ALL IT REALLY DOES IS APPEND ID for filename 
+        # keep if we deicde this is a cleaner easier approach
+        geojson_dest = get_geojson_dest(gml_file, output_dir)
+
+        # THIS IS USED FOR CYCLONES ACROSS MULTIPLE STATES THAT APPEAR IN MORE THAN 1 GML
+        # IF WE ENCOUNTER IT AGAIN WE SKIP PROCESSING IT AGAIN
+        if geojson_dest.exists():
+            continue
+
+        try:
+            out = convert_file(gml_file, geojson_dest)
+            outputs.append(out)
+        except Exception as exc:  # pragma: no cover - robustness for batch runs
+            print(f"Failed to convert {gml_file}: {exc}", file=sys.stderr)
+
+    if outputs:
+        print(f"Converted {len(outputs)} file(s)")   
+
+    return outputs 
+
 def main() -> None:
     #NOTE: PATH YET TO BE FINALISED.
     # It should point to the root folder containing the state-wide GML folders.
-    gml_src = Path(gml_inputPath).expanduser().resolve()
+    gml_src = Path(DEFAULT_GML_INPUT_PATH).expanduser().resolve()
 
     if not gml_src.is_dir():
         raise SystemExit(f"Expected a directory containing state folders: {gml_src}")
