@@ -43,6 +43,16 @@ def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataF
     reindexed = reindexed.reset_index().rename(columns={"index": "TM"})
     return reindexed[reindexed.TM.isin(grid)].reset_index(drop=True)
 
+def _nearest_observed_fill(series: pd.Series) -> pd.Series:
+    observed = series.dropna()
+    if observed.empty:
+        return series
+    forward = observed.reindex(series.index, method = "ffill")
+    backward = observed.reindex(series.index, method = "bfill")
+    forward_dist = (series.index.to_series().reindex(series.index, method="ffill")).abs()
+    backward_dist = (series.index.to_series().reindex(series.index, method="bfill")).abs()
+    use_forward = forward_dist <= backward_dist
+    return forward.where(use_forward, backward)
 
 def _geojson_index() -> dict:
     """(distId, fcastTime) -> filepath, built once by scanning what gml_to_geojson.py already wrote.
@@ -67,6 +77,9 @@ def _geojson_index() -> dict:
 def load_forecast_geojson(disturbance_id: str, fcast_time: str) -> dict | None:
     path = _geojson_index().get((disturbance_id, fcast_time))
     return json.loads(path.read_text()) if path else None
+
+
+
 
 # TESTING
 # raw = load_best_track("AU202526_34U")
