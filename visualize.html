@@ -146,7 +146,7 @@
     <div class="layer-row"><input type="checkbox" id="layer-allBulletins">
       <span class="swatch" style="background:#8892a6"></span> Show all bulletins' tracks (ghost trails)</div>
     <div class="layer-row"><input type="checkbox" id="layer-bestTrack" checked>
-      <span class="swatch" style="background:#3ddc84"></span> Best track (post-event)</div>
+      <span class="swatch" style="background:#2fd4d9"></span> Best track (post-event)</div>
   </fieldset>
 
   <fieldset>
@@ -336,7 +336,7 @@
 
     const latlngs = points.map(p => [p.coord[1], p.coord[0]]);
     L.polyline(latlngs, {
-      color: "#3ddc84", weight: 3, opacity: 0.9,
+      color: "#2fd4d9", weight: 3, opacity: 0.9,
     }).bindPopup(`
       <b>Best track</b>${currentBestTrack.name ? ` — ${currentBestTrack.name}` : ""}<br>
       ${points.length} points, ${fmtTime(points[0].time)} → ${fmtTime(points[points.length - 1].time)}
@@ -346,7 +346,7 @@
       const [lon, lat] = p.coord;
       L.circleMarker([lat, lon], {
         radius: 3, color: "#111826", weight: 1,
-        fillColor: "#3ddc84", fillOpacity: 0.95,
+        fillColor: "#2fd4d9", fillOpacity: 0.95,
       }).bindPopup(`
         <b>Best track fix</b><br>
         Time: ${fmtTime(p.time)}<br>
