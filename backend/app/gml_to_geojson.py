@@ -435,7 +435,7 @@ def run_conversion(data_dir: str | Path, output_dir: str | Path | None = None) -
     for gml_file in gml_files:
         # NOTE MAY NOT NEED THIS FUNCTION CALL. ALL IT REALLY DOES IS APPEND ID for filename 
         # keep if we deicde this is a cleaner easier approach
-        geojson_dest = get_geojson_dest(gml_file, output_dir)
+        geojson_dest = get_geojson_dest(gml_file, geojson_root)
 
         # THIS IS USED FOR CYCLONES ACROSS MULTIPLE STATES THAT APPEAR IN MORE THAN 1 GML
         # IF WE ENCOUNTER IT AGAIN WE SKIP PROCESSING IT AGAIN
@@ -457,6 +457,7 @@ def main() -> None:
     #NOTE: PATH YET TO BE FINALISED.
     # It should point to the root folder containing the state-wide GML folders.
     gml_src = Path(DEFAULT_GML_INPUT_PATH).expanduser().resolve()
+    geojson_root = Path(DEFAULT_GEOJSON_OUTPUT_PATH).expanduser().resolve() if DEFAULT_GEOJSON_OUTPUT_PATH is not None else (gml_src / "geojson")
 
     if not gml_src.is_dir():
         raise SystemExit(f"Expected a directory containing state folders: {gml_src}")
@@ -468,7 +469,7 @@ def main() -> None:
 
     outputs = []
     for gml_file in gml_files:
-        geojson_dest = get_geojson_dest(gml_file)
+        geojson_dest = get_geojson_dest(gml_file, geojson_root)
 
         # THIS IS USED FOR CYCLONES ACROSS MULTIPLE STATES THAT APPEAR IN MORE THAN 1 GML
         # IF WE ENCOUNTER IT AGAIN WE SKIP PROCESSING IT AGAIN
