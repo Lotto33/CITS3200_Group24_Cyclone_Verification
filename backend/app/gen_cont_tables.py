@@ -2,6 +2,8 @@ from pathlib import Path
 import pandas as pd
 import json
 from shapely.geometry import LineString
+from shapely.geometry import shape as shapely_shape
+from shapely.ops import unary_union
 import geopandas as gpd
 from pyproj import Transformer
 
@@ -144,8 +146,40 @@ def load_forecast_geojson(disturbance_id: str, fcast_time: str) -> dict | None:
 def get_reference_times(disturbance_id: str) -> list[str]:
     return sorted(fcast_time for (dist_id, fcast_time) in _geojson_index() if disturbance_id==dist_id and fcast_time)
 
+def generate_table_a(disturbance_id: str, locations: gpd.GeoDataFrame | None) -> pd.DataFrame:
+    if locations is None:
+        locations = load_locations()
+    rows = []
+    for fcast_time in get_reference_times(disturbance_id):
+        geo = load_forecast_geojson(disturbance_id,fcast_time)
+        if geo is None:
+            continue
+
+        watch_geoms, warning_geoms = [], []
+        for f in geo["features"]:
+            feature_type = f["properties"].get("featureType", "")
+            if feature_type not in ("WarningArea", "WatchArea"):
+                continue
+            areaType = f["properties"].get("featureType", "").lower()
+            target = warning_geoms if "warning" in areaType else watch_geoms if "watch" in areaType else None
+            if target is not None:
+                target.append(shapely_shape(f["geometry"]))
+            watch_union = unary_union(watch_geoms) if watch_geoms else None
+            warning_union = unary_union(warning_geoms) if warning_geoms else None
+
+            for _, loc in locations.iterrows():
+                point = loc.geometry
+                rows.append({
+                    "disturbance_id":disturbance_id,
+                    "Base time":fcast_time,
+                    "Locations": loc["name"],
+                    "Watch": bool(watch_union is not None and watch_union.contains(point)),
+                    "Warning": bool(warning_union is not None and warning_union.contains(point))
+                })
+    return pd.DataFrame(rows, columns = ["disturbance_id","Base time", "locations", "Watch", "Warning"])
 
 
+    pass
 # TESTING
 if __name__ == "__main__":
     raw = load_best_track("AU202526_34U")   # swap for a real disturbance ID from your CSV
