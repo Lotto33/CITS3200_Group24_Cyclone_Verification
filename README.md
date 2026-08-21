@@ -1,5 +1,18 @@
 # CITS3200_Group24_Cyclone_Verification
 
+## Group Members 
+
+|  Name | Student ID | GitHub Username |
+| ------------ | ---------- | --------------- |
+| Elliott Naidoo  | 24313893   | Lotto33     |
+| Eliza Hutchens | 24230437   | arcococoa |
+| Scout Wu | 24729742 | Exusiai101 |
+| Siyu Zhu | 24439408 | LZhuSY  |
+| Kahlea Aslanis | 23788447 | kahleaa |
+| Michael Kartika | 24239793 | mrdudman |
+
+
+
 ## Visualizing the BOM cyclone GML data
 
 `data/NT_GMLs`, `data/QLD_GMLs`, `data/WA_GMLs` contain ~3,450 individual BOM
@@ -40,10 +53,6 @@ best track is only published for seasons BOM has fully reanalysed, so recent
 cyclones typically won't have one yet. Cyclones with a match are flagged
 `"hasBestTrack": true` in `viz_data/index.json`. Pass `--best-track-csv ''`
 to skip this step, or `--best-track-csv <path>` to point at a different CSV.
-
-# **Warning:** This is a working but wrong conversion
-
-# **Warning:** This is a working but wrong conversion
 
 # **Warning:** This is a working but wrong conversion
 
