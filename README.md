@@ -43,10 +43,6 @@ to skip this step, or `--best-track-csv <path>` to point at a different CSV.
 
 # **Warning:** This is a working but wrong conversion
 
-# **Warning:** This is a working but wrong conversion
-
-# **Warning:** This is a working but wrong conversion
-
 ### 2. Serve the page
 
 Browsers block `fetch()` of local files opened via `file://`, so serve the
