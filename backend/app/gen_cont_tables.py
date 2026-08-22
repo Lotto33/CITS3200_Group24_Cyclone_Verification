@@ -146,7 +146,13 @@ def load_forecast_geojson(disturbance_id: str, fcast_time: str) -> dict | None:
 def get_reference_times(disturbance_id: str) -> list[str]:
     return sorted(fcast_time for (dist_id, fcast_time) in _geojson_index() if disturbance_id==dist_id and fcast_time)
 
+
+"""See the client's scope and deliverables"""
+
 def generate_table_a(disturbance_id: str, locations: gpd.GeoDataFrame | None) -> pd.DataFrame:
+    """
+    create a table from the forecast polygons for each forecast base time including relevant locations
+    """
     if locations is None:
         locations = load_locations()
     rows = []
@@ -178,8 +184,22 @@ def generate_table_a(disturbance_id: str, locations: gpd.GeoDataFrame | None) ->
                 })
     return pd.DataFrame(rows, columns = ["disturbance_id","Base time", "locations", "Watch", "Warning"])
 
-
+def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None) -> pd.DataFrame:
+    """
+    for every system create the following table at the agreed time interval for all relevant locations. 
+    A negative distance to a wind radii means that location is experiencing those winds
+    """
     pass
+
+def generate_table_c(disturbance_id: str, locations: gpd.GeoDataFrame | None) -> pd.DataFrame:
+    """processed for gales within X to Y hours of the base time"""
+    pass
+
+def generate_table_d(disturbance_id: str, locations: gpd.GeoDataFrame | None) -> pd.DataFrame:
+    """this is the base to build the contingency table for the given options."""
+    pass
+
+
 # TESTING
 if __name__ == "__main__":
     raw = load_best_track("AU202526_34U")   # swap for a real disturbance ID from your CSV
