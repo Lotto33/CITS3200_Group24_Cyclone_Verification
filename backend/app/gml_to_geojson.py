@@ -5,8 +5,8 @@ import xml.etree.ElementTree as ET
 import sys
 
 #relative path
-DEFAULT_GML_INPUT_PATH = "data/"
-DEFAULT_GEOJSON_OUTPUT_PATH = "data/geojson"
+DEFAULT_GML_INPUT_PATH = "backend/data"
+DEFAULT_GEOJSON_OUTPUT_PATH = "backend/data/geojson"
 
 TC_NS = "http://www.bom.gov.au/dtd/tc"
 GML_NS = "http://www.opengis.net/gml"
