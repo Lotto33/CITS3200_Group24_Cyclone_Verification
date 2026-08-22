@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 import xml.etree.ElementTree as ET
 import sys
 
@@ -28,7 +29,6 @@ def sanitize_output_name(value: str) -> str:
     cleaned = "".join(ch for ch in cleaned if ch.isalnum() or ch in {"_", "-", "."})
     return cleaned
 
-
 def get_gml_identifier(gml_file: Path) -> str:
     try:
         root = ET.parse(str(gml_file)).getroot()
@@ -56,6 +56,12 @@ def get_gml_identifier(gml_file: Path) -> str:
 def get_geojson_dest(gml_file: Path, output_dir: Path) -> Path:
     identifier = get_gml_identifier(gml_file)
     return output_dir / f"{identifier}.geojson"
+
+
+def get_distid_dataset_path(dist_id: str, output_dir: Path) -> Path:
+    name = sanitize_output_name(dist_id or "unknown") or "unknown"
+    return output_dir / f"{name}.json"
+
 
 def convert_file(input_path: Path, output_path: Path):
     tree = ET.parse(str(input_path))
@@ -136,26 +142,55 @@ def normalize_coords(coords):
 
 def split_at_antimeridian(coords):
     # Split a sequence of coordinates into separate line segments whenever
-    # consecutive coordinates cross the antimeridian. This prevents GeoJSON
-    # geometries from incorrectly drawing a line across the entire map.
-    # Parameters:
-    #   coords: A list of [longitude, latitude] coordinate pairs.
-    # Returns:
-    #   A list of coordinate segments, where each segment contains at least
-    #   two coordinates.
+    # consecutive coordinates cross the antimeridian. The real fix is to insert
+    # the actual crossing coordinate at ±180 so each split piece remains a valid
+    # ring/line segment instead of silently collapsing into a 2-point stub.
+    #
+    # Note: for polygon rings that wrap across the dateline in a closed loop, the
+    # first and last segment can still be handled as separate pieces; this is the
+    # normal trade-off for a lightweight, stable solution.
     if not coords:
         return []
+
+    def interpolate_crossing(prev_coord, curr_coord):
+        lon1, lat1 = prev_coord
+        lon2, lat2 = curr_coord
+        delta = lon2 - lon1
+
+        if delta > 180.0:
+            boundary_lon = -180.0
+            lon2_unwrapped = lon2 - 360.0
+        elif delta < -180.0:
+            boundary_lon = 180.0
+            lon2_unwrapped = lon2 + 360.0
+        else:
+            return None
+
+        if lon2_unwrapped == lon1:
+            return [boundary_lon, lat1]
+
+        t = (boundary_lon - lon1) / (lon2_unwrapped - lon1)
+        lat_cross = lat1 + (lat2 - lat1) * t
+        return [boundary_lon, lat_cross]
+
     segments = []
     current_segment = [coords[0]]
+
     for prev_coord, curr_coord in zip(coords, coords[1:]):
         if abs(curr_coord[0] - prev_coord[0]) > 180:
+            crossing = interpolate_crossing(prev_coord, curr_coord)
+            if crossing is not None:
+                current_segment.append(crossing)
+                segments.append(current_segment)
+                current_segment = [crossing, curr_coord]
+                continue
             segments.append(current_segment)
             current_segment = [curr_coord]
         else:
             current_segment.append(curr_coord)
-    segments.append(current_segment)
 
-    return [segment for segment in segments if len(segment) >= 2]            
+    segments.append(current_segment)
+    return [segment for segment in segments if len(segment) >= 2]
 
 
 def ensure_ring_closed(ring):
@@ -298,7 +333,7 @@ def parse_polygon_geometry(geometry_elem):
             outer_ring = outer_elem.find(qname(GML_NS, "LinearRing"))
             if outer_ring is not None:
                 exterior_text = text_of(outer_ring.find(qname(GML_NS, "coordinates")))
-        
+
         exterior_coords = parse_coordinate_pairs(exterior_text)
         exterior_rings = build_ring(exterior_coords, exterior=True)
         if not exterior_rings:
@@ -317,10 +352,16 @@ def parse_polygon_geometry(geometry_elem):
             interior_coords = parse_coordinate_pairs(interior_text)
             hole_rings.extend(build_ring(interior_coords, exterior=False))
 
-        for ext_ring in exterior_rings:
-            polygons.append([ext_ring, *hole_rings]) 
+        if len(exterior_rings) == 1:
+            polygons.append([exterior_rings[0], *hole_rings])
+        else:
+            # For split exterior rings crossing the dateline, a hole cannot be
+            # safely assigned to every piece without per-piece point-in-polygon
+            # checks. Dropping holes in this rare case is safer than emitting
+            # silently wrong geometry.
+            polygons.extend([[ext_ring] for ext_ring in exterior_rings])
 
-    return polygons              
+    return polygons
 
 
 def build_geometry_for_feature(feature_elem, feature_type: str):
@@ -532,37 +573,42 @@ def collect_bbox(features):
     return [min(lons), min(lats), max(lons), max(lats)]
 
 def run_conversion(data_dir: str | Path, output_dir: str | Path | None = None) -> list[Path]:
-    """Convert every GML bulletin under data_dir into GeoJSON output files.
+    """Convert every GML bulletin under data_dir into one dataset file per distId.
 
-    Returns the list of output GeoJSON paths generated.
+    Each file contains a JSON list of the bulletin FeatureCollections for that
+    cyclone, preserving the historical time series instead of overwriting
+    previous updates for the same distId.
     """
     gml_src = Path(data_dir).expanduser().resolve()
     geojson_root = Path(output_dir).expanduser().resolve() if output_dir is not None else (gml_src / "geojson")
 
     if not gml_src.is_dir():
         raise SystemExit(f"Expected a directory containing GML state folders: {gml_src}")
-    gml_files = iter_gml_files(gml_src)
-    outputs = []
-    for gml_file in gml_files:
-        # NOTE MAY NOT NEED THIS FUNCTION CALL. ALL IT REALLY DOES IS APPEND ID for filename 
-        # keep if we deicde this is a cleaner easier approach
-        geojson_dest = get_geojson_dest(gml_file, geojson_root)
 
-        # THIS IS USED FOR CYCLONES ACROSS MULTIPLE STATES THAT APPEAR IN MORE THAN 1 GML
-        # IF WE ENCOUNTER IT AGAIN WE SKIP PROCESSING IT AGAIN
-        if geojson_dest.exists():
-            continue
-
+    grouped: dict[str, list[dict]] = {}
+    for gml_file in iter_gml_files(gml_src):
         try:
-            out = convert_file(gml_file, geojson_dest)
-            outputs.append(out)
+            tree = ET.parse(str(gml_file))
+            root = tree.getroot()
+            root.set("sourceFile", gml_file.name)
+            feature_collection = build_feature_collection(root)
+            dist_id = (feature_collection.get("metadata") or {}).get("distId") or gml_file.stem
+            grouped.setdefault(dist_id, []).append(feature_collection)
         except Exception as exc:  # pragma: no cover - robustness for batch runs
             print(f"Failed to convert {gml_file}: {exc}", file=sys.stderr)
 
-    if outputs:
-        print(f"Converted {len(outputs)} file(s)")   
+    outputs = []
+    geojson_root.mkdir(parents=True, exist_ok=True)
+    for dist_id, feature_collections in grouped.items():
+        output_path = get_distid_dataset_path(dist_id, geojson_root)
+        with output_path.open("w", encoding="utf-8") as handle:
+            json.dump(feature_collections, handle, indent=2)
+        outputs.append(output_path)
 
-    return outputs 
+    if outputs:
+        print(f"Converted {len(outputs)} distId dataset(s)")
+
+    return outputs
 
 def main() -> None:
     #NOTE: PATH YET TO BE FINALISED.
@@ -579,22 +625,27 @@ def main() -> None:
         raise SystemExit(f"No .gml files found in {gml_src}")
 
     outputs = []
+    grouped: dict[str, list[dict]] = {}
     for gml_file in gml_files:
-        geojson_dest = get_geojson_dest(gml_file, geojson_root)
-
-        # THIS IS USED FOR CYCLONES ACROSS MULTIPLE STATES THAT APPEAR IN MORE THAN 1 GML
-        # IF WE ENCOUNTER IT AGAIN WE SKIP PROCESSING IT AGAIN
-        if geojson_dest.exists():
-            continue
-
         try:
-            out = convert_file(gml_file, geojson_dest)
-            outputs.append(out)
+            tree = ET.parse(str(gml_file))
+            root = tree.getroot()
+            root.set("sourceFile", gml_file.name)
+            feature_collection = build_feature_collection(root)
+            dist_id = (feature_collection.get("metadata") or {}).get("distId") or gml_file.stem
+            grouped.setdefault(dist_id, []).append(feature_collection)
         except Exception as exc:  # pragma: no cover - robustness for batch runs
             print(f"Failed to convert {gml_file}: {exc}", file=sys.stderr)
 
+    geojson_root.mkdir(parents=True, exist_ok=True)
+    for dist_id, feature_collections in grouped.items():
+        output_path = get_distid_dataset_path(dist_id, geojson_root)
+        with output_path.open("w", encoding="utf-8") as handle:
+            json.dump(feature_collections, handle, indent=2)
+        outputs.append(output_path)
+
     if outputs:
-        print(f"Converted {len(outputs)} file(s)")
+        print(f"Converted {len(outputs)} distId dataset(s)")
 
 
 if __name__ == "__main__":
