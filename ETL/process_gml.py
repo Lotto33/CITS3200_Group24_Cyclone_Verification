@@ -27,40 +27,53 @@ def find_gml_files() -> list[Path]:
 
 
 # --------------------------------------------
-# 2. Extract disturbance ID from one GML file
+# 2. Extract disturbance ID and areaType Info from a file
 # --------------------------------------------
-def extract_disturbance_id(file_path: Path) -> str | None:
+def extract_gml_info(file_path: Path):
     tree = ET.parse(file_path)
     root = tree.getroot()
+
+    disturbance_id = None
+    advice = set()
 
     for elem in root.iter():
         tag = elem.tag.split("}")[-1]
 
         if tag == "distId" and elem.text:
-            return elem.text.strip()
+            disturbance_id = elem.text.strip()
 
-    return None
+        elif tag == "areaType" and elem.text:
+            area_type = elem.text.strip()
+
+            if area_type == "Watch Area":
+                advice.add("watch")
+            elif area_type == "Warning Area":
+                advice.add("warning")
+
+    return disturbance_id, advice
 
 
-# --------------------------------------------------
-# 3. Map disturbance IDs to all associated GML files
-# --------------------------------------------------
-def map_disturbance_files(
-    gml_files: list[Path],
-) -> tuple[dict[str, list[Path]], list[Path]]:
+# ----------------------------------------------------------------------------
+# 3. Process all GML files and map disturbance IDs to files and advice types
+# ---------------------------------------------------------------------------
+def process_gml_files(gml_files):
     disturbance_files = defaultdict(list)
+    disturbance_advice = defaultdict(set)
     unmatched_files = []
 
     for file_path in gml_files:
-        disturbance_id = extract_disturbance_id(file_path)
+        disturbance_id, advice = extract_gml_info(file_path)
 
         if disturbance_id is None:
             unmatched_files.append(file_path)
-        else:
-            disturbance_files[disturbance_id].append(file_path)
+            continue
+
+        disturbance_files[disturbance_id].append(file_path)
+        disturbance_advice[disturbance_id].update(advice)
 
     mapped_file_count = sum(
-        len(files) for files in disturbance_files.values()
+        len(files)
+        for files in disturbance_files.values()
     )
 
     all_mapped_files = [
@@ -70,7 +83,13 @@ def map_disturbance_files(
     ]
 
     duplicate_mapped_files = (
-        len(all_mapped_files) - len(set(all_mapped_files))
+        len(all_mapped_files)
+        - len(set(all_mapped_files))
+    )
+
+    relevant_count = sum(
+        bool(advice)
+        for advice in disturbance_advice.values()
     )
 
     print("\n--- Disturbance-file mapping ---")
@@ -79,66 +98,24 @@ def map_disturbance_files(
     print("Unmatched files:", len(unmatched_files))
     print("Duplicate mapped files:", duplicate_mapped_files)
 
-    return dict(disturbance_files), unmatched_files
-
-
-# ---------------------------------------------
-# 4. Detect Watch/Warning areas in one GML file
-# ----------------------------------------------
-def get_watch_warning(file_path: Path) -> set[str]:
-    tree = ET.parse(file_path)
-    root = tree.getroot()
-
-    advice_types = set()
-
-    for elem in root.iter():
-        tag = elem.tag.split("}")[-1]
-
-        if tag == "areaType" and elem.text:
-            area_type = elem.text.strip()
-
-            if area_type == "Watch Area":
-                advice_types.add("watch")
-            elif area_type == "Warning Area":
-                advice_types.add("warning")
-
-    return advice_types
-
-
-# -----------------------------------------------------------
-# 5. Combine advice types across all files for each disturbance
-# ------------------------------------------------------------
-def get_disturbance_advice(
-    disturbance_files: dict[str, list[Path]],
-) -> dict[str, set[str]]:
-    disturbance_advice = {}
-
-    for disturbance_id, files in disturbance_files.items():
-        advice = set()
-
-        for file_path in files:
-            advice.update(get_watch_warning(file_path))
-
-        disturbance_advice[disturbance_id] = advice
-
-    relevant_count = sum(
-        bool(advice)
-        for advice in disturbance_advice.values()
-    )
-
     print("\n--- Watch/Warning filtering ---")
     print("Total disturbance IDs:", len(disturbance_advice))
     print("Watch/Warning disturbance IDs:", relevant_count)
 
-    return disturbance_advice
+    return (
+        dict(disturbance_files),
+        dict(disturbance_advice),
+        unmatched_files
+    )
 
 
 # ----------------------------------------------
-# 6. Build and export relevant disturbance table
+# 4. Build and export relevant disturbance table
 # ----------------------------------------------
 def build_relevant_disturbances(
     disturbance_advice: dict[str, set[str]],
 ) -> pd.DataFrame:
+    
     relevant_disturbances = pd.DataFrame([
         {
             "DISTURBANCE_ID": disturbance_id,
@@ -157,10 +134,14 @@ def build_relevant_disturbances(
 
     return relevant_disturbances
 
+#-------------------------------------
+# 5. Export relevant disturbance table
+#-------------------------------------
 
 def export_relevant_disturbances(
     relevant_disturbances: pd.DataFrame,
 ) -> None:
+    
     OUTPUT_RELEVANT_IDS.parent.mkdir(
         parents=True,
         exist_ok=True,
@@ -179,11 +160,10 @@ def export_relevant_disturbances(
 def main() -> None:
     gml_files = find_gml_files()
 
-    disturbance_files, _ = map_disturbance_files(gml_files)
-
-    disturbance_advice = get_disturbance_advice(
-        disturbance_files
+    disturbance_files, disturbance_advice, unmatched_files = process_gml_files(
+        gml_files
     )
+    
 
     relevant_disturbances = build_relevant_disturbances(
         disturbance_advice
