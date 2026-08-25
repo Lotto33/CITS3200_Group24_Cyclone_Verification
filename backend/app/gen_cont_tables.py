@@ -1,11 +1,12 @@
 from pathlib import Path
 import pandas as pd
 import json
+import numpy as np
 from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
 import geopandas as gpd
-from pyproj import Transformer
+from pyproj import geod
 
 GEOJSON_DIR = Path("backend/data/geojson")
 BEST_TRACK_CSV = Path("backend/data/best_track.csv")
@@ -83,19 +84,50 @@ def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataF
 
 def load_locations() -> gpd.GeoDataFrame:
     """
-    Real BOM towns/cities list. point_x/point_y are in EPSG:3857 (Web
-    Mercator, metres) -- NOT lat/lon degrees -- so they're reprojected to
-    EPSG:4326 before use, to match the GML polygons' CRS.
+    Real BOM locations list. Latitude/Longitude are plain WGS84 degrees
+    already -- no reprojection needed, unlike the earlier GIS towns layer.
     """
     df = pd.read_excel(TOWNS_XLSX)
-    transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-    lons, lats = transformer.transform(df.point_x.values, df.point_y.values)
-
     return gpd.GeoDataFrame(
-        {"name": df.proper_name, "state": df.state},
-        geometry=gpd.points_from_xy(lons, lats),
+        {"name": df["Name"], "state": df["State"]},
+        geometry=gpd.points_from_xy(df["Longitude"], df["Latitude"]),
         crs="EPSG:4283",
     )
+def calculate_geodesic_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculates Vincenty/WGS84 distance in kilometers between two points."""
+    _, _, distance_m = geod.inv(lon1, lat1, lon2, lat2)
+    return distance_m / 1000.0
+
+def get_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculates the initial compass bearing from point 1 to point 2 in degrees (0 - 360)."""
+    initial_bearing, _, _ = geod.inv(lon1, lat1, lon2, lat2)
+    return initial_bearing % 360
+
+def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
+    """
+    Retrieves the wind radius for the specific quadrant matching the bearing.
+    Falls back to the mean overall radius if the quadrant value is NaN or 0.
+    """
+    if 0 <= bearing < 90:
+        sec_col = f"{prefix}_SECNE"
+    elif 90 <= bearing < 180:
+        sec_col = f"{prefix}_SECSE"
+    elif 180 <= bearing < 270:
+        sec_col = f"{prefix}_SECSW"
+    else:
+        sec_col = f"{prefix}_SECNW"
+
+    # Try quadrant specific radius first
+    val = row.get(sec_col)
+    if pd.notna(val) and val > 0:
+        return float(val)
+
+    # Fall back to mean radius (e.g., MN_RADIUS_GF_WIND)
+    mean_val = row.get(f"{prefix}_WIND")
+    if pd.notna(mean_val) and mean_val > 0:
+        return float(mean_val)
+
+    return 0.0
 
 def _geojson_index() -> dict:
     """(distId, fcastTime) -> filepath, built once by scanning what gml_to_geojson.py already wrote.
@@ -133,16 +165,6 @@ def get_best_track_geojson(cyclone_id: str) -> dict | None:
     gdf = gpd.GeoDataFrame([{"disturbance_id": cyclone_id}], geometry=[line], crs="EPSG:4283")
     return gdf.__geo_interface__["features"][0]
 
-def load_locations() -> gpd.GeoDataFrame:
-    df = pd.read_excel(TOWNS_XLSX)
-    transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-    lons, lats = transformer.transform(df.point_x.values, df.point_y.values)
-    return gpd.GeoDataFrame({"name": df.proper_name, "State": df.state}, geometry=gpd.points_from_xy(lons, lats),crs="EPSG:4283")
-
-def load_forecast_geojson(disturbance_id: str, fcast_time: str) -> dict | None:
-    path = _geojson_index().get(disturbance_id,fcast_time)
-    return json.loads(path.read_text() if path else None)
-
 def get_reference_times(disturbance_id: str) -> list[str]:
     return sorted(fcast_time for (dist_id, fcast_time) in _geojson_index() if disturbance_id==dist_id and fcast_time)
 
@@ -162,42 +184,122 @@ def generate_table_a(disturbance_id: str, locations: gpd.GeoDataFrame | None) ->
             continue
 
         watch_geoms, warning_geoms = [], []
+        watch_union, warning_union = None, None
         for f in geo["features"]:
             feature_type = f["properties"].get("featureType", "")
-            if feature_type not in ("WarningArea", "WatchArea"):
+            if feature_type not in ("tcWarningArea", "tcWatchArea"):
                 continue
-            areaType = f["properties"].get("featureType", "").lower()
-            target = warning_geoms if "warning" in areaType else watch_geoms if "watch" in areaType else None
+            area_type = (f["properties"].get("areaType") or "").lower()
+            target = warning_geoms if "warning" in area_type else watch_geoms if "watch" in area_type else None
             if target is not None:
                 target.append(shapely_shape(f["geometry"]))
-            watch_union = unary_union(watch_geoms) if watch_geoms else None
-            warning_union = unary_union(warning_geoms) if warning_geoms else None
 
-            for _, loc in locations.iterrows():
-                point = loc.geometry
-                rows.append({
-                    "disturbance_id":disturbance_id,
-                    "Base time":fcast_time,
-                    "Locations": loc["name"],
-                    "Watch": bool(watch_union is not None and watch_union.contains(point)),
-                    "Warning": bool(warning_union is not None and warning_union.contains(point))
-                })
+        if watch_geoms:
+            watch_union = unary_union(watch_geoms)
+        if warning_geoms:
+            warning_union = unary_union(warning_geoms)
+
+        for _, loc in locations.iterrows():
+            point = loc.geometry
+            rows.append({
+                "disturbance_id":disturbance_id,
+                "Base time":fcast_time,
+                "Locations": loc["name"],
+                "Watch": bool(watch_union is not None and watch_union.contains(point)),
+                "Warning": bool(warning_union is not None and warning_union.contains(point))
+                # contains() is strict — a location sitting exactly on a polygon's boundary line (vanishingly unlikely with real coordinates, but technically possible) would return False, not True. Not worth changing unless it actually comes up.
+            })
     return pd.DataFrame(rows, columns = ["disturbance_id","Base time", "locations", "Watch", "Warning"])
 
-def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None) -> pd.DataFrame:
+def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None, step_minutes: int = 15) -> pd.DataFrame:
     """
     for every system create the following table at the agreed time interval for all relevant locations. 
     A negative distance to a wind radii means that location is experiencing those winds
     """
-    pass
 
-def generate_table_c(disturbance_id: str, locations: gpd.GeoDataFrame | None) -> pd.DataFrame:
+    if locations is None:
+        locations = load_locations()
+        rows = []
+        df = load_best_track(disturbance_id)   
+        interp_df = interpolate_best_track(df, step_minutes=step_minutes)
+
+        for _, step in interp_df.iterrows():
+            cyc_lat, cyc_lon = step['LAT'], step['LON']
+            if pd.isna(cyc_lat) or pd.isna(cyc_lon):
+                continue
+
+            for _, loc in locations.iterrows():
+                loc_lat, loc_lon = loc.geometry.y, loc.geometry.x
+                dist_center_km = calculate_geodesic_distance_km(cyc_lat, cyc_lon, loc_lat, loc_lon)
+                
+                bearing = get_bearing(cyc_lat, cyc_lon, loc_lat, loc_lon)
+
+                # TODO CHECK IS THIS CORRECT BELOW THESE NEXT SEVEN LINES
+                gale_radius_km = get_quadrant_radius(step, "MN_RADIUS_GF", bearing) 
+                storm_radius_km = get_quadrant_radius(step, "MN_RADIUS_SF", bearing) 
+                hurricane_radius_km = get_quadrant_radius(step, "MN_RADIUS_HF", bearing) 
+
+                
+                dist_gale_km = dist_center_km - gale_radius_km
+                dist_storm_km = dist_center_km - storm_radius_km
+                dist_hurricane_km = dist_center_km - hurricane_radius_km
+                
+                rows.append({
+                    "disturbance_id":disturbance_id,
+                    "Base time":step["TM"],
+                    "Locations": loc["name"],
+                    "Uncertainty": step.get("POSITION_UNCERTAINTY", np.nan),
+                    "Distance to gale": dist_gale_km,
+                    "Distance to storm": dist_storm_km,
+                    "Distance to hurricane": dist_hurricane_km,
+                })
+            
+    return pd.DataFrame(rows, columns = ["disturbance_id","Base time", "Locations", "Uncertainty", "Distance to gale", "Distance to storm", "Distance to hurricane"])
+
+def generate_table_c(disturbance_id: str, locations: gpd.GeoDataFrame | None, x_hours: int = 0, y_hours: int = 24) -> pd.DataFrame:
     """processed for gales within X to Y hours of the base time"""
-    pass
+    if locations is None:
+            locations = load_locations()
+            rows = []
+            df = load_best_track(disturbance_id)   
+    
+            table_b = generate_table_b(disturbance_id, locations)
+            table_b["Base time"] = pd.to_datetime(table_b["Base time"])
 
-def generate_table_d(disturbance_id: str, locations: gpd.GeoDataFrame | None) -> pd.DataFrame:
+            fcast_times = get_reference_times(disturbance_id)
+
+            rows = []
+            for fcast_time in fcast_times:
+                base_time = pd.to_datetime(fcast_time)
+                if base_time.tzinfo is not None:
+                    base_time = base_time.tz_localize(None)
+                start_window = base_time + pd.Timedelta(hours=x_hours)
+                end_window = base_time + pd.Timedelta(hours=y_hours)
+                window_df = table_b[
+                    (table_b["Base time"] >= start_window) & 
+                    (table_b["Base time"] <= end_window)
+                ]
+
+                for _, loc in locations.iterrows():
+                    loc_name = loc["name"]
+                    loc_subset = window_df[window_df["Location"] == loc_name]
+                    observed = bool((loc_subset["Distance to gale"]).any()) if not loc_subset.empty else False
+                    rows.append({
+                        "disturbance_id":disturbance_id,
+                        "Base time":base_time,
+                        "Locations": loc["Name"],
+                        "Observed": observed
+                    })
+    return pd.DataFrame(rows, columns = ["disturbance_id","Base time", "Locations", "Observed"])
+
+def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFrame:
+    
     """this is the base to build the contingency table for the given options."""
-    pass
+    merged_table = table_a.merge(table_c, on =["Disturbance ID", "Base time", "Location"], how="left")
+    merged_table["Forecast"] = merged_table["Watch"] | merged_table["Warning"]
+    merged_table["Observed"] = merged_table["Observed"].fillna(False)
+    
+    return merged_table[["Disturbance ID", "Base time", "Location", "Forecast", "Observed",]]
 
 
 # TESTING
