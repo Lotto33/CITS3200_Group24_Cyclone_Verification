@@ -302,24 +302,70 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFra
     return merged_table[["Disturbance ID", "Base time", "Location", "Forecast", "Observed",]]
 
 
+def generate_contingency_table(table_d: pd.DataFrame, **filters) -> pd.DataFrame:
+    """
+    Count hit / miss / false alarm / correct negative from Table D, with
+    optional column filters applied first (e.g. location="Carnarvon").
+    Also returns POD (probability of detection) and FAR (false alarm
+    ratio) -- see the earlier discussion on why these are NOT the same
+    "probability of gales given a warning" question.
+    """
+    # TODO CHECK FILTERING WORKS AS INTENDED
+    df = table_d.copy()
+
+    for key, value in filters.items():
+        if key in df.columns:
+            df = df[df[key] == value]
+
+    hit = int((df.Forecast & df.Observed).sum())
+    false_alarm = int((df.Forecast & ~df.Observed).sum())
+    miss = int((~df.Forecast & df.Observed).sum())
+    correct_negative = int((~df.Forecast & ~df.Observed).sum())
+    total = hit + false_alarm + miss + correct_negative
+    results =  {
+        "hit": hit,
+        "false alarm": false_alarm,
+        "miss": miss,
+        "correct negative": correct_negative,
+        "total": total
+    }
+    return pd.DataFrame([results])
+
+def get_contingency_matrix_df(stats: dict) -> pd.DataFrame:
+    """
+    Takes the dictionary from build_contingency_table and converts it into 
+    a formatted 2x2 Contingency Matrix with row/column totals.
+    """
+    matrix_df = pd.DataFrame(
+        data = [
+            [stats["hit"], stats["false alarm"], stats["hit"] + stats["false alarm"]],
+            [stats["miss"], stats["correct negative"], stats["miss"]+  stats["correct negative"]],
+            [stats["hit"] + stats["miss"], stats["false alarm"] + stats["correct negative"], stats["total"]],
+        ],
+        index = pd.MultiIndex.from_tuples([("Forecast", "Yes"), ("Forecast", "No"), ("Forecast", "Total")]),
+        columns = pd.MultiIndex.from_tuples([("Observed", "Yes"), ("Observed", "No"), ("Observed", "Total")])
+    )
+    return matrix_df
+
+def main():
 # TESTING
-if __name__ == "__main__":
-    raw = load_best_track("AU202526_34U")   # swap for a real disturbance ID from your CSV
-    print(len(raw), raw.TM.min(), raw.TM.max())
+    if __name__ == "__main__":
+        raw = load_best_track("AU202526_34U")   # swap for a real disturbance ID from your CSV
+        print(len(raw), raw.TM.min(), raw.TM.max())
 
-    interp = interpolate_best_track(raw)
-    print(interp[["TM", "LAT", "LON", "MAX_WIND_SPD"]].head(10))
+        interp = interpolate_best_track(raw)
+        print(interp[["TM", "LAT", "LON", "MAX_WIND_SPD"]].head(10))
 
-    # confirm a real observation survives interpolation exactly
-    real_row = raw[raw.TM == raw.TM.iloc[5]]
-    interp_row = interp[interp.TM == raw.TM.iloc[5]]
-    print(real_row[["LAT", "LON", "MAX_WIND_SPD"]])
-    print(interp_row[["LAT", "LON", "MAX_WIND_SPD"]])
+        # confirm a real observation survives interpolation exactly
+        real_row = raw[raw.TM == raw.TM.iloc[5]]
+        interp_row = interp[interp.TM == raw.TM.iloc[5]]
+        print(real_row[["LAT", "LON", "MAX_WIND_SPD"]])
+        print(interp_row[["LAT", "LON", "MAX_WIND_SPD"]])
 
-    # confirm nearest-fill on a synthetic case
-    test = pd.Series([10, None, None, None, 40], index=pd.date_range("2026-01-01", periods=5, freq="h"))
-    print(_nearest_observed_fill(test))
+        # confirm nearest-fill on a synthetic case
+        test = pd.Series([10, None, None, None, 40], index=pd.date_range("2026-01-01", periods=5, freq="h"))
+        print(_nearest_observed_fill(test))
 
-    # confirm the track GeoJSON is valid and roughly the right shape
-    geo = get_best_track_geojson("AU202526_34U")
-    print(geo["geometry"]["type"], len(geo["geometry"]["coordinates"]), "points")
+        # confirm the track GeoJSON is valid and roughly the right shape
+        geo = get_best_track_geojson("AU202526_34U")
+        print(geo["geometry"]["type"], len(geo["geometry"]["coordinates"]), "points")
