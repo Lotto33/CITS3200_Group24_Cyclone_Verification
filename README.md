@@ -103,3 +103,5 @@ independent of which bulletin is currently on screen.
   overlay (green, toggleable via the "Best track (post-event)" layer) is a
   separate line drawn from the CSV data described above, not a `trackType`
   value — cyclones with one are marked ★ in the cyclone dropdown.
+- `tcWindArea` polygons distinguish their `fixType`: **Current** areas are
+  red and **Forecast** areas are blue.
