@@ -105,11 +105,6 @@
   </div>
 
   <div class="field">
-    <label for="regionSelect">Region</label>
-    <select id="regionSelect"></select>
-  </div>
-
-  <div class="field">
     <label for="cycloneSelect">Cyclone / event (distId) — ★ has best track</label>
     <select id="cycloneSelect"></select>
   </div>
@@ -156,7 +151,7 @@
 
   <fieldset>
     <legend>Bulletin details</legend>
-    <div id="info">Select a region and cyclone to begin.</div>
+    <div id="info">Select a cyclone to begin.</div>
   </fieldset>
 
   <div id="status"></div>
@@ -184,7 +179,6 @@
   };
 
   const els = {
-    region: document.getElementById("regionSelect"),
     cyclone: document.getElementById("cycloneSelect"),
     slider: document.getElementById("bulletinSlider"),
     label: document.getElementById("bulletinLabel"),
@@ -225,6 +219,7 @@
   const bestTrackLayer = L.layerGroup().addTo(map);
 
   let index = null;
+  let cyclonesById = new Map();
   let currentBulletins = [];
   let currentBestTrack = null;
   let currentIdx = 0;
@@ -256,21 +251,39 @@
     index = await res.json();
     setStatus("");
 
-    const regions = Object.keys(index.regions).sort();
-    els.region.innerHTML = regions.map(r => `<option value="${r}">${r}</option>`).join("");
-    if (regions.length) {
-      els.region.value = regions[0];
-      populateCyclones();
-    }
+    populateCyclones();
   }
 
   function populateCyclones() {
-    const region = els.region.value;
-    const cyclones = (index.regions[region] || []);
-    els.cyclone.innerHTML = cyclones.map(c => {
+    cyclonesById = new Map();
+    Object.entries(index.regions || {}).forEach(([region, cyclones]) => {
+      cyclones.forEach(cyclone => {
+        const existing = cyclonesById.get(cyclone.distId) || {
+          ...cyclone,
+          regions: [],
+          bulletinCount: 0,
+          hasBestTrack: false,
+        };
+        existing.regions.push(region);
+        existing.bulletinCount += cyclone.bulletinCount || 0;
+        existing.hasBestTrack ||= Boolean(cyclone.hasBestTrack);
+        if (!existing.distName && cyclone.distName) existing.distName = cyclone.distName;
+        if (!existing.firstIssue || (cyclone.firstIssue && cyclone.firstIssue < existing.firstIssue)) {
+          existing.firstIssue = cyclone.firstIssue;
+        }
+        if (!existing.lastIssue || (cyclone.lastIssue && cyclone.lastIssue > existing.lastIssue)) {
+          existing.lastIssue = cyclone.lastIssue;
+        }
+        cyclonesById.set(cyclone.distId, existing);
+      });
+    });
+
+    const cyclones = Array.from(cyclonesById.values())
+      .sort((a, b) => (a.firstIssue || "").localeCompare(b.firstIssue || ""));
+    els.cyclone.replaceChildren(...cyclones.map(c => {
       const label = `${c.distName || c.distId} — ${c.distId} (${c.bulletinCount} bulletins, ${c.firstIssue ? c.firstIssue.slice(0,10) : "?"})${c.hasBestTrack ? " ★" : ""}`;
-      return `<option value="${c.distId}">${label}</option>`;
-    }).join("");
+      return new Option(label, c.distId);
+    }));
     if (cyclones.length) {
       els.cyclone.value = cyclones[0].distId;
       loadCyclone();
@@ -282,15 +295,23 @@
 
   async function loadCyclone() {
     stopPlay();
-    const region = els.region.value;
     const distId = els.cyclone.value;
     if (!distId) { currentBulletins = []; renderBulletin(); return; }
+    const cyclone = cyclonesById.get(distId);
+    const regions = cyclone ? cyclone.regions : [];
 
-    setStatus(`Loading ${region}/${distId}.json…`);
+    setStatus(`Loading ${distId} across ${regions.length} data source${regions.length === 1 ? "" : "s"}…`);
     try {
-      const res = await fetch(`viz_data/${region}/${distId}.json`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      currentBulletins = await res.json();
+      const results = await Promise.all(regions.map(async region => {
+        const path = `viz_data/${encodeURIComponent(region)}/${encodeURIComponent(distId)}.json`;
+        const res = await fetch(path);
+        if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+        return res.json();
+      }));
+      currentBulletins = results.flat().sort((a, b) =>
+        (a.issueTime || "").localeCompare(b.issueTime || "") ||
+        (a.source || "").localeCompare(b.source || "")
+      );
       setStatus("");
     } catch (err) {
       currentBulletins = [];
@@ -365,7 +386,7 @@
     const b = currentBulletins[currentIdx];
     if (!b) {
       els.label.textContent = "No bulletins available.";
-      els.info.textContent = "Select a region and cyclone to begin.";
+      els.info.textContent = "Select a cyclone to begin.";
       els.prev.disabled = els.next.disabled = true;
       drawBestTrack([]);
       return;
@@ -462,7 +483,6 @@
     }, 700);
   }
 
-  els.region.addEventListener("change", populateCyclones);
   els.cyclone.addEventListener("change", loadCyclone);
   els.slider.addEventListener("input", () => {
     stopPlay();
