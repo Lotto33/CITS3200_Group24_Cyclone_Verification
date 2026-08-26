@@ -457,20 +457,28 @@
         ? { ...baseStyle, color: windAreaColor, fillColor: windAreaColor }
         : baseStyle;
       if (!style || !els.layers[style.layerKey].checked) return;
-      const latlngPolys = area.polygons.map(rings => rings.map(toLatLngs));
-      const poly = L.polygon(latlngPolys, {
-        color: style.color, fillColor: style.fillColor,
-        fillOpacity: style.fillOpacity, weight: style.weight,
-      }).bindPopup(`
+      const popup = `
         <b>${area.kind}</b><br>
         ${area.areaType ? `Area type: ${area.areaType}<br>` : ""}
         ${area.extent ? `Extent: ${area.extent}<br>` : ""}
         ${area.windType ? `Wind type: ${area.windType}<br>` : ""}
         ${area.marineType ? `Marine type: ${area.marineType}<br>` : ""}
+        ${area.fixType ? `Fix type: ${area.fixType}<br>` : ""}
         ${area.fixTime ? `Fix time: ${fmtTime(area.fixTime)}` : ""}
-      `);
-      poly.addTo(bulletinLayer);
-      latlngPolys.forEach(rings => rings.forEach(ring => bounds.push(...ring)));
+      `;
+
+      // Keep each GML polygonMember independent. Warning/watch areas often
+      // contain many tiny island polygons; disabling Leaflet simplification
+      // prevents those members from collapsing away at lower zoom levels.
+      area.polygons.forEach(rings => {
+        const latlngRings = rings.map(toLatLngs);
+        L.polygon(latlngRings, {
+          color: style.color, fillColor: style.fillColor,
+          fillOpacity: style.fillOpacity, weight: style.weight,
+          smoothFactor: 0,
+        }).bindPopup(popup).addTo(bulletinLayer);
+        latlngRings.forEach(ring => bounds.push(...ring));
+      });
     });
 
     drawBestTrack(bounds);
