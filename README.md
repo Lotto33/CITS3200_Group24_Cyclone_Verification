@@ -17,10 +17,14 @@
 
 `data/NT_GMLs`, `data/QLD_GMLs`, `data/WA_GMLs` contain ~3,450 individual BOM
 `tcData` GML bulletins. Two self-contained map viewers (no build step, no
-framework) browse them interactively — pick a region, pick a cyclone/event,
-and step or play through its bulletins to see the track, position fixes,
+framework) browse them interactively — pick a cyclone/event and step or play
+through its bulletins to see the track, position fixes,
 and wind/forecast/warning/watch areas. Where available, the post-event
 **best track** (see below) is overlaid too.
+
+Cyclones are presented in one list rather than filtered by state. If an event
+appears in more than one regional BOM dataset, the viewer combines those
+bulletins into a single timeline.
 
 - `visualize.html` — built on [Leaflet](https://leafletjs.com/).
 - `visualize_ol.html` — the same viewer built on
@@ -99,3 +103,5 @@ independent of which bulletin is currently on screen.
   overlay (green, toggleable via the "Best track (post-event)" layer) is a
   separate line drawn from the CSV data described above, not a `trackType`
   value — cyclones with one are marked ★ in the cyclone dropdown.
+- `tcWindArea` polygons distinguish their `fixType`: **Current** areas are
+  red and **Forecast** areas are blue.
