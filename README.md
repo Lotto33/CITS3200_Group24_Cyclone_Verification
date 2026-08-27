@@ -58,8 +58,6 @@ cyclones typically won't have one yet. Cyclones with a match are flagged
 `"hasBestTrack": true` in `viz_data/index.json`. Pass `--best-track-csv ''`
 to skip this step, or `--best-track-csv <path>` to point at a different CSV.
 
-# **Warning:** This is a working but wrong conversion
-
 ### 2. Serve the page
 
 Browsers block `fetch()` of local files opened via `file://`, so serve the
@@ -93,9 +91,16 @@ independent of which bulletin is currently on screen.
 
 ### Notes
 
-- `convert_bom_gml_to_geojson.py` converts a single GML file's wind-area
-  polygons to a standalone GeoJSON file (e.g. for QGIS) — unrelated to the
-  bulk viewers above.
+- `backend/app/gml_to_geojson.py` converts every GML bulletin into an
+  individual `data/geojson/<source-file>.geojson` FeatureCollection for the
+  backend contingency-table logic. Run it from the repository root with
+  `python -m backend.app.gml_to_geojson`.
+- `convert_bom_gml_to_geojson.py` is a small single-file polygon preview tool
+  for QGIS and is not part of either bulk pipeline.
+- Keep `build_gml_dataset.py` for the browser viewers. It produces a different
+  schema (`viz_data/`) and also builds the browser index and best-track files;
+  it cannot be replaced by the GeoJSON converter without rewriting the
+  viewers.
 - `build_gml_dataset.py --data-dir data --out-dir viz_data` accepts custom
   input/output paths if needed.
 - In the viewers, GML `tcTrack` styling distinguishes the two `trackType`
