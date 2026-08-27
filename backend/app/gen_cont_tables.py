@@ -6,7 +6,9 @@ from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
 import geopandas as gpd
-from pyproj import geod
+from pyproj import Geod
+
+geod = Geod(ellps="WGS84")
 
 GEOJSON_DIR = Path("backend/data/geojson")
 BEST_TRACK_CSV = Path("backend/data/best_track.csv")
@@ -134,7 +136,7 @@ def _geojson_index() -> dict:
     
     Builds a lookup dict once by scanning data/geojson/ recursively (across
     WA/QLD/NT subfolders), reading just each file's metadata to key it by
-    disturbance ID and forecast issue time, without loading full feature data 
+    Disturbance ID and forecast issue time, without loading full feature data 
     until load_forecast_geojson() actually needs a specific file.\
     
     NOTE that logic in gml_to_geojson.py has to be run prior to this so that there are jeojson files for each cyclone"""
@@ -178,7 +180,8 @@ def generate_table_a(disturbance_id: str, locations: gpd.GeoDataFrame | None) ->
     if locations is None:
         locations = load_locations()
     rows = []
-    for fcast_time in get_reference_times(disturbance_id):
+    fcast_times = get_reference_times(disturbance_id)
+    for fcast_time in fcast_times:
         geo = load_forecast_geojson(disturbance_id,fcast_time)
         if geo is None:
             continue
@@ -202,14 +205,14 @@ def generate_table_a(disturbance_id: str, locations: gpd.GeoDataFrame | None) ->
         for _, loc in locations.iterrows():
             point = loc.geometry
             rows.append({
-                "disturbance_id":disturbance_id,
-                "Base time":fcast_time,
-                "Locations": loc["name"],
+                "Disturbance ID":disturbance_id,
+                "Base time":pd.to_datetime(fcast_time).tz_localize(None),
+                "Location": loc["name"],
                 "Watch": bool(watch_union is not None and watch_union.contains(point)),
                 "Warning": bool(warning_union is not None and warning_union.contains(point))
                 # contains() is strict — a location sitting exactly on a polygon's boundary line (vanishingly unlikely with real coordinates, but technically possible) would return False, not True. Not worth changing unless it actually comes up.
             })
-    return pd.DataFrame(rows, columns = ["disturbance_id","Base time", "locations", "Watch", "Warning"])
+    return pd.DataFrame(rows, columns = ["Disturbance ID","Base time", "Location", "Watch", "Warning"])
 
 def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None, step_minutes: int = 15) -> pd.DataFrame:
     """
@@ -219,78 +222,81 @@ def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None, st
 
     if locations is None:
         locations = load_locations()
-        rows = []
-        df = load_best_track(disturbance_id)   
-        interp_df = interpolate_best_track(df, step_minutes=step_minutes)
 
-        for _, step in interp_df.iterrows():
-            cyc_lat, cyc_lon = step['LAT'], step['LON']
-            if pd.isna(cyc_lat) or pd.isna(cyc_lon):
-                continue
+    rows = []
+    df = load_best_track(disturbance_id)   
+    interp_df = interpolate_best_track(df, step_minutes=step_minutes)
 
-            for _, loc in locations.iterrows():
-                loc_lat, loc_lon = loc.geometry.y, loc.geometry.x
-                dist_center_km = calculate_geodesic_distance_km(cyc_lat, cyc_lon, loc_lat, loc_lon)
-                
-                bearing = get_bearing(cyc_lat, cyc_lon, loc_lat, loc_lon)
+    for _, step in interp_df.iterrows():
+        cyc_lat, cyc_lon = step['LAT'], step['LON']
+        if pd.isna(cyc_lat) or pd.isna(cyc_lon):
+            continue
 
-                # TODO CHECK IS THIS CORRECT BELOW THESE NEXT SEVEN LINES
-                gale_radius_km = get_quadrant_radius(step, "MN_RADIUS_GF", bearing) 
-                storm_radius_km = get_quadrant_radius(step, "MN_RADIUS_SF", bearing) 
-                hurricane_radius_km = get_quadrant_radius(step, "MN_RADIUS_HF", bearing) 
-
-                
-                dist_gale_km = dist_center_km - gale_radius_km
-                dist_storm_km = dist_center_km - storm_radius_km
-                dist_hurricane_km = dist_center_km - hurricane_radius_km
-                
-                rows.append({
-                    "disturbance_id":disturbance_id,
-                    "Base time":step["TM"],
-                    "Locations": loc["name"],
-                    "Uncertainty": step.get("POSITION_UNCERTAINTY", np.nan),
-                    "Distance to gale": dist_gale_km,
-                    "Distance to storm": dist_storm_km,
-                    "Distance to hurricane": dist_hurricane_km,
-                })
+        for _, loc in locations.iterrows():
+            loc_lat, loc_lon = loc.geometry.y, loc.geometry.x
+            dist_center_km = calculate_geodesic_distance_km(cyc_lat, cyc_lon, loc_lat, loc_lon)
             
-    return pd.DataFrame(rows, columns = ["disturbance_id","Base time", "Locations", "Uncertainty", "Distance to gale", "Distance to storm", "Distance to hurricane"])
+            bearing = get_bearing(cyc_lat, cyc_lon, loc_lat, loc_lon)
+
+            # TODO CHECK IS THIS CORRECT BELOW THESE NEXT SEVEN LINES
+            gale_radius_km = get_quadrant_radius(step, "MN_RADIUS_GF", bearing) 
+            storm_radius_km = get_quadrant_radius(step, "MN_RADIUS_SF", bearing) 
+            hurricane_radius_km = get_quadrant_radius(step, "MN_RADIUS_HF", bearing) 
+
+            
+            dist_gale_km = dist_center_km - gale_radius_km
+            dist_storm_km = dist_center_km - storm_radius_km
+            dist_hurricane_km = dist_center_km - hurricane_radius_km
+            
+            rows.append({
+                "Disturbance ID":disturbance_id,
+                "Base time":step["TM"],
+                "Location": loc["name"],
+                "Uncertainty": step.get("POSITION_UNCERTAINTY", np.nan),
+                "Distance to gale": dist_gale_km,
+                "Distance to storm": dist_storm_km,
+                "Distance to hurricane": dist_hurricane_km,
+            })
+        
+    return pd.DataFrame(rows, columns = ["Disturbance ID","Base time", "Location", "Uncertainty", "Distance to gale", "Distance to storm", "Distance to hurricane"])
 
 def generate_table_c(disturbance_id: str, locations: gpd.GeoDataFrame | None, x_hours: int = 0, y_hours: int = 24) -> pd.DataFrame:
     """processed for gales within X to Y hours of the base time"""
     if locations is None:
-            locations = load_locations()
-            rows = []
-            df = load_best_track(disturbance_id)   
-    
-            table_b = generate_table_b(disturbance_id, locations)
-            table_b["Base time"] = pd.to_datetime(table_b["Base time"])
+        locations = load_locations()
+    rows = []
+    df = load_best_track(disturbance_id)   
 
-            fcast_times = get_reference_times(disturbance_id)
+    table_b = generate_table_b(disturbance_id, locations)
+    if table_b.empty:
+        return pd.DataFrame(columns=["Disturbance ID", "Base time", "Location", "Observed"])
+    table_b["Base time"] = pd.to_datetime(table_b["Base time"]).dt.tz_localize(None)
 
-            rows = []
-            for fcast_time in fcast_times:
-                base_time = pd.to_datetime(fcast_time)
-                if base_time.tzinfo is not None:
-                    base_time = base_time.tz_localize(None)
-                start_window = base_time + pd.Timedelta(hours=x_hours)
-                end_window = base_time + pd.Timedelta(hours=y_hours)
-                window_df = table_b[
-                    (table_b["Base time"] >= start_window) & 
-                    (table_b["Base time"] <= end_window)
-                ]
+    fcast_times = get_reference_times(disturbance_id)
 
-                for _, loc in locations.iterrows():
-                    loc_name = loc["name"]
-                    loc_subset = window_df[window_df["Location"] == loc_name]
-                    observed = bool((loc_subset["Distance to gale"]).any()) if not loc_subset.empty else False
-                    rows.append({
-                        "disturbance_id":disturbance_id,
-                        "Base time":base_time,
-                        "Locations": loc["Name"],
-                        "Observed": observed
-                    })
-    return pd.DataFrame(rows, columns = ["disturbance_id","Base time", "Locations", "Observed"])
+    rows = []
+    for fcast_time in fcast_times:
+        base_time = pd.to_datetime(fcast_time)
+        if base_time.tzinfo is not None:
+            base_time = base_time.tz_localize(None)
+        start_window = base_time + pd.Timedelta(hours=x_hours)
+        end_window = base_time + pd.Timedelta(hours=y_hours)
+        window_df = table_b[
+            (table_b["Base time"] >= start_window) & 
+            (table_b["Base time"] <= end_window)
+        ]
+
+        for _, loc in locations.iterrows():
+            loc_name = loc["name"]
+            loc_subset = window_df[window_df["Location"] == loc_name]
+            observed = bool((loc_subset["Distance to gale"] <= 0).any()) if not loc_subset.empty else False
+            rows.append({
+                "Disturbance ID":disturbance_id,
+                "Base time":base_time,
+                "Location": loc["name"],
+                "Observed": observed
+            })
+    return pd.DataFrame(rows, columns = ["Disturbance ID","Base time", "Location", "Observed"])
 
 def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFrame:
     
@@ -299,10 +305,10 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFra
     merged_table["Forecast"] = merged_table["Watch"] | merged_table["Warning"]
     merged_table["Observed"] = merged_table["Observed"].fillna(False)
     
-    return merged_table[["Disturbance ID", "Base time", "Location", "Forecast", "Observed",]]
+    return merged_table[["Disturbance ID", "Base time", "Location", "Forecast", "Observed"]]
 
 
-def generate_contingency_table(table_d: pd.DataFrame, **filters) -> pd.DataFrame:
+def generate_contingency_dict(table_d: pd.DataFrame, **filters) -> dict:
     """
     Count hit / miss / false alarm / correct negative from Table D, with
     optional column filters applied first (e.g. location="Carnarvon").
@@ -329,7 +335,7 @@ def generate_contingency_table(table_d: pd.DataFrame, **filters) -> pd.DataFrame
         "correct negative": correct_negative,
         "total": total
     }
-    return pd.DataFrame([results])
+    return results
 
 def get_contingency_matrix_df(stats: dict) -> pd.DataFrame:
     """
@@ -347,25 +353,9 @@ def get_contingency_matrix_df(stats: dict) -> pd.DataFrame:
     )
     return matrix_df
 
-def main():
-# TESTING
-    if __name__ == "__main__":
-        raw = load_best_track("AU202526_34U")   # swap for a real disturbance ID from your CSV
+if __name__ == "__main__":
+    raw = load_best_track("AU202526_34U")
+    if not raw.empty:
         print(len(raw), raw.TM.min(), raw.TM.max())
-
         interp = interpolate_best_track(raw)
         print(interp[["TM", "LAT", "LON", "MAX_WIND_SPD"]].head(10))
-
-        # confirm a real observation survives interpolation exactly
-        real_row = raw[raw.TM == raw.TM.iloc[5]]
-        interp_row = interp[interp.TM == raw.TM.iloc[5]]
-        print(real_row[["LAT", "LON", "MAX_WIND_SPD"]])
-        print(interp_row[["LAT", "LON", "MAX_WIND_SPD"]])
-
-        # confirm nearest-fill on a synthetic case
-        test = pd.Series([10, None, None, None, 40], index=pd.date_range("2026-01-01", periods=5, freq="h"))
-        print(_nearest_observed_fill(test))
-
-        # confirm the track GeoJSON is valid and roughly the right shape
-        geo = get_best_track_geojson("AU202526_34U")
-        print(geo["geometry"]["type"], len(geo["geometry"]["coordinates"]), "points")
