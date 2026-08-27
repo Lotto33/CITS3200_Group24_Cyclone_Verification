@@ -586,17 +586,30 @@ def run_conversion(data_dir: str | Path, output_dir: str | Path | None = None) -
     if not gml_src.is_dir():
         raise SystemExit(f"Expected a directory containing GML state folders: {gml_src}")
 
+    gml_files = iter_gml_files(gml_src)
+    if not gml_files:
+        raise SystemExit(f"No .gml files found in {gml_src}")
+
+    print(f"Starting GML to GeoJSON conversion")
+    print(f"Input: {gml_src}")
+    print(f"Output: {geojson_root}")
+    print(f"Found {len(gml_files)} GML bulletin(s)")
+
     outputs = []
-    for gml_file in iter_gml_files(gml_src):
+    failures = 0
+    for position, gml_file in enumerate(gml_files, start=1):
         try:
             output_path = get_geojson_dest(gml_file, geojson_root)
             outputs.append(convert_file(gml_file, output_path))
         except Exception as exc:  # pragma: no cover - robustness for batch runs
+            failures += 1
             print(f"Failed to convert {gml_file}: {exc}", file=sys.stderr)
 
+        if position == 1 or position % 100 == 0 or position == len(gml_files):
+            print(f"Progress: {position}/{len(gml_files)} ({position / len(gml_files):.0%})", flush=True)
+
     geojson_root.mkdir(parents=True, exist_ok=True)
-    if outputs:
-        print(f"Converted {len(outputs)} GML bulletin(s)")
+    print(f"Finished: {len(outputs)} converted, {failures} failed", flush=True)
 
     return outputs
 
