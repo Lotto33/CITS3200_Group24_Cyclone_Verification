@@ -10,9 +10,10 @@ from pyproj import Geod
 
 geod = Geod(ellps="WGS84")
 
-GEOJSON_DIR = Path("backend/data/geojson")
-BEST_TRACK_CSV = Path("backend/data/best_track.csv")
-TOWNS_XLSX = Path("backend/data/towns.xlsx")   # NOTE FINALISE THIS PATH
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+GEOJSON_DIR = PROJECT_ROOT / "data" / "geojson"
+BEST_TRACK_CSV = PROJECT_ROOT / "data" / "best_track.csv"
+TOWNS_XLSX = PROJECT_ROOT / "data" / "towns.xlsx"   # NOTE FINALISE THIS PATH
 BEST_TRACK_SKIPROWS = 4  # 3 copyright lines + 1 blank before the header
 
 # Columns that interpolate normally (continuous quantities)
