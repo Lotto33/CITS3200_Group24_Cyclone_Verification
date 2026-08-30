@@ -1,12 +1,14 @@
-from pathlib import Path
-import pandas as pd
+import argparse
 import json
+from pathlib import Path
+
+import geopandas as gpd
 import numpy as np
+import pandas as pd
+from pyproj import Geod
 from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
-import geopandas as gpd
-from pyproj import Geod
 
 geod = Geod(ellps="WGS84")
 
@@ -354,9 +356,63 @@ def get_contingency_matrix_df(stats: dict) -> pd.DataFrame:
     )
     return matrix_df
 
+def generate_all_tables_for_disturbance(disturbance_id: str, output_dir: str | Path | None = None, x_hours: int = 0, y_hours: int = 24) -> dict[str, pd.DataFrame | dict]:
+    """Generate Tables A-D and the final contingency summary for one disturbance ID."""
+    locations = load_locations()
+    table_a = generate_table_a(disturbance_id, locations)
+    table_b = generate_table_b(disturbance_id, locations)
+    table_c = generate_table_c(disturbance_id, locations, x_hours=x_hours, y_hours=y_hours)
+    table_d = generate_table_d(table_a, table_c)
+    stats = generate_contingency_dict(table_d)
+    matrix = get_contingency_matrix_df(stats)
+
+    outputs = {
+        "table_a": table_a,
+        "table_b": table_b,
+        "table_c": table_c,
+        "table_d": table_d,
+        "stats": stats,
+        "matrix": matrix,
+    }
+
+    if output_dir is not None:
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for name, frame in (
+            ("table_a", table_a),
+            ("table_b", table_b),
+            ("table_c", table_c),
+            ("table_d", table_d),
+            ("contingency_matrix", matrix.reset_index()),
+        ):
+            frame.to_csv(out_dir / f"{disturbance_id}_{name}.csv", index=False)
+
+        pd.DataFrame([stats]).to_csv(out_dir / f"{disturbance_id}_contingency_summary.csv", index=False)
+
+    return outputs
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate contingency tables and summary CSVs for a cyclone disturbance ID.")
+    parser.add_argument("disturbance_id", help="BOM disturbance ID, for example AU202526_34U")
+    parser.add_argument("--output-dir", default="data/contingency_tables", help="Directory to write the generated CSV tables to")
+    parser.add_argument("--x-hours", type=int, default=0, help="Lower bound for observed-gale window in hours")
+    parser.add_argument("--y-hours", type=int, default=24, help="Upper bound for observed-gale window in hours")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    raw = load_best_track("AU202526_34U")
-    if not raw.empty:
-        print(len(raw), raw.TM.min(), raw.TM.max())
-        interp = interpolate_best_track(raw)
-        print(interp[["TM", "LAT", "LON", "MAX_WIND_SPD"]].head(10))
+    args = _parse_args()
+    try:
+        outputs = generate_all_tables_for_disturbance(
+            args.disturbance_id,
+            output_dir=args.output_dir,
+            x_hours=args.x_hours,
+            y_hours=args.y_hours,
+        )
+        print(f"Generated contingency tables for {args.disturbance_id}")
+        print(outputs["stats"])
+        print("\nContingency matrix:")
+        print(outputs["matrix"])
+    except Exception as exc:  # pragma: no cover - CLI safety path
+        raise SystemExit(f"Failed to generate contingency tables for {args.disturbance_id}: {exc}")

@@ -1,0 +1,43 @@
+import pandas as pd
+
+from backend.app.gen_cont_tables import generate_contingency_dict, generate_table_d
+
+
+def test_generate_contingency_dict_counts_expected_cells():
+    table_d = pd.DataFrame(
+        [
+            {"Disturbance ID": "TEST1", "Base time": pd.Timestamp("2024-01-01 00:00:00"), "Location": "A", "Forecast": True, "Observed": True},
+            {"Disturbance ID": "TEST1", "Base time": pd.Timestamp("2024-01-01 00:00:00"), "Location": "B", "Forecast": True, "Observed": False},
+            {"Disturbance ID": "TEST1", "Base time": pd.Timestamp("2024-01-01 00:00:00"), "Location": "C", "Forecast": False, "Observed": True},
+            {"Disturbance ID": "TEST1", "Base time": pd.Timestamp("2024-01-01 00:00:00"), "Location": "D", "Forecast": False, "Observed": False},
+        ]
+    )
+
+    stats = generate_contingency_dict(table_d)
+
+    assert stats["hit"] == 1
+    assert stats["false alarm"] == 1
+    assert stats["miss"] == 1
+    assert stats["correct negative"] == 1
+    assert stats["total"] == 4
+
+
+def test_generate_table_d_merges_forecast_and_observed_columns():
+    table_a = pd.DataFrame(
+        [
+            {"Disturbance ID": "TEST1", "Base time": pd.Timestamp("2024-01-01 00:00:00"), "Location": "A", "Watch": True, "Warning": False},
+            {"Disturbance ID": "TEST1", "Base time": pd.Timestamp("2024-01-01 00:00:00"), "Location": "B", "Watch": False, "Warning": False},
+        ]
+    )
+    table_c = pd.DataFrame(
+        [
+            {"Disturbance ID": "TEST1", "Base time": pd.Timestamp("2024-01-01 00:00:00"), "Location": "A", "Observed": True},
+            {"Disturbance ID": "TEST1", "Base time": pd.Timestamp("2024-01-01 00:00:00"), "Location": "B", "Observed": False},
+        ]
+    )
+
+    table_d = generate_table_d(table_a, table_c)
+
+    assert list(table_d.columns) == ["Disturbance ID", "Base time", "Location", "Forecast", "Observed"]
+    assert table_d["Forecast"].tolist() == [True, False]
+    assert table_d["Observed"].tolist() == [True, False]
