@@ -254,8 +254,8 @@
 
   async function loadIndex() {
     setStatus("Loading index…");
-    const res = await fetch("viz_data/index.json");
-    if (!res.ok) throw new Error(`Failed to load viz_data/index.json (${res.status})`);
+    const res = await fetch("data/index.json");
+    if (!res.ok) throw new Error(`Failed to load data/index.json (${res.status})`);
     index = await res.json();
     setStatus("");
 
@@ -311,7 +311,7 @@
     setStatus(`Loading ${distId} across ${regions.length} data source${regions.length === 1 ? "" : "s"}…`);
     try {
       const results = await Promise.all(regions.map(async region => {
-        const path = `viz_data/${encodeURIComponent(region)}/${encodeURIComponent(distId)}.json`;
+        const path = `data/${encodeURIComponent(region)}/${encodeURIComponent(distId)}.json`;
         const res = await fetch(path);
         if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
         return res.json();
@@ -330,7 +330,7 @@
     // Not every cyclone has one, so a missing file (404) is expected, not an error.
     currentBestTrack = null;
     try {
-      const btRes = await fetch(`viz_data/best_track/${distId}.json`);
+      const btRes = await fetch(`data/best_track/${distId}.json`);
       if (btRes.ok) currentBestTrack = await btRes.json();
     } catch (err) {
       currentBestTrack = null;

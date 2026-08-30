@@ -3,7 +3,9 @@ import json
 import xml.etree.ElementTree as ET
 import sys
 
-# Paths are relative to the repository root when this module is run from there.
+# Default locations are relative to the repo root.
+# The source GML files live under data/<REGION>_GMLs and the generated
+# GeoJSON files are written under data/geojson.
 DEFAULT_GML_INPUT_PATH = "data"
 DEFAULT_GEOJSON_OUTPUT_PATH = "data/geojson"
 
@@ -53,9 +55,8 @@ def get_gml_identifier(gml_file: Path) -> str:
 
 
 def get_geojson_dest(gml_file: Path, output_dir: Path) -> Path:
-    # A cyclone has many bulletins, so a cyclone identifier is not unique
-    # enough for a filename. The source GML stem is unique in the BOM data.
-    return output_dir / f"{gml_file.stem}.geojson"
+    identifier = get_gml_identifier(gml_file)
+    return output_dir / f"{identifier}.geojson"
 
 
 def get_distid_dataset_path(dist_id: str, output_dir: Path) -> Path:
@@ -573,12 +574,11 @@ def collect_bbox(features):
     return [min(lons), min(lats), max(lons), max(lats)]
 
 def run_conversion(data_dir: str | Path, output_dir: str | Path | None = None) -> list[Path]:
-    """Convert every GML bulletin under ``data_dir`` to one GeoJSON file.
+    """Convert every GML bulletin under data_dir into one dataset file per distId.
 
-    Files are named after their source GML bulletin and can therefore be
-    indexed by the backend using ``metadata.distId`` and
-    ``metadata.fcastTime``. The browser's ``viz_data`` build remains a
-    separate pipeline because it uses a different JSON schema.
+    Each file contains a JSON list of the bulletin FeatureCollections for that
+    cyclone, preserving the historical time series instead of overwriting
+    previous updates for the same distId.
     """
     gml_src = Path(data_dir).expanduser().resolve()
     geojson_root = Path(output_dir).expanduser().resolve() if output_dir is not None else (gml_src / "geojson")
@@ -586,35 +586,67 @@ def run_conversion(data_dir: str | Path, output_dir: str | Path | None = None) -
     if not gml_src.is_dir():
         raise SystemExit(f"Expected a directory containing GML state folders: {gml_src}")
 
-    gml_files = iter_gml_files(gml_src)
-    if not gml_files:
-        raise SystemExit(f"No .gml files found in {gml_src}")
-
-    print(f"Starting GML to GeoJSON conversion")
-    print(f"Input: {gml_src}")
-    print(f"Output: {geojson_root}")
-    print(f"Found {len(gml_files)} GML bulletin(s)")
-
-    outputs = []
-    failures = 0
-    for position, gml_file in enumerate(gml_files, start=1):
+    grouped: dict[str, list[dict]] = {}
+    for gml_file in iter_gml_files(gml_src):
         try:
-            output_path = get_geojson_dest(gml_file, geojson_root)
-            outputs.append(convert_file(gml_file, output_path))
+            tree = ET.parse(str(gml_file))
+            root = tree.getroot()
+            root.set("sourceFile", gml_file.name)
+            feature_collection = build_feature_collection(root)
+            dist_id = (feature_collection.get("metadata") or {}).get("distId") or gml_file.stem
+            grouped.setdefault(dist_id, []).append(feature_collection)
         except Exception as exc:  # pragma: no cover - robustness for batch runs
-            failures += 1
             print(f"Failed to convert {gml_file}: {exc}", file=sys.stderr)
 
-        if position == 1 or position % 100 == 0 or position == len(gml_files):
-            print(f"Progress: {position}/{len(gml_files)} ({position / len(gml_files):.0%})", flush=True)
-
+    outputs = []
     geojson_root.mkdir(parents=True, exist_ok=True)
-    print(f"Finished: {len(outputs)} converted, {failures} failed", flush=True)
+    for dist_id, feature_collections in grouped.items():
+        output_path = get_distid_dataset_path(dist_id, geojson_root)
+        with output_path.open("w", encoding="utf-8") as handle:
+            json.dump(feature_collections, handle, indent=2)
+        outputs.append(output_path)
+
+    if outputs:
+        print(f"Converted {len(outputs)} distId dataset(s)")
 
     return outputs
 
 def main() -> None:
-    run_conversion(DEFAULT_GML_INPUT_PATH, DEFAULT_GEOJSON_OUTPUT_PATH)
+    #NOTE: PATH YET TO BE FINALISED.
+    # It should point to the root folder containing the state-wide GML folders.
+    gml_src = Path(DEFAULT_GML_INPUT_PATH).expanduser().resolve()
+    geojson_root = Path(DEFAULT_GEOJSON_OUTPUT_PATH).expanduser().resolve() if DEFAULT_GEOJSON_OUTPUT_PATH is not None else (gml_src / "geojson")
+
+    if not gml_src.is_dir():
+        raise SystemExit(f"Expected a directory containing state folders: {gml_src}")
+
+    # Recursively gets all GML files across the state folders.
+    gml_files = iter_gml_files(gml_src)
+    if not gml_files:
+        raise SystemExit(f"No .gml files found in {gml_src}")
+
+    outputs = []
+    grouped: dict[str, list[dict]] = {}
+    for gml_file in gml_files:
+        try:
+            tree = ET.parse(str(gml_file))
+            root = tree.getroot()
+            root.set("sourceFile", gml_file.name)
+            feature_collection = build_feature_collection(root)
+            dist_id = (feature_collection.get("metadata") or {}).get("distId") or gml_file.stem
+            grouped.setdefault(dist_id, []).append(feature_collection)
+        except Exception as exc:  # pragma: no cover - robustness for batch runs
+            print(f"Failed to convert {gml_file}: {exc}", file=sys.stderr)
+
+    geojson_root.mkdir(parents=True, exist_ok=True)
+    for dist_id, feature_collections in grouped.items():
+        output_path = get_distid_dataset_path(dist_id, geojson_root)
+        with output_path.open("w", encoding="utf-8") as handle:
+            json.dump(feature_collections, handle, indent=2)
+        outputs.append(output_path)
+
+    if outputs:
+        print(f"Converted {len(outputs)} distId dataset(s)")
 
 
 if __name__ == "__main__":

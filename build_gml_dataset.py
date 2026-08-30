@@ -253,10 +253,10 @@ def build(data_dir, out_dir, best_track_csv=None):
 
     region_dirs = sorted(
         d for d in os.listdir(data_dir)
-        if os.path.isdir(os.path.join(data_dir, d))
+        if os.path.isdir(os.path.join(data_dir, d)) and d.endswith("_GMLs")
     )
     if not region_dirs:
-        raise SystemExit(f"Error: no region subdirectories found under {data_dir}")
+        raise SystemExit(f"Error: no region subdirectories found under {data_dir} (expected *_GMLs folders)")
 
     os.makedirs(out_dir, exist_ok=True)
     index = {"regions": {}}
@@ -340,12 +340,12 @@ def main():
                      "used by visualize.html / visualize_ol.html."
     )
     parser.add_argument("--data-dir", default="data", help="Input directory containing <REGION>_GMLs/ subfolders (default: data)")
-    parser.add_argument("--out-dir", default="viz_data", help="Output directory for the built dataset (default: viz_data)")
+    parser.add_argument("--out-dir", default="data", help="Output directory for the built dataset (default: data)")
     parser.add_argument(
         "--best-track-csv",
-        default="data/Database of Past tropical cyclone tracks.csv",
+        default="data/best_track.csv",
         help="Path to the BOM past-tropical-cyclone-tracks CSV (best track / "
-             "post-event reanalysis) used to build viz_data/best_track/. "
+             "post-event reanalysis) used to build data/best_track/. "
              "Pass '' to skip.",
     )
     args = parser.parse_args()
