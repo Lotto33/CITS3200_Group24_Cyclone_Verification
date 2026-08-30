@@ -183,6 +183,13 @@ def parse_bulletin(path):
     }
 
 
+def is_significant_bulletin(bulletin):
+    """Only keep cyclones that have at least one watch or warning area."""
+    if not isinstance(bulletin, dict):
+        return False
+    return any(area.get("kind") in {"tcWarningArea", "tcWatchArea"} for area in bulletin.get("areas", []))
+
+
 def parse_float(text):
     if text is None:
         return None
@@ -291,11 +298,17 @@ def build(data_dir, out_dir, best_track_csv=None):
             dist_id = bulletin["distId"] or "UNKNOWN"
             by_dist_id.setdefault(dist_id, []).append(bulletin)
 
+        significant_by_dist_id = {
+            dist_id: bulletins
+            for dist_id, bulletins in by_dist_id.items()
+            if any(is_significant_bulletin(b) for b in bulletins)
+        }
+
         region_out_dir = os.path.join(out_dir, region)
         os.makedirs(region_out_dir, exist_ok=True)
 
         cyclone_entries = []
-        for dist_id, bulletins in sorted(by_dist_id.items()):
+        for dist_id, bulletins in sorted(significant_by_dist_id.items()):
             bulletins.sort(key=lambda b: b["issueTime"] or "")
             out_path = os.path.join(region_out_dir, f"{dist_id}.json")
             with open(out_path, "w", encoding="utf-8") as f:
@@ -313,7 +326,7 @@ def build(data_dir, out_dir, best_track_csv=None):
 
         cyclone_entries.sort(key=lambda c: c["firstIssue"] or "")
         index["regions"][region] = cyclone_entries
-        print(f"{region}: {len(gml_files)} files -> {len(cyclone_entries)} cyclones")
+        print(f"{region}: {len(gml_files)} files -> {len(cyclone_entries)} significant cyclones")
 
     with open(os.path.join(out_dir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2)
