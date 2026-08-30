@@ -92,7 +92,7 @@ def load_locations() -> gpd.GeoDataFrame:
     Real BOM locations list. Latitude/Longitude are plain WGS84 degrees
     already -- no reprojection needed, unlike the earlier GIS towns layer.
     """
-    df = pd.read_excel(TOWNS_XLSX)
+    df = pd.read_excel(TOWNS_XLSX, sheet_name="TC Locations")
     return gpd.GeoDataFrame(
         {"name": df["Name"], "state": df["State"]},
         geometry=gpd.points_from_xy(df["Longitude"], df["Latitude"]),
