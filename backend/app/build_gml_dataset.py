@@ -1,60 +1,51 @@
 #!/usr/bin/env python3
-"""Build the viz_data/ dataset consumed by visualize.html (and visualize_ol.html).
+"""Build the viz dataset (for visualize.html) AND data/geojson/ (for
+gen_cont_tables.py) from the same set of BOM tcData GML bulletins, in one
+pass. Reuses gml_to_geojson.py's build_feature_collection() for the GeoJSON
+side, so there is only one place that turns GML into geometry -- this script
+does not duplicate that logic.
 
 Parses every BOM tcData GML bulletin under data/<REGION>_GMLs/*.gml once and
-writes:
+writes (all under data/ by default -- see --out-dir):
 
-  viz_data/index.json
+  data/index.json
       { "regions": { "<REGION>": [ {distId, distName, bulletinCount,
-                                     firstIssue, lastIssue}, ... ] } }
+                                     firstIssue, lastIssue, hasBestTrack}, ... ] } }
 
-  viz_data/<REGION>/<distId>.json
-      A list of bulletin objects (one per source GML file for that cyclone),
-      sorted by issue time, each shaped as:
+  data/<REGION>/<distId>.json
+      A list of bulletin objects (one per source GML file for that cyclone,
+      only for cyclones with at least one watch/warning area), shaped as
+      before: {distId, distName, source, fcastTime, issueTime, expiryHrs,
+      bounds, tracks, fixes, areas}. Unchanged -- visualize.html keeps working.
 
-      {
-        "distId": str, "distName": str, "source": str (source filename),
-        "fcastTime": str, "issueTime": str, "expiryHrs": str,
-        "bounds": [[minLon, minLat], [maxLon, maxLat]] | null,
-        "tracks": [ {"coords": [[lon, lat], ...], "trackType": str,
-                     "startTime": str, "endTime": str}, ... ],
-        "fixes":  [ {"coord": [lon, lat], "fixType": str, "fixTime": str,
-                     "symbol": str, "category": str, "timeOffset": str}, ... ],
-        "areas":  [ {"kind": "tcWindArea"|"tcForecastArea"|"tcWarningArea"|
-                             "tcWatchArea",
-                     "polygons": [ [ring, ...], ... ],  # ring = [[lon,lat],...]
-                     "areaType": str, "extent": str, "windType": str,
-                     "marineType": str, "fixType": str, "fixTime": str}, ... ]
-      }
+  data/geojson/<distId>/<sanitized fcastTime>.geojson
+      One GeoJSON FeatureCollection per bulletin (every bulletin, not just
+      "significant" ones -- gen_cont_tables.py needs the full forecast
+      history to build Table A). Shaped as:
+      {"type": "FeatureCollection", "metadata": {distId, fcastTime, ...},
+       "features": [{"type": "Feature", "properties": {...}, "geometry": {...}}]}
+      This is exactly what gen_cont_tables.py's _geojson_index() /
+      load_forecast_geojson() already expect -- no changes needed there.
 
-  viz_data/best_track/<distId>.json
+  data/best_track/<distId>.json
       Present only when the BOM "past tropical cyclone tracks" CSV (best
-      track / post-event reanalysis) has rows for that distId. Shaped as:
-
-      {
-        "distId": str, "name": str,
-        "points": [ {"time": str, "coord": [lon, lat],
-                     "pressure": float | null, "windSpeed": float | null}, ... ]
-      }
-      points are sorted by time. This is independent of region/bulletins —
-      it's one fixed post-event track per cyclone, not per-bulletin data.
-
-Every polygon is kept as a list of rings so holes (gml:innerBoundaryIs) are
-preserved alongside the outer boundary (gml:outerBoundaryIs); this matches
-how visualize.html feeds L.polygon (outer ring first, holes after).
+      track / post-event reanalysis) has rows for that distId. Unchanged.
 
 Usage:
     python build_gml_dataset.py
-    python build_gml_dataset.py --data-dir data --out-dir viz_data
-    python build_gml_dataset.py --best-track-csv "data/Database of Past tropical cyclone tracks.csv"
+    python build_gml_dataset.py --data-dir data --out-dir data --geojson-out-dir data/geojson
+    python build_gml_dataset.py --best-track-csv "data/best_track.csv"
 """
 
 import argparse
 import csv
 import json
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
+
+import gml_to_geojson
 
 NAMESPACES = {
     "tc": "http://www.bom.gov.au/dtd/tc",
@@ -63,6 +54,8 @@ NAMESPACES = {
 
 AREA_TAGS = ["tcWindArea", "tcForecastArea", "tcWarningArea", "tcWatchArea"]
 
+_INVALID_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]")
+
 
 def text_of(parent, tag):
     el = parent.find(f"tc:{tag}", NAMESPACES)
@@ -70,8 +63,6 @@ def text_of(parent, tag):
 
 
 def parse_coord_list(text):
-    """Parse a gml:coordinates blob (whitespace/newline-separated 'lon,lat'
-    pairs) into [[lon, lat], ...]."""
     if not text:
         return []
     coords = []
@@ -114,8 +105,6 @@ def parse_fix(fix_el):
 
 
 def parse_polygon(polygon_el):
-    """Return one polygon as a list of rings; outer ring first, then any
-    holes (gml:innerBoundaryIs)."""
     rings = []
     outer = polygon_el.find("gml:outerBoundaryIs/gml:LinearRing/gml:coordinates", NAMESPACES)
     if outer is not None:
@@ -147,9 +136,8 @@ def parse_bounds(root):
     box = root.find("gml:boundedBy/gml:Box", NAMESPACES)
     if box is None:
         return None
-    coords = box.findall("gml:coord", NAMESPACES)
     points = []
-    for coord in coords:
+    for coord in box.findall("gml:coord", NAMESPACES):
         x_el = coord.find("gml:X", NAMESPACES)
         y_el = coord.find("gml:Y", NAMESPACES)
         if x_el is None or y_el is None or x_el.text is None or y_el.text is None:
@@ -158,21 +146,19 @@ def parse_bounds(root):
     return points or None
 
 
-def parse_bulletin(path):
-    root = ET.parse(path).getroot()
-
+def parse_bulletin(root, source_name):
+    """Build the lightweight viz bulletin shape from an already-parsed
+    <root> element (visualize.html's tracks/fixes/areas shape -- unchanged)."""
     tracks = [parse_track(t) for t in root.findall("tc:tcTrack", NAMESPACES)]
     fixes = [parse_fix(f) for f in root.findall("tc:tcFix", NAMESPACES)]
-
     areas = []
     for kind in AREA_TAGS:
         for area_el in root.findall(f"tc:{kind}", NAMESPACES):
             areas.append(parse_area(area_el, kind))
-
     return {
         "distId": text_of(root, "distId"),
         "distName": text_of(root, "distName"),
-        "source": os.path.basename(path),
+        "source": source_name,
         "fcastTime": text_of(root, "fcastTime"),
         "issueTime": text_of(root, "issueTime"),
         "expiryHrs": text_of(root, "expiryHrs"),
@@ -184,7 +170,6 @@ def parse_bulletin(path):
 
 
 def is_significant_bulletin(bulletin):
-    """Only keep cyclones that have at least one watch or warning area."""
     if not isinstance(bulletin, dict):
         return False
     return any(area.get("kind") in {"tcWarningArea", "tcWatchArea"} for area in bulletin.get("areas", []))
@@ -203,24 +188,14 @@ def parse_float(text):
 
 
 def load_best_tracks(csv_path):
-    """Parse the BOM 'past tropical cyclone tracks' CSV (best track / post-event
-    reanalysis) into {distId: {"distId", "name", "points": [...]}}.
-
-    The file starts with a few copyright/generated-on lines before the real
-    header row, so we scan for the row containing DISTURBANCE_ID rather than
-    assuming it's the first line.
-    """
     if not csv_path or not os.path.isfile(csv_path):
         return {}
-
     with open(csv_path, encoding="utf-8", errors="ignore") as f:
         lines = f.readlines()
-
     header_idx = next((i for i, line in enumerate(lines) if "DISTURBANCE_ID" in line), None)
     if header_idx is None:
         print(f"  ! {csv_path}: no DISTURBANCE_ID header found, skipping best track", file=sys.stderr)
         return {}
-
     reader = csv.DictReader(lines[header_idx:])
     by_dist_id = {}
     for row in reader:
@@ -236,25 +211,39 @@ def load_best_tracks(csv_path):
             "pressure": parse_float(row.get("CENTRAL_PRES")),
             "windSpeed": parse_float(row.get("MAX_WIND_SPD")),
         }
-        entry = by_dist_id.setdefault(dist_id, {
-            "distId": dist_id,
-            "name": (row.get("NAME") or "").strip() or None,
-            "points": [],
-        })
+        entry = by_dist_id.setdefault(dist_id, {"distId": dist_id, "name": (row.get("NAME") or "").strip() or None, "points": []})
         entry["points"].append(point)
-
     for entry in by_dist_id.values():
         entry["points"].sort(key=lambda p: p["time"])
-
     return by_dist_id
 
 
 def region_name(dir_name):
-    # "NT_GMLs" -> "NT"
-    return dir_name[:-len("_GMLs")] if dir_name.endswith("_GMLs") else dir_name
+    return dir_name[: -len("_GMLs")] if dir_name.endswith("_GMLs") else dir_name
 
 
-def build(data_dir, out_dir, best_track_csv=None):
+def sanitize_for_filename(value: str) -> str:
+    cleaned = _INVALID_FILENAME_CHARS.sub("_", (value or "").strip())
+    return cleaned or "unknown"
+
+
+def write_geojson_bulletin(root, source_name, dist_id, fcast_time, geojson_root):
+    """Build the canonical GeoJSON FeatureCollection for one bulletin (via
+    gml_to_geojson.build_feature_collection) and write it
+    to data/geojson/<distId>/<sanitized fcastTime>.geojson."""
+    # gml_to_geojson.build_feature_collection expects "sourceFile" to already
+    # be set on root (that's what its own convert_file() does before calling it).
+    root.set("sourceFile", source_name)
+    feature_collection = gml_to_geojson.build_feature_collection(root)
+    dist_dir = os.path.join(geojson_root, sanitize_for_filename(dist_id or "UNKNOWN"))
+    os.makedirs(dist_dir, exist_ok=True)
+    out_path = os.path.join(dist_dir, f"{sanitize_for_filename(fcast_time or source_name)}.geojson")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(feature_collection, f)
+    return out_path
+
+
+def build(data_dir, out_dir, geojson_out_dir, best_track_csv=None):
     if not os.path.isdir(data_dir):
         raise SystemExit(f"Error: data directory not found: {data_dir}")
 
@@ -266,9 +255,11 @@ def build(data_dir, out_dir, best_track_csv=None):
         raise SystemExit(f"Error: no region subdirectories found under {data_dir} (expected *_GMLs folders)")
 
     os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(geojson_out_dir, exist_ok=True)
     index = {"regions": {}}
     total_files = 0
     total_errors = 0
+    total_geojson_written = 0
 
     best_tracks = load_best_tracks(best_track_csv)
     if best_track_csv:
@@ -280,23 +271,29 @@ def build(data_dir, out_dir, best_track_csv=None):
     for dir_name in region_dirs:
         region = region_name(dir_name)
         region_path = os.path.join(data_dir, dir_name)
-        gml_files = sorted(
-            f for f in os.listdir(region_path) if f.lower().endswith(".gml")
-        )
+        gml_files = sorted(f for f in os.listdir(region_path) if f.lower().endswith(".gml"))
 
         by_dist_id = {}
         for fname in gml_files:
             fpath = os.path.join(region_path, fname)
             total_files += 1
             try:
-                bulletin = parse_bulletin(fpath)
+                tree = ET.parse(fpath)
+                root = tree.getroot()
             except ET.ParseError as exc:
                 print(f"  ! skipping {fpath}: {exc}", file=sys.stderr)
                 total_errors += 1
                 continue
 
+            bulletin = parse_bulletin(root, fname)
             dist_id = bulletin["distId"] or "UNKNOWN"
             by_dist_id.setdefault(dist_id, []).append(bulletin)
+
+            # Write the canonical GeoJSON for gen_cont_tables.py -- every
+            # bulletin, not filtered to "significant" ones, since Table A
+            # needs the full forecast history per base time.
+            write_geojson_bulletin(root, fname, dist_id, bulletin["fcastTime"], geojson_out_dir)
+            total_geojson_written += 1
 
         significant_by_dist_id = {
             dist_id: bulletins
@@ -343,27 +340,26 @@ def build(data_dir, out_dir, best_track_csv=None):
 
     print(f"\nParsed {total_files} GML files ({total_errors} errors).")
     print(f"Wrote {out_dir}/index.json and per-cyclone JSON under {out_dir}/<REGION>/.")
+    print(f"Wrote {total_geojson_written} GeoJSON bulletin file(s) under {geojson_out_dir}/<distId>/.")
     if best_track_csv:
         print(f"Wrote {best_track_written} best-track file(s) under {out_dir}/best_track/.")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parse BOM tcData GML bulletins into the viz_data/ dataset "
-                     "used by visualize.html / visualize_ol.html."
+        description="Parse BOM tcData GML bulletins into the viz dataset (for visualize.html) "
+                     "and data/geojson/ (for gen_cont_tables.py) in one pass."
     )
     parser.add_argument("--data-dir", default="data", help="Input directory containing <REGION>_GMLs/ subfolders (default: data)")
-    parser.add_argument("--out-dir", default="data", help="Output directory for the built dataset (default: data)")
+    parser.add_argument("--out-dir", default="data", help="Output directory for index.json and <REGION>/<distId>.json (default: data)")
+    parser.add_argument("--geojson-out-dir", default="data/geojson", help="Output directory for per-bulletin GeoJSON files consumed by gen_cont_tables.py (default: data/geojson)")
     parser.add_argument(
         "--best-track-csv",
         default="data/best_track.csv",
-        help="Path to the BOM past-tropical-cyclone-tracks CSV (best track / "
-             "post-event reanalysis) used to build data/best_track/. "
-             "Pass '' to skip.",
+        help="Path to the BOM past-tropical-cyclone-tracks CSV. Pass '' to skip.",
     )
     args = parser.parse_args()
-
-    build(args.data_dir, args.out_dir, best_track_csv=args.best_track_csv or None)
+    build(args.data_dir, args.out_dir, args.geojson_out_dir, best_track_csv=args.best_track_csv or None)
 
 
 if __name__ == "__main__":
