@@ -1,6 +1,6 @@
 # CITS3200_Group24_Cyclone_Verification
 
-## Group Members 
+## Group Members
 
 |  Name | Student ID | GitHub Username |
 | ------------ | ---------- | --------------- |
@@ -32,33 +32,42 @@ bulletins into a single timeline.
   check" panel that shows exactly which GML fields survived into the JSON
   for the bulletin on screen, plus the raw JSON itself.
 
-Both read the identical `viz_data/` dataset produced in step 1, so they stay
-in sync automatically.
 
 ### 1. Build the dataset (one-off, or whenever `data/` changes)
 
-The GML files are parsed once into compact per-cyclone JSON files so the
-browser doesn't have to parse thousands of raw XML files:
+The GML files are parsed once into compact per-cyclone GEOJSON files so the
+browser doesn't have to parse thousands of raw XML files. The build script
+lives at `backend/app/build_gml_dataset.py` — **run it from the repository
+root**, not from inside `backend/app/`, since its `--data-dir`/`--out-dir`
+defaults are plain relative paths resolved against your current working
+directory:
 
 ```bash
-python build_gml_dataset.py
+python backend/app/build_gml_dataset.py
 ```
 
-This writes `viz_data/index.json` plus one JSON file per cyclone under
-`viz_data/<REGION>/<distId>.json`. `viz_data/` is git-ignored — regenerate
-it locally rather than committing it.
+> `backend/app/gml_to_geojson.py` must stay alongside `build_gml_dataset.py`
+> in the same folder — `build_gml_dataset.py` imports it directly
+> (`import gml_to_geojson`), and Python resolves that import against the
+> invoked script's own directory, not your current working directory, so
+> this works correctly regardless of where you run the command from as long
+> as the two files are together.
 
-It also parses `data/Database of Past tropical cyclone tracks.csv` — BOM's
-**best track** database (the track as re-analysed after the event, distinct
-from the `Observed`/`Forecast` tracks in the GML bulletins) — and writes one
-`viz_data/best_track/<distId>.json` per disturbance the CSV covers, matched
-to GML cyclones by `distId`/`DISTURBANCE_ID`. Not every cyclone has a match:
+This writes `data/index.json` plus one JSON file per cyclone under
+`data/<REGION>/<distId>.json`, along with the per-bulletin GeoJSON that
+`backend/app/gen_cont_tables.py` consumes under `data/geojson/<distId>/`.
+Generated output under `data/` besides the source GML folders is
+git-ignored — regenerate it locally rather than committing it.
+
+It also parses `data/best_track.csv` — BOM's **best track** database (the
+track as re-analysed after the event, distinct from the
+`Observed`/`Forecast` tracks in the GML bulletins) — and writes one
+`data/best_track/<distId>.json` per disturbance the CSV covers, matched to
+GML cyclones by `distId`/`DISTURBANCE_ID`. Not every cyclone has a match:
 best track is only published for seasons BOM has fully reanalysed, so recent
 cyclones typically won't have one yet. Cyclones with a match are flagged
-`"hasBestTrack": true` in `viz_data/index.json`. Pass `--best-track-csv ''`
-to skip this step, or `--best-track-csv <path>` to point at a different CSV.
-
-# **Warning:** This is a working but wrong conversion
+`"hasBestTrack": true` in `data/index.json`. Pass `--best-track-csv ''` to
+skip this step, or `--best-track-csv <path>` to point at a different CSV.
 
 ### 2. Serve the page
 
@@ -85,19 +94,22 @@ dropped except the fixed `xsi:schemaLocation`/namespace declarations, which
 carry no per-bulletin data. `visualize_ol.html`'s "Data-retention check"
 panel verifies this live, per bulletin, against the raw JSON.
 
-Best track (`viz_data/best_track/<distId>.json`) captures every point BOM's
-CSV records for that disturbance: `time`, `coord` (`[lon, lat]`),
-`pressure` (`CENTRAL_PRES`), and `windSpeed` (`MAX_WIND_SPD`), sorted by
-time. It's per-cyclone, not per-bulletin — one fixed post-event track,
-independent of which bulletin is currently on screen.
+Best track (`data/best_track/<distId>.json`) captures every point BOM's CSV
+records for that disturbance: `time`, `coord` (`[lon, lat]`), `pressure`
+(`CENTRAL_PRES`), and `windSpeed` (`MAX_WIND_SPD`), sorted by time. It's
+per-cyclone, not per-bulletin — one fixed post-event track, independent of
+which bulletin is currently on screen.
 
 ### Notes
 
-- `convert_bom_gml_to_geojson.py` converts a single GML file's wind-area
-  polygons to a standalone GeoJSON file (e.g. for QGIS) — unrelated to the
-  bulk viewers above.
-- `build_gml_dataset.py --data-dir data --out-dir viz_data` accepts custom
-  input/output paths if needed.
+- `backend/app/gml_to_geojson.py` converts a single GML bulletin's features
+  into a standalone GeoJSON `FeatureCollection`; `build_gml_dataset.py`
+  imports and reuses it to write the per-bulletin GeoJSON under
+  `data/geojson/` that `gen_cont_tables.py` consumes, so there is one shared
+  implementation rather than two that could drift apart.
+- `python backend/app/build_gml_dataset.py --data-dir data --out-dir data`
+  accepts custom input/output paths if needed (both shown here at their
+  defaults).
 - In the viewers, GML `tcTrack` styling distinguishes the two `trackType`
   values: **Forecast** is solid, **Observed** is dashed. The best-track
   overlay (green, toggleable via the "Best track (post-event)" layer) is a
