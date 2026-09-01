@@ -32,10 +32,12 @@ bulletins into a single timeline.
   check" panel that shows exactly which GML fields survived into the JSON
   for the bulletin on screen, plus the raw JSON itself.
 
+Both read the identical dataset produced in step 1, so they stay in sync
+automatically.
 
 ### 1. Build the dataset (one-off, or whenever `data/` changes)
 
-The GML files are parsed once into compact per-cyclone GEOJSON files so the
+The GML files are parsed once into compact per-cyclone JSON files so the
 browser doesn't have to parse thousands of raw XML files. The build script
 lives at `backend/app/build_gml_dataset.py` — **run it from the repository
 root**, not from inside `backend/app/`, since its `--data-dir`/`--out-dir`
@@ -99,6 +101,55 @@ records for that disturbance: `time`, `coord` (`[lon, lat]`), `pressure`
 (`CENTRAL_PRES`), and `windSpeed` (`MAX_WIND_SPD`), sorted by time. It's
 per-cyclone, not per-bulletin — one fixed post-event track, independent of
 which bulletin is currently on screen.
+
+### 3. Generate contingency tables
+
+`backend/app/gen_cont_tables.py` builds Tables A–D and the hit/miss/false
+alarm/correct-negative contingency summary for a single disturbance ID,
+comparing forecast watch/warning areas (from step 1's GeoJSON output) against
+observed gales (from the best-track CSV). Unlike `build_gml_dataset.py`, its
+data paths are resolved from `__file__` rather than the current working
+directory, so it can be run from anywhere — the repo root or elsewhere:
+
+```bash
+python backend/app/gen_cont_tables.py AU202526_34U
+```
+
+Optional flags:
+
+```bash
+python backend/app/gen_cont_tables.py AU202526_34U \
+  --output-dir data/contingency_tables \
+  --x-hours 0 \
+  --y-hours 24
+```
+
+- `disturbance_id` (positional, required) — the BOM disturbance ID, e.g.
+  `AU202526_34U`.
+- `--output-dir` (default `data/contingency_tables`) — where the generated
+  CSVs are written.
+- `--x-hours` / `--y-hours` (default `0` / `24`) — the window, relative to
+  each forecast base time, in which an observed gale counts as a "hit"
+  against that forecast.
+
+This writes `<disturbance_id>_table_a.csv` through `_table_d.csv`,
+`<disturbance_id>_contingency_matrix.csv`, and
+`<disturbance_id>_contingency_summary.csv` under `--output-dir`, and prints
+progress plus the final contingency stats and matrix to the console as it
+runs.
+
+Requires step 1 (`build_gml_dataset.py`) to have already been run — it reads
+the `data/geojson/<distId>/` files that step produces — plus a
+`data/towns.xlsx` locations sheet and the `data/best_track.csv` best-track
+CSV.
+
+If you only need one of Tables A–D rather than the full run, the individual
+`generate_table_a()` / `generate_table_b()` / `generate_table_c()` /
+`generate_table_d()` functions can be imported and called directly; Table C
+also accepts an already-computed Table B via its `table_b=` parameter to
+avoid rebuilding it (Table B is the most expensive of the four to compute).
+
+#### NOTE THAT RUNNING IT STRAIGHT FROM THE TERMINAL IS FOR TESTING ONLY. TODO: IMPLEMENT FRONTEND TO REQUEST THIS CODE BE RUN. 
 
 ### Notes
 
