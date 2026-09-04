@@ -40,6 +40,12 @@ QUADRANTS = [
     "SECNW",
 ]
 
+MEAN_RADIUS_COLS = {
+    "GF": "MN_RADIUS_GF_WIND",
+    "SF": "MN_RADIUS_SF_WIND",
+    "HF": "MN_RADIUS_HF_WIND",
+}
+
 RADIUS_COLS = [
     f"MN_RADIUS_{level}_{quadrant}"
     for level in RADIUS_THRESHOLDS
@@ -244,13 +250,77 @@ def interpolate_wind_radii(
 
         choose_left[valid] = left_distance <= right_distance
 
-    output_winds = result["MAX_WIND_SPD"].to_numpy(dtype=float) * MPS_TO_KNOTS
+    output_winds = (
+        result["MAX_WIND_SPD"].to_numpy(dtype=float)
+        * MPS_TO_KNOTS
+    )
 
     for level, threshold in RADIUS_THRESHOLDS.items():
+        quadrant_cols = [
+            f"MN_RADIUS_{level}_{quadrant}"
+            for quadrant in QUADRANTS
+        ]
+
+        mean_radius_col = MEAN_RADIUS_COLS[level]
+
+        # Apply the normal wind-radius interpolation rules to the mean radius.
+        mean_radius_values = _interpolate_radius_values(
+            original=original,
+            output_times=output_times,
+            output_winds=output_winds,
+            original_positions=original_positions,
+            left_positions=left_positions,
+            right_positions=right_positions,
+            choose_left=choose_left,
+            radius_col=mean_radius_col,
+            threshold=threshold,
+        )
+
+        # Check whether quadrant-specific data is completely unavailable at the surrounding original best-track observations
+        original_quadrants = original[
+            quadrant_cols
+        ].to_numpy(dtype=float)
+
+        no_quadrants_available = np.zeros(
+            len(output_times),
+            dtype=bool,
+        )
+
+        for i in range(len(output_times)):
+            original_pos = original_positions[i]
+
+            # Exact original observation:
+            # fallback is allowed only if all four quadrants are missing.
+            if original_pos >= 0:
+                no_quadrants_available[i] = np.all(
+                    pd.isna(original_quadrants[original_pos])
+                )
+                continue
+
+            left_pos = left_positions[i]
+            right_pos = right_positions[i]
+
+            if left_pos < 0 or right_pos >= len(original):
+                continue
+
+            left_all_missing = np.all(
+                pd.isna(original_quadrants[left_pos])
+            )
+
+            right_all_missing = np.all(
+                pd.isna(original_quadrants[right_pos])
+            )
+
+            no_quadrants_available[i] = (
+                left_all_missing
+                and right_all_missing
+            )
+
+        # Interpolate each quadrant normally first.
         for quadrant in QUADRANTS:
             radius_col = f"MN_RADIUS_{level}_{quadrant}"
 
-            result[radius_col] = _interpolate_radius_values(
+            quadrant_values = _interpolate_radius_values(
                 original=original,
                 output_times=output_times,
                 output_winds=output_winds,
@@ -261,6 +331,24 @@ def interpolate_wind_radii(
                 radius_col=radius_col,
                 threshold=threshold,
             )
+
+            # Use the mean radius only as a fallback:
+            # - all quadrant data is unavailable at both surrounding observations;
+            # - this particular quadrant is still missing;
+            # - a mean-radius value is available;
+            # - wind is at/above the corresponding threshold.
+            use_mean_radius = (
+                no_quadrants_available
+                & pd.isna(quadrant_values)
+                & pd.notna(mean_radius_values)
+                & (output_winds >= threshold)
+            )
+
+            quadrant_values[use_mean_radius] = (
+                mean_radius_values[use_mean_radius]
+            )
+
+            result[radius_col] = quadrant_values
 
     return result
 

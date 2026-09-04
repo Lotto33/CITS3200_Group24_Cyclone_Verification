@@ -31,18 +31,21 @@ INTERPOLATION_COLUMNS = [
     "MAX_WIND_SPD",
 
     # Gale-force wind radii
+    "MN_RADIUS_GF_WIND",
     "MN_RADIUS_GF_SECNE",
     "MN_RADIUS_GF_SECSE",
     "MN_RADIUS_GF_SECSW",
     "MN_RADIUS_GF_SECNW",
 
     # Storm-force wind radii
+    "MN_RADIUS_SF_WIND",
     "MN_RADIUS_SF_SECNE",
     "MN_RADIUS_SF_SECSE",
     "MN_RADIUS_SF_SECSW",
     "MN_RADIUS_SF_SECNW",
 
     # Hurricane-force wind radii
+    "MN_RADIUS_HF_WIND",
     "MN_RADIUS_HF_SECNE",
     "MN_RADIUS_HF_SECSE",
     "MN_RADIUS_HF_SECSW",
@@ -55,16 +58,19 @@ NUMERIC_COLUMNS = [
     "POSITION_UNCERTAINTY",
     "MAX_WIND_SPD",
 
+    "MN_RADIUS_GF_WIND",
     "MN_RADIUS_GF_SECNE",
     "MN_RADIUS_GF_SECSE",
     "MN_RADIUS_GF_SECSW",
     "MN_RADIUS_GF_SECNW",
 
+    "MN_RADIUS_SF_WIND",
     "MN_RADIUS_SF_SECNE",
     "MN_RADIUS_SF_SECSE",
     "MN_RADIUS_SF_SECSW",
     "MN_RADIUS_SF_SECNW",
 
+    "MN_RADIUS_HF_WIND",
     "MN_RADIUS_HF_SECNE",
     "MN_RADIUS_HF_SECSE",
     "MN_RADIUS_HF_SECSW",
