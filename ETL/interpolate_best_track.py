@@ -25,10 +25,12 @@ LINEAR_COLS = [
 ]
 
 # Thresholds in m/s from the tropical-cyclone database specification.
+MPS_TO_KNOTS = 1.94384
+
 RADIUS_THRESHOLDS = {
-    "GF": 17.0,
-    "SF": 25.0,
-    "HF": 33.0,
+    "GF": 34.0,
+    "SF": 48.0,
+    "HF": 64.0,
 }
 
 QUADRANTS = [
@@ -101,7 +103,7 @@ def _interpolate_radius_values(
     """Return one interpolated quadrant-radius column"""
     values = np.full(len(output_times), np.nan, dtype=float)
 
-    original_winds = original["MAX_WIND_SPD"].to_numpy(dtype=float)
+    original_winds = original["MAX_WIND_SPD"].to_numpy(dtype=float) * MPS_TO_KNOTS
     original_radii = original[radius_col].to_numpy(dtype=float)
     original_ns = original.index.asi8
     output_ns = output_times.asi8
@@ -114,7 +116,7 @@ def _interpolate_radius_values(
             values[i] = original_radii[original_pos]
             continue
 
-        if pd.isna(wind):
+        if pd.isna(wind) or wind < threshold:
             continue
 
         left_pos = left_positions[i]
@@ -242,7 +244,7 @@ def interpolate_wind_radii(
 
         choose_left[valid] = left_distance <= right_distance
 
-    output_winds = result["MAX_WIND_SPD"].to_numpy(dtype=float)
+    output_winds = result["MAX_WIND_SPD"].to_numpy(dtype=float) * MPS_TO_KNOTS
 
     for level, threshold in RADIUS_THRESHOLDS.items():
         for quadrant in QUADRANTS:
