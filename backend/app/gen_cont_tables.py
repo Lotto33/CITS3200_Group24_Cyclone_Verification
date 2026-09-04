@@ -19,7 +19,8 @@ BEST_TRACK_CSV = PROJECT_ROOT / "data" / "best_track.csv"
 TOWNS_XLSX = PROJECT_ROOT / "data" / "towns.xlsx"   # NOTE FINALISE THIS PATH
 BEST_TRACK_SKIPROWS = 4  # 3 copyright lines + 1 blank before the header
 
-
+# NOTE: confirm this matches the real column name in towns.xlsx. Per the
+# scope doc, a town counts as "coastal" if this column has a value at all.
 COASTAL_ORDER_COLUMN = "Coastal Order"
 # Scope doc example uses 6km ("if we treat the buffer as 6 km"), but
 # explicitly flags this as unconfirmed ("We will confirm this limit"). Keep
@@ -114,6 +115,25 @@ def load_locations() -> gpd.GeoDataFrame:
     print(f"[locations] Loading {TOWNS_XLSX} (sheet 'TC Locations') ...")
     df = pd.read_excel(TOWNS_XLSX, sheet_name="TC Locations")
     print(f"[locations] Loaded {len(df)} location(s)")
+
+    # NOTE FOR OTHERS: The workbook contains formatted/blank rows below the actual location
+    # data.  Passing their NaN coordinates to points_from_xy creates POINT
+    # (NaN NaN), which causes Shapely's nearest_points() to raise a blank
+    # GEOSException during Table A generation.
+    longitude = pd.to_numeric(df["Longitude"], errors="coerce")
+    latitude = pd.to_numeric(df["Latitude"], errors="coerce")
+    valid = (
+        df["Name"].notna()
+        & longitude.between(-180, 180)
+        & latitude.between(-90, 90)
+    )
+    discarded = int((~valid).sum())
+    if discarded:
+        print(f"[locations] Discarding {discarded} row(s) without a valid name/coordinate")
+    df = df.loc[valid].copy()
+    df["Longitude"] = longitude.loc[valid]
+    df["Latitude"] = latitude.loc[valid]
+
     if COASTAL_ORDER_COLUMN in df.columns:
         is_coastal = df[COASTAL_ORDER_COLUMN].notna()
         print(f"[locations] {int(is_coastal.sum())} coastal location(s) (have a {COASTAL_ORDER_COLUMN!r} value)")
@@ -155,10 +175,12 @@ def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
     val = row.get(sec_col)
     if pd.notna(val) and val > 0:
         return float(val)
+
     # Fall back to mean radius (e.g., MN_RADIUS_GF_WIND)
     mean_val = row.get(f"{prefix}_WIND")
     if pd.notna(mean_val) and mean_val > 0:
         return float(mean_val)
+
     return 0.0
 
 def signed_distance_to_polygon_km(point, polygon_union) -> float:
@@ -197,6 +219,7 @@ def _geojson_index() -> dict:
         if scanned == 0:
             print(f"[geojson_index] WARNING: no .geojson files found under {GEOJSON_DIR} -- did you run build_gml_dataset.py?")
     return _geojson_index_cache
+
 
 def load_forecast_geojson(disturbance_id: str, fcast_time: str) -> dict | None:
     path = _geojson_index().get((disturbance_id, fcast_time))
@@ -319,6 +342,7 @@ def generate_table_a(
             candidate_distances = [d for d in (dist_watch, dist_warning) if pd.notna(d)]
             if not candidate_distances or min(candidate_distances) >= relevance_km:
                 continue  # more than relevance_km from any watch/warning area (or neither exists) -- not relevant here
+
             is_coastal = bool(loc.get("is_coastal", False))
             watch = bool(pd.notna(dist_watch) and (dist_watch <= 0 or (is_coastal and dist_watch <= coastal_buffer_km)))
             warning = bool(pd.notna(dist_warning) and (dist_warning <= 0 or (is_coastal and dist_warning <= coastal_buffer_km)))
@@ -334,7 +358,7 @@ def generate_table_a(
                 "Warning": warning,
                 # contains() (via signed_distance_to_polygon_km's use of polygon_union.contains)
                 # is strict -- a location sitting exactly on a polygon's boundary line
-                # (very unlikely with real coordinates, but still possible)
+                # (vanishingly unlikely with real coordinates, but technically possible)
                 # would come out as outside with distance 0, not inside. Not worth
                 # changing unless it actually comes up.
             })
@@ -477,7 +501,14 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFra
     # cyclone season (e.g. Season="2025-26") without needing a separate
     # season lookup table.
     merged_table["Season"] = merged_table["Base time"].apply(derive_season)
-    result = merged_table[["Disturbance ID", "Base time", "Location", "State", "Season", "Forecast", "Observed"]]
+    result_columns = ["Disturbance ID", "Base time", "Location"]
+    # Keep the function compatible with callers that provide the minimal columns
+    # Table A used by older clients/tests, while the normal pipeline retains
+    # State and Season for filtering.
+    if "State" in merged_table.columns:
+        result_columns.extend(["State", "Season"])
+    result_columns.extend(["Forecast", "Observed"])
+    result = merged_table[result_columns]
     print(f"[table_d] Done: {len(result)} row(s)")
     return result
 
@@ -707,4 +738,9 @@ if __name__ == "__main__":
         print("\nContingency matrix:")
         print(matrix)
     except Exception as exc:  # pragma: no cover - CLI safety path
-        raise SystemExit(f"Failed to generate contingency tables: {exc}")
+        # Some third-party exceptions (notably Shapely's GEOSException) have
+        # an empty string representation. Include the type so failures are
+        # actionable instead of appearing as a blank error message.
+        raise SystemExit(
+            f"Failed to generate contingency tables: {type(exc).__name__}: {exc!r}"
+        )
