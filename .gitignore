@@ -244,8 +244,9 @@ data/
 # data files
 Raw/
 Processed/
-*.csv
+#*.csv
 
 # ETL
 *.ipynb
 .ipynb_checkpoints/
+ETL/
