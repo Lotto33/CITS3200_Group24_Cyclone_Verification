@@ -6,13 +6,16 @@ import pandas as pd
 # -------
 # Paths
 # -------
-ETL_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
-RAW_BEST_TRACK_CSV = ETL_DIR / "Raw" / "IDCKMSTM0S.csv"
-RELEVANT_IDS_CSV = ETL_DIR / "Processed" / "relevant_disturbance_ids.csv"
+DATA_DIR = PROJECT_ROOT / "data"
+PROCESSED_DIR = DATA_DIR / "processed"
 
-RELEVANT_BEST_TRACK_CSV = ETL_DIR / "Processed" / "relevant_best_track_raw.csv"
-INTERPOLATION_INPUT_CSV = ETL_DIR / "Processed" / "best_track_interpolation_input.csv"
+RAW_BEST_TRACK_CSV = DATA_DIR / "IDCKMSTM0S.csv"
+RELEVANT_IDS_CSV = PROCESSED_DIR / "relevant_disturbance_ids.csv"
+
+RELEVANT_BEST_TRACK_CSV = PROCESSED_DIR / "relevant_best_track_raw.csv"
+INTERPOLATION_INPUT_CSV = PROCESSED_DIR / "best_track_interpolation_input.csv"
 
 PROJECT_START = pd.Timestamp("2016-07-01", tz="UTC")
 

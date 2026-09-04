@@ -7,9 +7,13 @@ import pandas as pd
 # -------
 # Paths
 # -------
-ETL_DIR = Path(__file__).resolve().parent
-INPUT_CSV = ETL_DIR / "Processed" / "best_track_interpolation_input.csv"
-OUTPUT_CSV = ETL_DIR / "Processed" / "best_track_interpolated.csv"
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
+DATA_DIR = PROJECT_ROOT / "data"
+PROCESSED_DIR = DATA_DIR / "processed"
+
+INPUT_CSV = PROCESSED_DIR / "best_track_interpolation_input.csv"
+OUTPUT_CSV = PROCESSED_DIR / "best_track_interpolated.csv"
 
 STEP_MINUTES = 15
 

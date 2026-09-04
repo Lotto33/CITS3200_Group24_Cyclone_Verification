@@ -8,11 +8,13 @@ import pandas as pd
 # -------
 # Paths
 # ------
-ETL_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-GML_ROOT = ETL_DIR / "Raw" / "GML"
-OUTPUT_RELEVANT_IDS = ETL_DIR / "Processed" / "relevant_disturbance_ids.csv"
+DATA_DIR = PROJECT_ROOT / "data"
+GML_ROOT = DATA_DIR / "gml"
+PROCESSED_DIR = DATA_DIR / "processed"
 
+OUTPUT_RELEVANT_IDS = PROCESSED_DIR / "relevant_disturbance_ids.csv"
 
 # ---------------------
 # 1. Find all GML files
