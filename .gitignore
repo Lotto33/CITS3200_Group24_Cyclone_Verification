@@ -243,17 +243,8 @@ data/
 
 # data files
 Raw/
-<<<<<<< HEAD
 Processed/
 *.csv
-
-# ETL
-*.ipynb
-.ipynb_checkpoints/
-=======
-Processed/
->>>>>>> 7738adc (Add GML filtering notebook and reusable python file for relevant disturbance IDs)
-
 
 # ETL
 *.ipynb
