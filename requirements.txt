@@ -4,11 +4,13 @@ anyio==4.14.2
 certifi==2026.7.22
 click==8.4.2
 defusedxml==0.7.1
+et_xmlfile==2.0.0
 fastapi==0.141.1
 geopandas==1.1.4
 h11==0.16.0
 idna==3.19
 numpy==2.5.2
+openpyxl==3.1.5
 packaging==26.3
 pandas==3.0.5
 pydantic==2.13.4
