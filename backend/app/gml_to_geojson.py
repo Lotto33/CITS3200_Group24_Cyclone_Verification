@@ -4,9 +4,9 @@ import xml.etree.ElementTree as ET
 import sys
 
 # Default locations are relative to the repo root.
-# The source GML files live under data/<REGION>_GMLs and the generated
+# The source GML files live under data/gml/<REGION>_GMLs and the generated
 # GeoJSON files are written under data/geojson.
-DEFAULT_GML_INPUT_PATH = "data"
+DEFAULT_GML_INPUT_PATH = "data/gml"
 DEFAULT_GEOJSON_OUTPUT_PATH = "data/geojson"
 
 TC_NS = "http://www.bom.gov.au/dtd/tc"
