@@ -26,6 +26,12 @@ COASTAL_ORDER_COLUMN = "Coastal Order"
 # explicitly flags this as unconfirmed ("We will confirm this limit"). Keep
 # this as a parameter callers can override, not a fact baked into the logic.
 DEFAULT_COASTAL_BUFFER_KM = 6.0
+# The coastal buffer only applies to forecasts issued before this date --
+# the threat-area creation methodology changed from this point on, so
+# post-change polygons don't have the town-A-to-town-B gap problem the
+# buffer was compensating for. Forecasts at or after this date are treated
+# as strict polygon containment only, regardless of coastal status.
+DEFAULT_COASTAL_BUFFER_CUTOFF = pd.Timestamp("2025-06-01")
 # Towns only appear in Table A if within this distance of a watch OR
 # warning area (scope doc S43).
 DEFAULT_RELEVANCE_KM = 300.0
@@ -83,6 +89,7 @@ def _nearest_observed_fill(series: pd.Series) -> pd.Series:
     backward_vals = observed.reindex(series.index, method="bfill")
     return forward_vals.where(use_forward, backward_vals)
 
+
 def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataFrame:
     # NOTE THIS FUNCTION IS TEMPORARY. USE SIYUS VIA IMPORT -> TODO
     if df.empty:
@@ -98,7 +105,14 @@ def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataF
     reindexed = indexed.reindex(full_index)
 
     for col in LINEAR_COLS:
-        reindexed[col] = pd.to_numeric(reindexed[col], errors="coerce").interpolate(method="time")
+        # limit_direction="both" extends the nearest known value out to the
+        # track's start/end edges (there's nothing to genuinely interpolate
+        # beyond the first/last observation). Without this, a field like
+        # POSITION_UNCERTAINTY that's missing on the very first or last real
+        # fix stays NaN for every interpolated step before/after it, even
+        # though RADIUS_COLS below don't have that gap (they use
+        # _nearest_observed_fill, which already reaches the edges).
+        reindexed[col] = pd.to_numeric(reindexed[col], errors="coerce").interpolate(method="time", limit_direction="both")
     for col in RADIUS_COLS:
         reindexed[col] = _nearest_observed_fill(pd.to_numeric(reindexed[col], errors="coerce"))
 
@@ -114,25 +128,19 @@ def load_locations() -> gpd.GeoDataFrame:
     """
     print(f"[locations] Loading {TOWNS_XLSX} (sheet 'TC Locations') ...")
     df = pd.read_excel(TOWNS_XLSX, sheet_name="TC Locations")
-    print(f"[locations] Loaded {len(df)} location(s)")
+    print(f"[locations] Loaded {len(df)} raw row(s)")
 
-    # NOTE FOR OTHERS: The workbook contains formatted/blank rows below the actual location
-    # data.  Passing their NaN coordinates to points_from_xy creates POINT
-    # (NaN NaN), which causes Shapely's nearest_points() to raise a blank
-    # GEOSException during Table A generation.
-    longitude = pd.to_numeric(df["Longitude"], errors="coerce")
-    latitude = pd.to_numeric(df["Latitude"], errors="coerce")
-    valid = (
-        df["Name"].notna()
-        & longitude.between(-180, 180)
-        & latitude.between(-90, 90)
-    )
-    discarded = int((~valid).sum())
-    if discarded:
-        print(f"[locations] Discarding {discarded} row(s) without a valid name/coordinate")
-    df = df.loc[valid].copy()
-    df["Longitude"] = longitude.loc[valid]
-    df["Latitude"] = latitude.loc[valid]
+    # The sheet has blank separator rows between town groups (Name/State/
+    # Latitude/Longitude all empty). These become Point(NaN, NaN) geometries,
+    # which GEOS raises an (unhelpfully blank-message) exception on as soon
+    # as any contains()/distance/nearest_points check touches them -- so
+    # they need to be dropped here, not silently carried through.
+    valid = df["Name"].notna() & df["Latitude"].notna() & df["Longitude"].notna()
+    n_dropped = int((~valid).sum())
+    if n_dropped:
+        print(f"[locations] Dropping {n_dropped} row(s) with missing Name/Latitude/Longitude (blank separator rows)")
+    df = df[valid].reset_index(drop=True)
+    print(f"[locations] {len(df)} usable location(s)")
 
     if COASTAL_ORDER_COLUMN in df.columns:
         is_coastal = df[COASTAL_ORDER_COLUMN].notna()
@@ -161,6 +169,11 @@ def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
     """
     Retrieves the wind radius for the specific quadrant matching the bearing.
     Falls back to the mean overall radius if the quadrant value is NaN or 0.
+    Returns NaN (not 0.0) if neither value was ever recorded for this
+    intensity level at this time step -- "no data" and "radius is genuinely
+    zero" are different things, and treating them the same silently implies
+    a location has no gale/storm/hurricane exposure when the truth is we
+    simply don't know, which understates the system's actual reach.
     """
     if 0 <= bearing < 90:
         sec_col = f"{prefix}_SECNE"
@@ -181,7 +194,7 @@ def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
     if pd.notna(mean_val) and mean_val > 0:
         return float(mean_val)
 
-    return 0.0
+    return np.nan
 
 def signed_distance_to_polygon_km(point, polygon_union) -> float:
     """Geodesic distance in km from point to the nearest edge of
@@ -285,6 +298,7 @@ def generate_table_a(
     locations: gpd.GeoDataFrame | None,
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
+    coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
 ) -> pd.DataFrame:
     """
     create a table from the forecast polygons for each forecast base time including relevant locations
@@ -296,10 +310,14 @@ def generate_table_a(
 
     Watch/Warning are True if the location is inside the polygon (distance
     <= 0), OR -- for coastal towns only (towns.xlsx's Coastal Order column
-    has a value) -- if it's within coastal_buffer_km of the polygon edge.
-    This buffer exists because the old town-A-to-town-B coastal zone
-    definitions didn't overlap, so edge towns weren't always technically
-    inside the polygon even though they should count as covered.
+    has a value), and only for bulletins issued before coastal_buffer_cutoff
+    -- if it's within coastal_buffer_km of the polygon edge. This buffer
+    exists because the old town-A-to-town-B coastal zone definitions didn't
+    overlap, so edge towns weren't always technically inside the polygon
+    even though they should count as covered. The threat-area creation
+    methodology changed at coastal_buffer_cutoff, so bulletins from that
+    date onward don't have this gap and get strict containment only,
+    coastal or not.
 
     A location only appears in the output at all if its minimum distance to
     a watch OR warning polygon is under relevance_km.
@@ -316,6 +334,13 @@ def generate_table_a(
             print(f"[table_a]   -> no geojson found, skipping this base time")
             continue
 
+        base_time_dt = pd.to_datetime(fcast_time).tz_localize(None)
+        buffer_applies = base_time_dt < coastal_buffer_cutoff
+        if not buffer_applies:
+            print(f"[table_a]   -> base time is on/after {coastal_buffer_cutoff.date()}, coastal buffer disabled for this bulletin")
+
+        # This bulletin's own declared validity period is used later by
+        # generate_table_c, not here -- Table A's schema doesn't include it.
         watch_geoms, warning_geoms = [], []
         watch_union, warning_union = None, None
         for f in geo["features"]:
@@ -343,13 +368,13 @@ def generate_table_a(
             if not candidate_distances or min(candidate_distances) >= relevance_km:
                 continue  # more than relevance_km from any watch/warning area (or neither exists) -- not relevant here
 
-            is_coastal = bool(loc.get("is_coastal", False))
+            is_coastal = bool(loc.get("is_coastal", False)) and buffer_applies
             watch = bool(pd.notna(dist_watch) and (dist_watch <= 0 or (is_coastal and dist_watch <= coastal_buffer_km)))
             warning = bool(pd.notna(dist_warning) and (dist_warning <= 0 or (is_coastal and dist_warning <= coastal_buffer_km)))
 
             rows.append({
                 "Disturbance ID": disturbance_id,
-                "Base time": pd.to_datetime(fcast_time).tz_localize(None),
+                "Base time": base_time_dt,
                 "Location": loc["name"],
                 "State": loc.get("state"),
                 "Distance to watch": dist_watch,
@@ -442,8 +467,16 @@ def generate_table_c(
     its own copy in rather than letting this function build a second one.
     If you're calling generate_table_c() on its own, leave this as None and
     it'll build Table B for you same as before.
+
+    Each bulletin's own declared expiryHrs (read directly from its GeoJSON
+    metadata, not from Table A -- Table A's schema doesn't carry this) is
+    used as that bulletin's own window upper bound instead of the fixed
+    y_hours default, since "gales within the Warning time range" means each
+    Warning's own actual validity period, not one uniform window applied to
+    every bulletin. y_hours is still the fallback when a bulletin's expiry
+    is missing/NaN, or when its geojson file can't be found at all.
     """
-    print(f"\n=== Table C: observed gales within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} ===")
+    print(f"\n=== Table C: observed gales within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} (default window; real per-bulletin expiry used where available) ===")
     if locations is None:
         locations = load_locations()
 
@@ -468,13 +501,22 @@ def generate_table_c(
         base_time = pd.to_datetime(fcast_time)
         if base_time.tzinfo is not None:
             base_time = base_time.tz_localize(None)
+
+        geo = load_forecast_geojson(disturbance_id, fcast_time)
+        bulletin_expiry = geo.get("metadata", {}).get("expiryHrs") if geo else None
+        if pd.notna(bulletin_expiry):
+            effective_y_hours = float(bulletin_expiry)
+            print(f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: using this bulletin's own expiryHrs={effective_y_hours}h (not the {y_hours}h default)")
+        else:
+            effective_y_hours = y_hours
+
         start_window = base_time + pd.Timedelta(hours=x_hours)
-        end_window = base_time + pd.Timedelta(hours=y_hours)
+        end_window = base_time + pd.Timedelta(hours=effective_y_hours)
         window_df = table_b[
             (table_b["Time"] >= start_window) & 
             (table_b["Time"] <= end_window)
         ]
-        print(f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: {len(window_df)} best-track row(s) in window")
+        print(f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: window [{x_hours}h, {effective_y_hours}h] -> {len(window_df)} best-track row(s)")
 
         for _, loc in locations.iterrows():
             loc_name = loc["name"]
@@ -501,14 +543,7 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFra
     # cyclone season (e.g. Season="2025-26") without needing a separate
     # season lookup table.
     merged_table["Season"] = merged_table["Base time"].apply(derive_season)
-    result_columns = ["Disturbance ID", "Base time", "Location"]
-    # Keep the function compatible with callers that provide the minimal columns
-    # Table A used by older clients/tests, while the normal pipeline retains
-    # State and Season for filtering.
-    if "State" in merged_table.columns:
-        result_columns.extend(["State", "Season"])
-    result_columns.extend(["Forecast", "Observed"])
-    result = merged_table[result_columns]
+    result = merged_table[["Disturbance ID", "Base time", "Location", "State", "Season", "Forecast", "Observed"]]
     print(f"[table_d] Done: {len(result)} row(s)")
     return result
 
@@ -575,11 +610,12 @@ def generate_all_tables_for_disturbance(
     y_hours: int = 24,
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
+    coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
 ) -> dict[str, pd.DataFrame | dict]:
     """Generate Tables A-D and the final contingency summary for one disturbance ID."""
     print(f"##### Generating contingency tables for {disturbance_id} #####")
     all_locations = load_locations()
-    table_a = generate_table_a(disturbance_id, all_locations, coastal_buffer_km=coastal_buffer_km, relevance_km=relevance_km)
+    table_a = generate_table_a(disturbance_id, all_locations, coastal_buffer_km=coastal_buffer_km, relevance_km=relevance_km, coastal_buffer_cutoff=coastal_buffer_cutoff)
 
     # Table B/C only need the locations that actually appear in Table A for
     # this disturbance -- not every town in towns.xlsx.
@@ -588,8 +624,8 @@ def generate_all_tables_for_disturbance(
     print(f"[relevant_locations] {len(locations)}/{len(all_locations)} location(s) appear in Table A for {disturbance_id}")
 
     table_b = generate_table_b(disturbance_id, locations)
-    # Pass the Table B we just built straight in, rather than letting
-    # generate_table_c() rebuild it from scratch a second time.
+    # Pass the Table B we just built straight in, rather than letting generate_table_c() rebuild it from scratch a second time.
+    # Each bulletin's expiryHrs is read by generate_table_c itself, straight from the geojson. No need to thread anything through from Table A here.
     table_c = generate_table_c(disturbance_id, locations, x_hours=x_hours, y_hours=y_hours, table_b=table_b)
     table_d = generate_table_d(table_a, table_c)
     stats = generate_contingency_dict(table_d)
@@ -634,6 +670,7 @@ def generate_all_tables_for_disturbances(
     y_hours: int = 24,
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
+    coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
 ) -> dict[str, object]:
     """Run the full Table A-D pipeline for each disturbance ID in turn (each
     still gets its own per-disturbance CSVs, same as generate_all_tables_for_disturbance),
@@ -651,6 +688,7 @@ def generate_all_tables_for_disturbances(
             y_hours=y_hours,
             coastal_buffer_km=coastal_buffer_km,
             relevance_km=relevance_km,
+            coastal_buffer_cutoff=coastal_buffer_cutoff,
         )
         per_disturbance[disturbance_id] = outputs
         table_d_frames.append(outputs["table_d"])
@@ -691,6 +729,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--x-hours", type=int, default=0, help="Lower bound for observed-gale window in hours")
     parser.add_argument("--y-hours", type=int, default=24, help="Upper bound for observed-gale window in hours")
     parser.add_argument("--coastal-buffer-km", type=float, default=DEFAULT_COASTAL_BUFFER_KM, help=f"Coastal towns within this many km of a watch/warning polygon edge count as covered (default {DEFAULT_COASTAL_BUFFER_KM}km -- scope doc flags this figure as still to be confirmed)")
+    parser.add_argument("--coastal-buffer-cutoff", default=str(DEFAULT_COASTAL_BUFFER_CUTOFF.date()), help=f"Coastal buffer only applies to bulletins before this date (YYYY-MM-DD); threat-area methodology changed after this point (default {DEFAULT_COASTAL_BUFFER_CUTOFF.date()})")
     parser.add_argument("--relevance-km", type=float, default=DEFAULT_RELEVANCE_KM, help=f"Only include towns within this many km of a watch or warning area in Table A (default {DEFAULT_RELEVANCE_KM}km)")
     args = parser.parse_args()
     if not args.disturbance_id and not args.season:
@@ -701,6 +740,8 @@ def _parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = _parse_args()
     try:
+        coastal_buffer_cutoff = pd.Timestamp(args.coastal_buffer_cutoff)
+
         if args.season and not args.disturbance_id:
             disturbance_ids = list_disturbance_ids_for_season(args.season)
             if not disturbance_ids:
@@ -716,6 +757,7 @@ if __name__ == "__main__":
                 y_hours=args.y_hours,
                 coastal_buffer_km=args.coastal_buffer_km,
                 relevance_km=args.relevance_km,
+                coastal_buffer_cutoff=coastal_buffer_cutoff,
             )
             table_d, stats = outputs["table_d"], outputs["stats"]
         else:
@@ -726,6 +768,7 @@ if __name__ == "__main__":
                 y_hours=args.y_hours,
                 coastal_buffer_km=args.coastal_buffer_km,
                 relevance_km=args.relevance_km,
+                coastal_buffer_cutoff=coastal_buffer_cutoff,
             )
             table_d, stats = outputs["combined_table_d"], outputs["combined_stats"]
 
@@ -738,9 +781,4 @@ if __name__ == "__main__":
         print("\nContingency matrix:")
         print(matrix)
     except Exception as exc:  # pragma: no cover - CLI safety path
-        # Some third-party exceptions (notably Shapely's GEOSException) have
-        # an empty string representation. Include the type so failures are
-        # actionable instead of appearing as a blank error message.
-        raise SystemExit(
-            f"Failed to generate contingency tables: {type(exc).__name__}: {exc!r}"
-        )
+        raise SystemExit(f"Failed to generate contingency tables: {type(exc).__name__}: {exc}")
