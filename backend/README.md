@@ -32,8 +32,8 @@ backend/
 cd backend
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-pip install -r requirements.txt
-cp .env.example .env
+pip install -r ../requirements.txt
+cp ../.env.example .env
 ```
 
 ## Run
@@ -58,3 +58,17 @@ pytest
 3. Add business logic in `app/services/`.
 4. Add an endpoint module in `app/api/v1/endpoints/`, then register it in
    `app/api/v1/router.py`.
+
+## Dependencies
+
+`backend/pyproject.toml` is the source of truth. The root `requirements.txt`
+is generated from it — do not edit it by hand:
+
+```bash
+pip install pip-tools
+pip-compile --no-strip-extras --extra dev \
+    --output-file requirements.txt backend/pyproject.toml   # run from repo root
+```
+
+Add/remove a dependency by editing `[project].dependencies` (or the `dev`
+extra) in `pyproject.toml`, then re-run the command above.
