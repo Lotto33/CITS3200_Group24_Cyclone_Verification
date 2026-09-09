@@ -8,7 +8,11 @@ annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
     # via pydantic
+<<<<<<< HEAD
 anyio==4.15.1
+=======
+anyio==4.14.2
+>>>>>>> 4f1bf60f0574ff98f120a87eb7db875e56c8708a
     # via
     #   httpx
     #   starlette
@@ -45,12 +49,20 @@ pandas==3.0.5
     # via cyclone-verification-backend (backend/pyproject.toml)
 pluggy==1.6.0
     # via pytest
+<<<<<<< HEAD
 pydantic==2.13.5
+=======
+pydantic==2.13.4
+>>>>>>> 4f1bf60f0574ff98f120a87eb7db875e56c8708a
     # via
     #   cyclone-verification-backend (backend/pyproject.toml)
     #   fastapi
     #   pydantic-settings
+<<<<<<< HEAD
 pydantic-core==2.46.5
+=======
+pydantic-core==2.46.4
+>>>>>>> 4f1bf60f0574ff98f120a87eb7db875e56c8708a
     # via pydantic
 pydantic-settings==2.15.0
     # via cyclone-verification-backend (backend/pyproject.toml)
@@ -74,7 +86,10 @@ starlette==1.6.0
     # via fastapi
 typing-extensions==4.16.0
     # via
+<<<<<<< HEAD
     #   anyio
+=======
+>>>>>>> 4f1bf60f0574ff98f120a87eb7db875e56c8708a
     #   fastapi
     #   pydantic
     #   pydantic-core
