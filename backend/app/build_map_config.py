@@ -33,7 +33,7 @@ import sys
 BASEMAP_URL = "https://{s}.basemaps.cartocdn.com/%s/{z}/{x}/{y}{r}.png"
 STYLES = ["dark_all", "light_all", "rastertiles/voyager"]
 DEFAULT_STYLE = "dark_all"
-ATTRIBUTION = '&copy; OpenStreetMap contributors &copy; CARTO'
+ATTRIBUTION = "&copy; OpenStreetMap contributors &copy; CARTO"
 ENV_VAR = "CARTO_API_KEY"
 
 
@@ -75,13 +75,17 @@ def build(env_file, style, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "map_config.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "basemapUrl": url,
-            "attribution": ATTRIBUTION,
-            "subdomains": "abcd",
-            "maxZoom": 19,
-            "hasApiKey": bool(api_key),
-        }, f, indent=2)
+        json.dump(
+            {
+                "basemapUrl": url,
+                "attribution": ATTRIBUTION,
+                "subdomains": "abcd",
+                "maxZoom": 19,
+                "hasApiKey": bool(api_key),
+            },
+            f,
+            indent=2,
+        )
 
     if api_key:
         print(f"CARTO basemap style {style!r} with API key from {source}.")
@@ -99,9 +103,22 @@ def main():
     parser = argparse.ArgumentParser(
         description="Write data/map_config.json (basemap URL + CARTO API key) for visualize.html."
     )
-    parser.add_argument("--env-file", default=".env", help="File to read CARTO_API_KEY from (default: .env)")
-    parser.add_argument("--style", default=DEFAULT_STYLE, choices=STYLES, help=f"CARTO raster basemap style (default: {DEFAULT_STYLE})")
-    parser.add_argument("--out-dir", default="data", help="Output directory for map_config.json (default: data)")
+    parser.add_argument(
+        "--env-file",
+        default=".env",
+        help="File to read CARTO_API_KEY from (default: .env)",
+    )
+    parser.add_argument(
+        "--style",
+        default=DEFAULT_STYLE,
+        choices=STYLES,
+        help=f"CARTO raster basemap style (default: {DEFAULT_STYLE})",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default="data",
+        help="Output directory for map_config.json (default: data)",
+    )
     args = parser.parse_args()
     build(args.env_file, args.style, args.out_dir)
 

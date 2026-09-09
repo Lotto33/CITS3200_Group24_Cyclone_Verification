@@ -85,7 +85,9 @@ def load_towns(xlsx_path, sheet):
     try:
         df = pd.read_excel(xlsx_path, sheet_name=sheet)
     except ValueError as exc:
-        raise SystemExit(f"Error: could not read sheet {sheet!r} from {xlsx_path}: {exc}")
+        raise SystemExit(
+            f"Error: could not read sheet {sheet!r} from {xlsx_path}: {exc}"
+        )
 
     missing = [c for c in (NAME_COLUMN, LAT_COLUMN, LON_COLUMN) if c not in df.columns]
     if missing:
@@ -104,16 +106,18 @@ def load_towns(xlsx_path, sheet):
         if not name or not has_valid_coords(lat, lon):
             skipped += 1
             continue
-        towns.append({
-            "name": name,
-            "state": clean_str(row.get(STATE_COLUMN)),
-            "lat": lat,
-            "lon": lon,
-            "group": clean_str(row.get(GROUP_COLUMN)),
-            "coastalOrder": clean_int(row.get(COASTAL_ORDER_COLUMN)),
-            "major": clean_flag(row.get(MAJOR_COLUMN)),
-            "island": clean_flag(row.get(ISLAND_COLUMN)),
-        })
+        towns.append(
+            {
+                "name": name,
+                "state": clean_str(row.get(STATE_COLUMN)),
+                "lat": lat,
+                "lon": lon,
+                "group": clean_str(row.get(GROUP_COLUMN)),
+                "coastalOrder": clean_int(row.get(COASTAL_ORDER_COLUMN)),
+                "major": clean_flag(row.get(MAJOR_COLUMN)),
+                "island": clean_flag(row.get(ISLAND_COLUMN)),
+            }
+        )
 
     towns.sort(key=lambda t: (t["state"] or "", t["name"]))
     return towns, skipped
@@ -122,26 +126,45 @@ def load_towns(xlsx_path, sheet):
 def build(xlsx_path, sheet, out_dir):
     towns, skipped = load_towns(xlsx_path, sheet)
     if not towns:
-        raise SystemExit(f"Error: no usable rows found in sheet {sheet!r} of {xlsx_path}")
+        raise SystemExit(
+            f"Error: no usable rows found in sheet {sheet!r} of {xlsx_path}"
+        )
 
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "towns.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"sheet": sheet, "count": len(towns), "towns": towns}, f)
 
-    print(f"{xlsx_path} [{sheet}]: {len(towns)} towns ({skipped} row(s) skipped: missing name or invalid coordinates)")
+    print(
+        f"{xlsx_path} [{sheet}]: {len(towns)} towns ({skipped} row(s) skipped: missing name or invalid coordinates)"
+    )
     print(f"Wrote {out_path}.")
     if skipped:
-        print("Skipped rows are expected -- the sheet has formatted-but-empty trailing rows.", file=sys.stderr)
+        print(
+            "Skipped rows are expected -- the sheet has formatted-but-empty trailing rows.",
+            file=sys.stderr,
+        )
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Parse the towns workbook into data/towns.json for visualize.html's Towns layer."
     )
-    parser.add_argument("--towns-xlsx", default="data/towns.xlsx", help="Path to the towns workbook (default: data/towns.xlsx)")
-    parser.add_argument("--sheet", default=DEFAULT_SHEET, help=f"Worksheet to read (default: {DEFAULT_SHEET!r})")
-    parser.add_argument("--out-dir", default="data", help="Output directory for towns.json (default: data)")
+    parser.add_argument(
+        "--towns-xlsx",
+        default="data/towns.xlsx",
+        help="Path to the towns workbook (default: data/towns.xlsx)",
+    )
+    parser.add_argument(
+        "--sheet",
+        default=DEFAULT_SHEET,
+        help=f"Worksheet to read (default: {DEFAULT_SHEET!r})",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default="data",
+        help="Output directory for towns.json (default: data)",
+    )
     args = parser.parse_args()
     build(args.towns_xlsx, args.sheet, args.out_dir)
 
