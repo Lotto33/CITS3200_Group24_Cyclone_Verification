@@ -468,15 +468,14 @@ def generate_table_c(
     If you're calling generate_table_c() on its own, leave this as None and
     it'll build Table B for you same as before.
 
-    Each bulletin's own declared expiryHrs (read directly from its GeoJSON
-    metadata, not from Table A -- Table A's schema doesn't carry this) is
-    used as that bulletin's own window upper bound instead of the fixed
-    y_hours default, since "gales within the Warning time range" means each
-    Warning's own actual validity period, not one uniform window applied to
-    every bulletin. y_hours is still the fallback when a bulletin's expiry
-    is missing/NaN, or when its geojson file can't be found at all.
+    x_hours/y_hours define "the Warning/Watch time range" as a fixed window
+    relative to each base time -- confirmed by the client as: Warning = 0 to
+    24 hours (the default), Watch = 24 to 48 hours. This is NOT derived from
+    each bulletin's own declared expiryHrs field; that was an earlier
+    assumption that turned out to be wrong. Other windows (e.g. 0-30h, 0-42h)
+    can be explored by passing different x_hours/y_hours values.
     """
-    print(f"\n=== Table C: observed gales within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} (default window; real per-bulletin expiry used where available) ===")
+    print(f"\n=== Table C: observed gales within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} ===")
     if locations is None:
         locations = load_locations()
 
@@ -502,21 +501,13 @@ def generate_table_c(
         if base_time.tzinfo is not None:
             base_time = base_time.tz_localize(None)
 
-        geo = load_forecast_geojson(disturbance_id, fcast_time)
-        bulletin_expiry = geo.get("metadata", {}).get("expiryHrs") if geo else None
-        if pd.notna(bulletin_expiry):
-            effective_y_hours = float(bulletin_expiry)
-            print(f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: using this bulletin's own expiryHrs={effective_y_hours}h (not the {y_hours}h default)")
-        else:
-            effective_y_hours = y_hours
-
         start_window = base_time + pd.Timedelta(hours=x_hours)
-        end_window = base_time + pd.Timedelta(hours=effective_y_hours)
+        end_window = base_time + pd.Timedelta(hours=y_hours)
         window_df = table_b[
             (table_b["Time"] >= start_window) & 
             (table_b["Time"] <= end_window)
         ]
-        print(f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: window [{x_hours}h, {effective_y_hours}h] -> {len(window_df)} best-track row(s)")
+        print(f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: {len(window_df)} best-track row(s) in window")
 
         for _, loc in locations.iterrows():
             loc_name = loc["name"]
@@ -625,7 +616,6 @@ def generate_all_tables_for_disturbance(
 
     table_b = generate_table_b(disturbance_id, locations)
     # Pass the Table B we just built straight in, rather than letting generate_table_c() rebuild it from scratch a second time.
-    # Each bulletin's expiryHrs is read by generate_table_c itself, straight from the geojson. No need to thread anything through from Table A here.
     table_c = generate_table_c(disturbance_id, locations, x_hours=x_hours, y_hours=y_hours, table_b=table_b)
     table_d = generate_table_d(table_a, table_c)
     stats = generate_contingency_dict(table_d)
@@ -726,8 +716,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--season", help="Jul-Jun cyclone season, e.g. '2025-26'. If given without any disturbance_id, every disturbance with a forecast base time in that season is found automatically and combined.")
     parser.add_argument("--state", help="Filter the final contingency stats to a single State (e.g. 'WA') after building the table(s).")
     parser.add_argument("--output-dir", default="data/contingency_tables", help="Directory to write the generated CSV tables to")
-    parser.add_argument("--x-hours", type=int, default=0, help="Lower bound for observed-gale window in hours")
-    parser.add_argument("--y-hours", type=int, default=24, help="Upper bound for observed-gale window in hours")
+    parser.add_argument("--x-hours", type=int, default=0, help="Lower bound for observed-gale window in hours from base time (default 0: this is the Warning window's start; use 24 for the Watch window)")
+    parser.add_argument("--y-hours", type=int, default=24, help="Upper bound for observed-gale window in hours from base time (default 24: this is the Warning window's end; use 48 for the Watch window). Other windows (e.g. 30, 42) can also be explored.")
     parser.add_argument("--coastal-buffer-km", type=float, default=DEFAULT_COASTAL_BUFFER_KM, help=f"Coastal towns within this many km of a watch/warning polygon edge count as covered (default {DEFAULT_COASTAL_BUFFER_KM}km -- scope doc flags this figure as still to be confirmed)")
     parser.add_argument("--coastal-buffer-cutoff", default=str(DEFAULT_COASTAL_BUFFER_CUTOFF.date()), help=f"Coastal buffer only applies to bulletins before this date (YYYY-MM-DD); threat-area methodology changed after this point (default {DEFAULT_COASTAL_BUFFER_CUTOFF.date()})")
     parser.add_argument("--relevance-km", type=float, default=DEFAULT_RELEVANCE_KM, help=f"Only include towns within this many km of a watch or warning area in Table A (default {DEFAULT_RELEVANCE_KM}km)")
