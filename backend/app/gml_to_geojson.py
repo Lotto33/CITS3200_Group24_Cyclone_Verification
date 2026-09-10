@@ -1,11 +1,13 @@
-from pathlib import Path
 import json
-import xml.etree.ElementTree as ET
 import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
-#relative path
-DEFAULT_GML_INPUT_PATH = "backend/data"
-DEFAULT_GEOJSON_OUTPUT_PATH = "backend/data/geojson"
+# Default locations are relative to the repo root.
+# The source GML files live under data/gml/<REGION>_GMLs and the generated
+# GeoJSON files are written under data/geojson.
+DEFAULT_GML_INPUT_PATH = "data/gml"
+DEFAULT_GEOJSON_OUTPUT_PATH = "data/geojson"
 
 TC_NS = "http://www.bom.gov.au/dtd/tc"
 GML_NS = "http://www.opengis.net/gml"
@@ -13,20 +15,24 @@ NAMESPACES = {"bom": TC_NS, "gml": GML_NS}
 
 
 def iter_gml_files(root: Path):
-    #NOTE CAN REMOVE SORT IF PERFOMANCE IS AN ISSUE.
+    # NOTE CAN REMOVE SORT IF PERFOMANCE IS AN ISSUE.
     return sorted(path for path in root.rglob("*.gml") if path.is_file())
+
 
 def text_of(element) -> str:
     return (element.text or "").strip() if element is not None else ""
 
+
 def qname(namespace: str, local: str) -> str:
     return f"{{{namespace}}}{local}"
+
 
 def sanitize_output_name(value: str) -> str:
     cleaned = (value or "").strip()
     cleaned = cleaned.replace(" ", "_")
     cleaned = "".join(ch for ch in cleaned if ch.isalnum() or ch in {"_", "-", "."})
     return cleaned
+
 
 def get_gml_identifier(gml_file: Path) -> str:
     try:
@@ -67,11 +73,14 @@ def convert_file(input_path: Path, output_path: Path):
     # get the root XML element -> tags root with source filename
     root = tree.getroot()
     root.set("sourceFile", input_path.name)
-    feature_collection = build_feature_collection(root) #turns the XML features into GeoJSON data
+    feature_collection = build_feature_collection(
+        root
+    )  # turns the XML features into GeoJSON data
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
-        json.dump(feature_collection, handle, indent=2) # write the GeoJSON to disk
+        json.dump(feature_collection, handle, indent=2)  # write the GeoJSON to disk
     return output_path
+
 
 def build_feature_collection(root):
     features = collect_features(root)
@@ -92,20 +101,35 @@ def build_feature_collection(root):
         feature_collection["bbox"] = bbox
     return feature_collection
 
+
 def collect_features(root):
-    #Iterate through the supported tcData feature elements in the XML,
+    # Iterate through the supported tcData feature elements in the XML,
     #       build their GeoJSON geometry and properties, and append each as a
     #       GeoJSON Feature to the features list.
     features = []
 
-    for feature_type in [qname(TC_NS, "tcFix"),qname(TC_NS, "tcTrack"), qname(TC_NS, "tcForecastArea"),qname(TC_NS, "tcWarningArea"), qname(TC_NS, "tcWatchArea"), qname(TC_NS, "tcWindArea") ]:
+    for feature_type in [
+        qname(TC_NS, "tcFix"),
+        qname(TC_NS, "tcTrack"),
+        qname(TC_NS, "tcForecastArea"),
+        qname(TC_NS, "tcWarningArea"),
+        qname(TC_NS, "tcWatchArea"),
+        qname(TC_NS, "tcWindArea"),
+    ]:
         for element in root.findall(f".//{feature_type}"):
-            geometry = build_geometry_for_feature(element,feature_type.split("}", 1)[1]) 
+            geometry = build_geometry_for_feature(
+                element, feature_type.split("}", 1)[1]
+            )
             if geometry is None:
                 continue
-            properties = build_feature_properties(root, element, feature_type.split("}", 1)[1])
-            features.append({"type": "Feature", "properties":properties, "geometry": geometry})       
+            properties = build_feature_properties(
+                root, element, feature_type.split("}", 1)[1]
+            )
+            features.append(
+                {"type": "Feature", "properties": properties, "geometry": geometry}
+            )
     return features
+
 
 def parse_text_number(text: str):
     value = (text or "").strip()
@@ -115,6 +139,7 @@ def parse_text_number(text: str):
         return float(value)
     except ValueError:
         return None
+
 
 def normalize_longitude(lon: float) -> float:
     # Take a longitude value and normalize it into the standard
@@ -127,6 +152,7 @@ def normalize_longitude(lon: float) -> float:
     if normalized == -180.0 and lon > 0:
         normalized = 180.0
     return normalized
+
 
 def normalize_coords(coords):
     # Iterate through a collection of [longitude, latitude] coordinate
@@ -221,11 +247,11 @@ def signed_area(ring):
     #   enough coordinates to form a valid polygon.
     if len(ring) < 4:
         return 0.0
-    
+
     area = 0.0
     for (x1, y1), (x2, y2) in zip(ring, ring[1:]):
         area += (x1 * y2) - (x2 * y1)
-    return area / 2.0    
+    return area / 2.0
 
 
 def enforce_winding(ring, exterior: bool):
@@ -241,7 +267,7 @@ def enforce_winding(ring, exterior: bool):
     # Returns:
     #   The ring with the correct winding direction.
     area = signed_area(ring)
-    if exterior and area <0:
+    if exterior and area < 0:
         return list(reversed(ring))
     if not exterior and area > 0:
         return list(reversed(ring))
@@ -281,7 +307,6 @@ def parse_coordinate_pairs(text):
             continue
         coords.append([normalize_longitude(lon), lat])
     return coords
-
 
 
 def build_ring(coords, exterior: bool):
@@ -378,7 +403,12 @@ def build_geometry_for_feature(feature_elem, feature_type: str):
     # Returns:
     #   A GeoJSON geometry dictionary, or None if the feature has no valid
     #   geometry.
-    polygon_feature_types = {"tcForecastArea", "tcWarningArea", "tcWatchArea", "tcWindArea"}
+    polygon_feature_types = {
+        "tcForecastArea",
+        "tcWarningArea",
+        "tcWatchArea",
+        "tcWindArea",
+    }
 
     if feature_type in polygon_feature_types:
         polygons = parse_polygon_geometry(feature_elem)
@@ -405,7 +435,7 @@ def build_geometry_for_feature(feature_elem, feature_type: str):
         if not parsed:
             return None
         return {"type": "Point", "coordinates": parsed[0]}
-    if feature_type == "tcTrack":  
+    if feature_type == "tcTrack":
         coords_elem = feature_elem.find(f".//{qname(GML_NS, 'coordinates')}")
         coords = parse_coordinate_pairs(text_of(coords_elem))
         if len(coords) < 2:
@@ -439,7 +469,7 @@ def coerce_optional_number(value) -> float | None:
 
 
 def coerce_optional_text(value):
-    
+
     # Extract and strip the text from an optional XML element.
     # Return None when the element is missing or contains no text.
     #
@@ -469,7 +499,7 @@ def coerce_optional_category(value):
     #   A float if the category is numeric, a string if it is non-numeric,
     #   or None when no value is present.
     if value is None:
-            return None
+        return None
     text = (value.text or "").strip()
     if not text:
         return None
@@ -491,10 +521,12 @@ def build_feature_properties(root, feature_elem, feature_type: str):
     #
     # Returns:
     #   A dictionary containing the GeoJSON feature properties.
-    
+
     props = {
-        "featureType": feature_type, 
-        "source_file":  Path(root.get("sourceFile", "")).name, #NOTE THIS WILL SILENTLY FAIL # TODO SOMEONE DOUBLE CHECK IF THIS IS OK
+        "featureType": feature_type,
+        "source_file": Path(
+            root.get("sourceFile", "")
+        ).name,  # NOTE THIS WILL SILENTLY FAIL # TODO SOMEONE DOUBLE CHECK IF THIS IS OK
         "fcastTime": text_of(root.find(qname(TC_NS, "fcastTime"))),
         "issueTime": text_of(root.find(qname(TC_NS, "issueTime"))),
         "expiryHrs": parse_text_number(text_of(root.find(qname(TC_NS, "expiryHrs")))),
@@ -507,8 +539,12 @@ def build_feature_properties(root, feature_elem, feature_type: str):
                 "fixType": text_of(feature_elem.find(qname(TC_NS, "fixType"))),
                 "fixTime": text_of(feature_elem.find(qname(TC_NS, "fixTime"))),
                 "symbol": text_of(feature_elem.find(qname(TC_NS, "symbol"))),
-                "category": coerce_optional_category(feature_elem.find(qname(TC_NS, "category"))),
-                "timeOffset": coerce_optional_number(feature_elem.find(qname(TC_NS, "timeOffset"))),
+                "category": coerce_optional_category(
+                    feature_elem.find(qname(TC_NS, "category"))
+                ),
+                "timeOffset": coerce_optional_number(
+                    feature_elem.find(qname(TC_NS, "timeOffset"))
+                ),
             }
         )
     elif feature_type == "tcTrack":
@@ -523,7 +559,9 @@ def build_feature_properties(root, feature_elem, feature_type: str):
         props.update(
             {
                 "areaType": text_of(feature_elem.find(qname(TC_NS, "areaType"))),
-                "extent": coerce_optional_text(feature_elem.find(qname(TC_NS, "extent"))),
+                "extent": coerce_optional_text(
+                    feature_elem.find(qname(TC_NS, "extent"))
+                ),
             }
         )
     elif feature_type == "tcWindArea":
@@ -571,82 +609,46 @@ def collect_bbox(features):
     lats = [coord[1] for coord in coords]
     return [min(lons), min(lats), max(lons), max(lats)]
 
-def run_conversion(data_dir: str | Path, output_dir: str | Path | None = None) -> list[Path]:
-    """Convert every GML bulletin under data_dir into one dataset file per distId.
 
-    Each file contains a JSON list of the bulletin FeatureCollections for that
-    cyclone, preserving the historical time series instead of overwriting
-    previous updates for the same distId.
+def run_conversion(
+    data_dir: str | Path, output_dir: str | Path | None = None
+) -> list[Path]:
+    """Convert every GML bulletin under data_dir into its own .geojson file.
+
+    One file per source GML bulletin -- each a single FeatureCollection dict
+    with top-level "metadata" (distId, fcastTime) -- so gen_cont_tables.py's
+    per-(distId, fcastTime) lookup in _geojson_index() finds them.
     """
     gml_src = Path(data_dir).expanduser().resolve()
-    geojson_root = Path(output_dir).expanduser().resolve() if output_dir is not None else (gml_src / "geojson")
+    geojson_root = (
+        Path(output_dir).expanduser().resolve()
+        if output_dir is not None
+        else (gml_src / "geojson")
+    )
 
     if not gml_src.is_dir():
-        raise SystemExit(f"Expected a directory containing GML state folders: {gml_src}")
+        raise SystemExit(
+            f"Expected a directory containing GML state folders: {gml_src}"
+        )
 
-    grouped: dict[str, list[dict]] = {}
+    geojson_root.mkdir(parents=True, exist_ok=True)
+
+    outputs = []
     for gml_file in iter_gml_files(gml_src):
         try:
-            tree = ET.parse(str(gml_file))
-            root = tree.getroot()
-            root.set("sourceFile", gml_file.name)
-            feature_collection = build_feature_collection(root)
-            dist_id = (feature_collection.get("metadata") or {}).get("distId") or gml_file.stem
-            grouped.setdefault(dist_id, []).append(feature_collection)
+            output_path = get_geojson_dest(gml_file, geojson_root)
+            convert_file(gml_file, output_path)
+            outputs.append(output_path)
         except Exception as exc:  # pragma: no cover - robustness for batch runs
             print(f"Failed to convert {gml_file}: {exc}", file=sys.stderr)
 
-    outputs = []
-    geojson_root.mkdir(parents=True, exist_ok=True)
-    for dist_id, feature_collections in grouped.items():
-        output_path = get_distid_dataset_path(dist_id, geojson_root)
-        with output_path.open("w", encoding="utf-8") as handle:
-            json.dump(feature_collections, handle, indent=2)
-        outputs.append(output_path)
-
     if outputs:
-        print(f"Converted {len(outputs)} distId dataset(s)")
+        print(f"Converted {len(outputs)} GML bulletin(s)")
 
     return outputs
 
+
 def main() -> None:
-    #NOTE: PATH YET TO BE FINALISED.
-    # It should point to the root folder containing the state-wide GML folders.
-    gml_src = Path(DEFAULT_GML_INPUT_PATH).expanduser().resolve()
-    geojson_root = Path(DEFAULT_GEOJSON_OUTPUT_PATH).expanduser().resolve() if DEFAULT_GEOJSON_OUTPUT_PATH is not None else (gml_src / "geojson")
-
-    if not gml_src.is_dir():
-        raise SystemExit(f"Expected a directory containing state folders: {gml_src}")
-
-    # Recursively gets all GML files across the state folders.
-    gml_files = iter_gml_files(gml_src)
-    if not gml_files:
-        raise SystemExit(f"No .gml files found in {gml_src}")
-
-    outputs = []
-    grouped: dict[str, list[dict]] = {}
-    for gml_file in gml_files:
-        try:
-            tree = ET.parse(str(gml_file))
-            root = tree.getroot()
-            root.set("sourceFile", gml_file.name)
-            feature_collection = build_feature_collection(root)
-            dist_id = (feature_collection.get("metadata") or {}).get("distId") or gml_file.stem
-            grouped.setdefault(dist_id, []).append(feature_collection)
-        except Exception as exc:  # pragma: no cover - robustness for batch runs
-            print(f"Failed to convert {gml_file}: {exc}", file=sys.stderr)
-
-    geojson_root.mkdir(parents=True, exist_ok=True)
-    for dist_id, feature_collections in grouped.items():
-        output_path = get_distid_dataset_path(dist_id, geojson_root)
-        with output_path.open("w", encoding="utf-8") as handle:
-            json.dump(feature_collections, handle, indent=2)
-        outputs.append(output_path)
-
-    if outputs:
-        print(f"Converted {len(outputs)} distId dataset(s)")
-
-
-if __name__ == "__main__":
-    main()
-
+    outputs = run_conversion(DEFAULT_GML_INPUT_PATH, DEFAULT_GEOJSON_OUTPUT_PATH)
+    if not outputs:
+        raise SystemExit(f"No .gml files found in {DEFAULT_GML_INPUT_PATH}")

@@ -67,6 +67,8 @@
   .swatch-line { width: 18px; height: 0; border-top-width: 3px; border-top-style: solid; display: inline-block; flex-shrink: 0; }
   .swatch-line.dashed { border-top-style: dashed; }
   .layer-subrow { display: flex; align-items: center; gap: 8px; padding-left: 22px; font-size: 12px; color: var(--text); opacity: 0.85; margin: 3px 0; }
+  .layer-note { padding-left: 22px; font-size: 11px; color: var(--muted); margin: 2px 0 0; }
+  .layer-note.error { color: #ff7a7a; }
 
   #bulletinBar {
     display: flex; flex-direction: column; gap: 6px;
@@ -146,6 +148,9 @@
       <span class="swatch" style="background:#8892a6"></span> Show all bulletins' tracks (ghost trails)</div>
     <div class="layer-row"><input type="checkbox" id="layer-bestTrack" checked>
       <span class="swatch" style="background:#2fd4d9"></span> Best track (post-event)</div>
+    <div class="layer-row"><input type="checkbox" id="layer-towns" checked>
+      <span class="swatch" style="background:#cfd8e6"></span> Towns (TC locations)</div>
+    <div class="layer-note" id="townsNote"></div>
   </fieldset>
 
   <fieldset>
@@ -196,6 +201,10 @@
     info: document.getElementById("info"),
     status: document.getElementById("status"),
     categoryLegend: document.getElementById("categoryLegend"),
+    // Towns are static, so this checkbox is deliberately kept out of
+    // els.layers -- everything in there is wired to renderBulletin().
+    towns: document.getElementById("layer-towns"),
+    townsNote: document.getElementById("townsNote"),
     layers: {
       tracks: document.getElementById("layer-tracks"),
       fixes: document.getElementById("layer-fixes"),
@@ -216,20 +225,49 @@
   });
 
   const map = L.map("map", { worldCopyJump: true }).setView([-20, 133], 4);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+
+  // Town dots need their own pane above Leaflet's overlayPane (400), or they
+  // vanish under the translucent wind/warning/watch polygons.
+  map.createPane("towns");
+  map.getPane("towns").style.zIndex = 450;
+
+  // CARTO watermarks raster tiles requested without an API key. The key lives
+  // in a git-ignored .env and is baked into data/map_config.json by
+  // build_map_config.py -- a static page can't read .env itself. A missing or
+  // unreadable config falls back to the keyless URL, so the map still works
+  // for anyone who hasn't run that script.
+  const DEFAULT_BASEMAP = {
+    basemapUrl: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
     subdomains: "abcd",
     maxZoom: 19,
-  }).addTo(map);
+  };
+
+  async function initBasemap() {
+    let cfg = DEFAULT_BASEMAP;
+    try {
+      const res = await fetch("data/map_config.json");
+      if (res.ok) cfg = { ...DEFAULT_BASEMAP, ...(await res.json()) };
+    } catch (err) {
+      // Keep the keyless default.
+    }
+    L.tileLayer(cfg.basemapUrl, {
+      attribution: cfg.attribution,
+      subdomains: cfg.subdomains,
+      maxZoom: cfg.maxZoom,
+    }).addTo(map);
+  }
 
   const bulletinLayer = L.layerGroup().addTo(map);
   const ghostLayer = L.layerGroup().addTo(map);
   const bestTrackLayer = L.layerGroup().addTo(map);
+  const townsLayer = L.layerGroup().addTo(map);
 
   let index = null;
   let cyclonesById = new Map();
   let currentBulletins = [];
   let currentBestTrack = null;
+  let towns = [];
   let currentIdx = 0;
   let playTimer = null;
 
@@ -252,10 +290,52 @@
     return t ? t.replace("T", " ").replace("Z", " UTC") : "—";
   }
 
+  // Towns are static reference data: loaded once at startup, drawn once, and
+  // never rebuilt per bulletin.
+  async function loadTowns() {
+    try {
+      const res = await fetch("data/towns.json");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      towns = data.towns || [];
+      els.townsNote.className = "layer-note";
+      els.townsNote.textContent = `${towns.length} locations`;
+    } catch (err) {
+      towns = [];
+      els.townsNote.className = "layer-note error";
+      els.townsNote.textContent = "data/towns.json missing — run build_towns_dataset.py";
+    }
+    drawTowns();
+  }
+
+  function drawTowns() {
+    townsLayer.clearLayers();
+    if (!els.towns.checked) return;
+    towns.forEach(town => {
+      L.circleMarker([town.lat, town.lon], {
+        pane: "towns",
+        radius: town.major ? 4 : 3,
+        color: "#111826", weight: 1,
+        fillColor: town.major ? "#ffffff" : "#cfd8e6",
+        fillOpacity: 0.9,
+      })
+        .bindTooltip(town.name, { direction: "top", offset: [0, -4] })
+        .bindPopup(`
+          <b>${town.name}</b>${town.state ? ` (${town.state})` : ""}<br>
+          ${town.lat.toFixed(4)}, ${town.lon.toFixed(4)}<br>
+          ${town.group ? `Group: ${town.group}<br>` : ""}
+          ${town.coastalOrder !== null && town.coastalOrder !== undefined ? `Coastal order: ${town.coastalOrder}<br>` : ""}
+          ${town.major ? "Major town<br>" : ""}
+          ${town.island ? "Island town" : ""}
+        `)
+        .addTo(townsLayer);
+    });
+  }
+
   async function loadIndex() {
     setStatus("Loading index…");
-    const res = await fetch("viz_data/index.json");
-    if (!res.ok) throw new Error(`Failed to load viz_data/index.json (${res.status})`);
+    const res = await fetch("data/index.json");
+    if (!res.ok) throw new Error(`Failed to load data/index.json (${res.status})`);
     index = await res.json();
     setStatus("");
 
@@ -311,7 +391,7 @@
     setStatus(`Loading ${distId} across ${regions.length} data source${regions.length === 1 ? "" : "s"}…`);
     try {
       const results = await Promise.all(regions.map(async region => {
-        const path = `viz_data/${encodeURIComponent(region)}/${encodeURIComponent(distId)}.json`;
+        const path = `data/${encodeURIComponent(region)}/${encodeURIComponent(distId)}.json`;
         const res = await fetch(path);
         if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
         return res.json();
@@ -330,7 +410,7 @@
     // Not every cyclone has one, so a missing file (404) is expected, not an error.
     currentBestTrack = null;
     try {
-      const btRes = await fetch(`viz_data/best_track/${distId}.json`);
+      const btRes = await fetch(`data/best_track/${distId}.json`);
       if (btRes.ok) currentBestTrack = await btRes.json();
     } catch (err) {
       currentBestTrack = null;
@@ -513,7 +593,10 @@
   els.next.addEventListener("click", () => { stopPlay(); if (currentIdx < currentBulletins.length - 1) { currentIdx++; renderBulletin(false); } });
   els.play.addEventListener("click", togglePlay);
   Object.values(els.layers).forEach(cb => cb.addEventListener("change", () => renderBulletin(false)));
+  els.towns.addEventListener("change", drawTowns);
 
+  initBasemap();
+  loadTowns();
   loadIndex().catch(err => setStatus(err.message, true));
 })();
 </script>
