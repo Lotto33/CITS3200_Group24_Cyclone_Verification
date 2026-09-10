@@ -82,7 +82,11 @@ def parse_single_coord(text):
 
 def parse_track(track_el):
     line_string = track_el.find("tc:lineString", NAMESPACES)
-    coords_el = line_string.find("gml:coordinates", NAMESPACES) if line_string is not None else None
+    coords_el = (
+        line_string.find("gml:coordinates", NAMESPACES)
+        if line_string is not None
+        else None
+    )
     return {
         "coords": parse_coord_list(coords_el.text if coords_el is not None else None),
         "trackType": text_of(track_el, "trackType"),
@@ -106,17 +110,23 @@ def parse_fix(fix_el):
 
 def parse_polygon(polygon_el):
     rings = []
-    outer = polygon_el.find("gml:outerBoundaryIs/gml:LinearRing/gml:coordinates", NAMESPACES)
+    outer = polygon_el.find(
+        "gml:outerBoundaryIs/gml:LinearRing/gml:coordinates", NAMESPACES
+    )
     if outer is not None:
         rings.append(parse_coord_list(outer.text))
-    for inner in polygon_el.findall("gml:innerBoundaryIs/gml:LinearRing/gml:coordinates", NAMESPACES):
+    for inner in polygon_el.findall(
+        "gml:innerBoundaryIs/gml:LinearRing/gml:coordinates", NAMESPACES
+    ):
         rings.append(parse_coord_list(inner.text))
     return [r for r in rings if r]
 
 
 def parse_area(area_el, kind):
     polygons = []
-    for polygon_el in area_el.findall("tc:geometry/gml:polygonMember/gml:Polygon", NAMESPACES):
+    for polygon_el in area_el.findall(
+        "tc:geometry/gml:polygonMember/gml:Polygon", NAMESPACES
+    ):
         rings = parse_polygon(polygon_el)
         if rings:
             polygons.append(rings)
@@ -172,7 +182,10 @@ def parse_bulletin(root, source_name):
 def is_significant_bulletin(bulletin):
     if not isinstance(bulletin, dict):
         return False
-    return any(area.get("kind") in {"tcWarningArea", "tcWatchArea"} for area in bulletin.get("areas", []))
+    return any(
+        area.get("kind") in {"tcWarningArea", "tcWatchArea"}
+        for area in bulletin.get("areas", [])
+    )
 
 
 def parse_float(text):
@@ -192,9 +205,14 @@ def load_best_tracks(csv_path):
         return {}
     with open(csv_path, encoding="utf-8", errors="ignore") as f:
         lines = f.readlines()
-    header_idx = next((i for i, line in enumerate(lines) if "DISTURBANCE_ID" in line), None)
+    header_idx = next(
+        (i for i, line in enumerate(lines) if "DISTURBANCE_ID" in line), None
+    )
     if header_idx is None:
-        print(f"  ! {csv_path}: no DISTURBANCE_ID header found, skipping best track", file=sys.stderr)
+        print(
+            f"  ! {csv_path}: no DISTURBANCE_ID header found, skipping best track",
+            file=sys.stderr,
+        )
         return {}
     reader = csv.DictReader(lines[header_idx:])
     by_dist_id = {}
@@ -211,7 +229,14 @@ def load_best_tracks(csv_path):
             "pressure": parse_float(row.get("CENTRAL_PRES")),
             "windSpeed": parse_float(row.get("MAX_WIND_SPD")),
         }
-        entry = by_dist_id.setdefault(dist_id, {"distId": dist_id, "name": (row.get("NAME") or "").strip() or None, "points": []})
+        entry = by_dist_id.setdefault(
+            dist_id,
+            {
+                "distId": dist_id,
+                "name": (row.get("NAME") or "").strip() or None,
+                "points": [],
+            },
+        )
         entry["points"].append(point)
     for entry in by_dist_id.values():
         entry["points"].sort(key=lambda p: p["time"])
@@ -219,7 +244,7 @@ def load_best_tracks(csv_path):
 
 
 def region_name(dir_name):
-    return dir_name[: -len("_GMLs")] if dir_name.endswith("_GMLs") else dir_name
+    return dir_name.removesuffix("_GMLs")
 
 
 def sanitize_for_filename(value: str) -> str:
@@ -237,7 +262,9 @@ def write_geojson_bulletin(root, source_name, dist_id, fcast_time, geojson_root)
     feature_collection = gml_to_geojson.build_feature_collection(root)
     dist_dir = os.path.join(geojson_root, sanitize_for_filename(dist_id or "UNKNOWN"))
     os.makedirs(dist_dir, exist_ok=True)
-    out_path = os.path.join(dist_dir, f"{sanitize_for_filename(fcast_time or source_name)}.geojson")
+    out_path = os.path.join(
+        dist_dir, f"{sanitize_for_filename(fcast_time or source_name)}.geojson"
+    )
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(feature_collection, f)
     return out_path
@@ -248,11 +275,14 @@ def build(data_dir, out_dir, geojson_out_dir, best_track_csv=None):
         raise SystemExit(f"Error: data directory not found: {data_dir}")
 
     region_dirs = sorted(
-        d for d in os.listdir(data_dir)
+        d
+        for d in os.listdir(data_dir)
         if os.path.isdir(os.path.join(data_dir, d)) and d.endswith("_GMLs")
     )
     if not region_dirs:
-        raise SystemExit(f"Error: no region subdirectories found under {data_dir} (expected *_GMLs folders)")
+        raise SystemExit(
+            f"Error: no region subdirectories found under {data_dir} (expected *_GMLs folders)"
+        )
 
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(geojson_out_dir, exist_ok=True)
@@ -264,14 +294,21 @@ def build(data_dir, out_dir, geojson_out_dir, best_track_csv=None):
     best_tracks = load_best_tracks(best_track_csv)
     if best_track_csv:
         if best_tracks:
-            print(f"Best track CSV: {best_track_csv} -> {len(best_tracks)} disturbances")
+            print(
+                f"Best track CSV: {best_track_csv} -> {len(best_tracks)} disturbances"
+            )
         else:
-            print(f"Best track CSV: {best_track_csv} -> no usable rows found", file=sys.stderr)
+            print(
+                f"Best track CSV: {best_track_csv} -> no usable rows found",
+                file=sys.stderr,
+            )
 
     for dir_name in region_dirs:
         region = region_name(dir_name)
         region_path = os.path.join(data_dir, dir_name)
-        gml_files = sorted(f for f in os.listdir(region_path) if f.lower().endswith(".gml"))
+        gml_files = sorted(
+            f for f in os.listdir(region_path) if f.lower().endswith(".gml")
+        )
 
         by_dist_id = {}
         for fname in gml_files:
@@ -292,7 +329,9 @@ def build(data_dir, out_dir, geojson_out_dir, best_track_csv=None):
             # Write the canonical GeoJSON for gen_cont_tables.py -- every
             # bulletin, not filtered to "significant" ones, since Table A
             # needs the full forecast history per base time.
-            write_geojson_bulletin(root, fname, dist_id, bulletin["fcastTime"], geojson_out_dir)
+            write_geojson_bulletin(
+                root, fname, dist_id, bulletin["fcastTime"], geojson_out_dir
+            )
             total_geojson_written += 1
 
         significant_by_dist_id = {
@@ -312,18 +351,22 @@ def build(data_dir, out_dir, geojson_out_dir, best_track_csv=None):
                 json.dump(bulletins, f)
 
             issue_times = [b["issueTime"] for b in bulletins if b["issueTime"]]
-            cyclone_entries.append({
-                "distId": dist_id,
-                "distName": bulletins[-1].get("distName"),
-                "bulletinCount": len(bulletins),
-                "firstIssue": min(issue_times) if issue_times else None,
-                "lastIssue": max(issue_times) if issue_times else None,
-                "hasBestTrack": dist_id in best_tracks,
-            })
+            cyclone_entries.append(
+                {
+                    "distId": dist_id,
+                    "distName": bulletins[-1].get("distName"),
+                    "bulletinCount": len(bulletins),
+                    "firstIssue": min(issue_times) if issue_times else None,
+                    "lastIssue": max(issue_times) if issue_times else None,
+                    "hasBestTrack": dist_id in best_tracks,
+                }
+            )
 
         cyclone_entries.sort(key=lambda c: c["firstIssue"] or "")
         index["regions"][region] = cyclone_entries
-        print(f"{region}: {len(gml_files)} files -> {len(cyclone_entries)} significant cyclones")
+        print(
+            f"{region}: {len(gml_files)} files -> {len(cyclone_entries)} significant cyclones"
+        )
 
     with open(os.path.join(out_dir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2)
@@ -340,26 +383,47 @@ def build(data_dir, out_dir, geojson_out_dir, best_track_csv=None):
 
     print(f"\nParsed {total_files} GML files ({total_errors} errors).")
     print(f"Wrote {out_dir}/index.json and per-cyclone JSON under {out_dir}/<REGION>/.")
-    print(f"Wrote {total_geojson_written} GeoJSON bulletin file(s) under {geojson_out_dir}/<distId>/.")
+    print(
+        f"Wrote {total_geojson_written} GeoJSON bulletin file(s) under {geojson_out_dir}/<distId>/."
+    )
     if best_track_csv:
-        print(f"Wrote {best_track_written} best-track file(s) under {out_dir}/best_track/.")
+        print(
+            f"Wrote {best_track_written} best-track file(s) under {out_dir}/best_track/."
+        )
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Parse BOM tcData GML bulletins into the viz dataset (for visualize.html) "
-                     "and data/geojson/ (for gen_cont_tables.py) in one pass."
+        "and data/geojson/ (for gen_cont_tables.py) in one pass."
     )
-    parser.add_argument("--data-dir", default="data", help="Input directory containing <REGION>_GMLs/ subfolders (default: data)")
-    parser.add_argument("--out-dir", default="data", help="Output directory for index.json and <REGION>/<distId>.json (default: data)")
-    parser.add_argument("--geojson-out-dir", default="data/geojson", help="Output directory for per-bulletin GeoJSON files consumed by gen_cont_tables.py (default: data/geojson)")
+    parser.add_argument(
+        "--data-dir",
+        default="data",
+        help="Input directory containing <REGION>_GMLs/ subfolders (default: data)",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default="data",
+        help="Output directory for index.json and <REGION>/<distId>.json (default: data)",
+    )
+    parser.add_argument(
+        "--geojson-out-dir",
+        default="data/geojson",
+        help="Output directory for per-bulletin GeoJSON files consumed by gen_cont_tables.py (default: data/geojson)",
+    )
     parser.add_argument(
         "--best-track-csv",
         default="data/best_track.csv",
         help="Path to the BOM past-tropical-cyclone-tracks CSV. Pass '' to skip.",
     )
     args = parser.parse_args()
-    build(args.data_dir, args.out_dir, args.geojson_out_dir, best_track_csv=args.best_track_csv or None)
+    build(
+        args.data_dir,
+        args.out_dir,
+        args.geojson_out_dir,
+        best_track_csv=args.best_track_csv or None,
+    )
 
 
 if __name__ == "__main__":

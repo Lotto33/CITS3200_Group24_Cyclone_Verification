@@ -69,7 +69,44 @@ cyclones typically won't have one yet. Cyclones with a match are flagged
 `"hasBestTrack": true` in `data/index.json`. Pass `--best-track-csv ''` to
 skip this step, or `--best-track-csv <path>` to point at a different CSV.
 
-### 2. Serve the page
+### 2. Build the towns layer and the basemap config
+
+The viewers overlay BOM's tropical-cyclone locations (the **Towns** layer) so
+you can see where a cyclone sits relative to populated places. They come from
+the `TC Locations` sheet of `data/towns.xlsx` — the same sheet
+`gen_cont_tables.py` scores against, so the map and the contingency tables
+refer to the same set of locations. As with the GML data, the browser can't
+read an xlsx, so parse it once into JSON (**from the repository root**):
+
+```bash
+python backend/app/build_towns_dataset.py
+```
+
+This writes `data/towns.json` (~470 locations, each with name, state,
+lat/lon, town group, coastal order, and major/island flags). Rows with a
+missing name or missing/invalid coordinates are skipped — the sheet has
+formatted-but-empty trailing rows, so a skipped count in the hundreds is
+expected, not an error.
+
+CARTO stamps an "API KEY REQUIRED" watermark across every basemap tile it
+serves without an API key. Free-tier keys are available at
+[carto.com/basemaps/apikey](https://carto.com/basemaps/apikey/). Copy the
+example env file, paste your key into it, and generate the config the page
+reads:
+
+```bash
+cp .env.example .env      # then set CARTO_API_KEY=... in .env
+python backend/app/build_map_config.py
+```
+
+This writes `data/map_config.json` with the tile URL. Both `.env` and `data/`
+are git-ignored, so the key never lands in the repository. Both steps are
+optional: without `data/towns.json` the Towns layer shows a hint in the
+sidebar instead of dots, and without `data/map_config.json` the map falls
+back to the keyless (watermarked) basemap. The rest of the viewer works
+either way.
+
+### 3. Serve the page
 
 Browsers block `fetch()` of local files opened via `file://`, so serve the
 folder with any simple static server, e.g.:
@@ -117,3 +154,14 @@ which bulletin is currently on screen.
   value — cyclones with one are marked ★ in the cyclone dropdown.
 - `tcWindArea` polygons distinguish their `fixType`: **Current** areas are
   red and **Forecast** areas are blue.
+- Town dots are drawn once at startup into their own Leaflet pane above the
+  cyclone polygons, and are deliberately excluded from the zoom-to-cyclone
+  bounds calculation — selecting a cyclone still frames that cyclone, not all
+  of Australia. Hover a dot for its name, click it for state, coordinates,
+  town group, coastal order, and major/island flags. Major towns are drawn
+  slightly larger and white.
+- `python backend/app/build_map_config.py --style light_all` switches the
+  basemap to CARTO's light style (`dark_all`, `light_all` and
+  `rastertiles/voyager` are supported); `--env-file` points at a different
+  env file. `CARTO_API_KEY` set in the environment takes precedence over
+  `.env`, so CI can inject a key without writing one to disk.
