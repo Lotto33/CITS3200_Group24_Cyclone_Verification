@@ -16,11 +16,15 @@ geod = Geod(ellps="WGS84")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 GEOJSON_DIR = PROJECT_ROOT / "data" / "geojson"
 BEST_TRACK_CSV = PROJECT_ROOT / "data" / "best_track.csv"
-TOWNS_XLSX = PROJECT_ROOT / "data" / "towns.xlsx"   # NOTE FINALISE THIS PATH
+BEST_TRACK_INTERPOLATED_CSV = PROJECT_ROOT / "data" / "processed" / "best_track_interpolated.csv"
+# Location/state source for Table A. The TC Locations sheet is authoritative;
+# data/towns.csv is not read by this pipeline (and is currently an Excel
+# workbook despite its .csv filename).
+TOWNS_XLSX = PROJECT_ROOT / "data" / "towns.xlsx"
 BEST_TRACK_SKIPROWS = 4  # 3 copyright lines + 1 blank before the header
 
-# NOTE: confirm this matches the real column name in towns.xlsx. Per the
-# scope doc, a town counts as "coastal" if this column has a value at all.
+# A town counts as coastal if this column has a value in the TC Locations
+# sheet. The State column from that same sheet is carried into Table A and D.
 COASTAL_ORDER_COLUMN = "Coastal Order"
 # Scope doc example uses 6km ("if we treat the buffer as 6 km"), but
 # explicitly flags this as unconfirmed ("We will confirm this limit"). Keep
@@ -49,14 +53,39 @@ RADIUS_COLS = [
 ]
 _geojson_index_cache: dict | None = None
 _best_track_cache: pd.DataFrame | None = None #TODO make some way to udate this cache when new dataset is added
+_best_track_cache_path: Path | None = None
+
+
+def _best_track_source_path() -> Path:
+    """Use the ETL output when available, otherwise fall back to raw data."""
+    return BEST_TRACK_INTERPOLATED_CSV if BEST_TRACK_INTERPOLATED_CSV.is_file() else BEST_TRACK_CSV
+
+def _best_track_is_preprocessed() -> bool:
+    return _best_track_source_path() == BEST_TRACK_INTERPOLATED_CSV
+
+
+def announce_best_track_source() -> None:
+
+    source_path = _best_track_source_path()
+    if source_path == BEST_TRACK_INTERPOLATED_CSV:
+        print(f"[best_track] Using interpolated CSV: {source_path}")
+        print("[best_track] Local interpolation will be skipped")
+    else:
+        print(f"[best_track] Interpolated CSV not found; using raw CSV: {source_path}")
+        print("[best_track] Local interpolation will be performed")
 
 #NOTE pd.DataFrame A collection of labelled columns, where each column is essentially an array of values.
 def load_full_best_track() -> pd.DataFrame: 
-    global _best_track_cache
-    if _best_track_cache is None:
-        print(f"[best_track] Loading {BEST_TRACK_CSV} ...")
-        _best_track_cache = pd.read_csv(BEST_TRACK_CSV, skiprows = BEST_TRACK_SKIPROWS, low_memory=False)
-        print(f"[best_track] Loaded {len(_best_track_cache)} total rows (all disturbances)")
+    global _best_track_cache, _best_track_cache_path
+    source_path = _best_track_source_path()
+    if _best_track_cache is None or _best_track_cache_path != source_path:
+        print(f"[best_track] Loading {source_path} ...")
+        read_options = {"low_memory": False}
+        if source_path == BEST_TRACK_CSV:
+            read_options["skiprows"] = BEST_TRACK_SKIPROWS
+        _best_track_cache = pd.read_csv(source_path, **read_options)
+        _best_track_cache_path = source_path
+        print(f"[best_track] Loaded {len(_best_track_cache)} rows from {source_path.name}")
     return _best_track_cache
 
 def load_best_track(cyclone_id: str) -> pd.DataFrame:
@@ -64,8 +93,19 @@ def load_best_track(cyclone_id: str) -> pd.DataFrame:
     df = df[df.DISTURBANCE_ID == cyclone_id].copy()
     print(f"[best_track] {len(df)} row(s) matched DISTURBANCE_ID == {cyclone_id!r}")
     df["TM"] = pd.to_datetime(df["TM"])
+    # LINEAR_COLS assumes the raw BOM CSV's fixed schema. The preprocessed
+    # best_track_interpolated.csv (see _best_track_is_preprocessed) may not
+    # carry every one of these columns (e.g. CENTRAL_PRES) -- coerce only
+    # the ones actually present rather than crashing on df[col] for a
+    # missing one, and say so loudly since a silently-missing column here
+    # would otherwise just look like a KeyError with no context.
+    missing_linear_cols = [col for col in LINEAR_COLS if col not in df.columns]
+    if missing_linear_cols:
+        print(f"[best_track] WARNING: column(s) {missing_linear_cols} not present in this best-track source, "
+              f"skipping numeric coercion for them. Available columns: {list(df.columns)}")
     for col in LINEAR_COLS:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
     return df.sort_values("TM").reset_index(drop = True)
 
 def _nearest_observed_fill(series: pd.Series) -> pd.Series:
@@ -84,9 +124,18 @@ def _nearest_observed_fill(series: pd.Series) -> pd.Series:
     backward = obs_times.reindex(series.index, method = "bfill")
     forward_dist = (series.index.to_series() - forward).abs()
     backward_dist = (backward - series.index.to_series()).abs()
-    use_forward = forward_dist <= backward_dist
     forward_vals = observed.reindex(series.index, method="ffill")
     backward_vals = observed.reindex(series.index, method="bfill")
+    # NaT comparisons are always False regardless of direction, so a plain
+    # forward_dist <= backward_dist silently prefers "backward" whenever
+    # backward_dist is NaT -- i.e. whenever there's no future observation to
+    # backward-fill from at all (the trailing edge of the series). That
+    # picks backward_vals (NaN there) instead of the perfectly valid
+    # forward_vals. Handle "only one direction actually exists" explicitly
+    # rather than relying on the NaT comparison to do the right thing.
+    has_forward = forward.notna()
+    has_backward = backward.notna()
+    use_forward = has_forward & (~has_backward | (forward_dist <= backward_dist))
     return forward_vals.where(use_forward, backward_vals)
 
 
@@ -126,7 +175,7 @@ def load_locations() -> gpd.GeoDataFrame:
     Real BOM locations list. Latitude/Longitude are plain WGS84 degrees
     already -- no reprojection needed, unlike the earlier GIS towns layer.
     """
-    print(f"[locations] Loading {TOWNS_XLSX} (sheet 'TC Locations') ...")
+    print(f"[locations] Loading {TOWNS_XLSX} (sheet 'TC Locations'; State/coordinates source) ...")
     df = pd.read_excel(TOWNS_XLSX, sheet_name="TC Locations")
     print(f"[locations] Loaded {len(df)} raw row(s)")
 
@@ -146,7 +195,7 @@ def load_locations() -> gpd.GeoDataFrame:
         is_coastal = df[COASTAL_ORDER_COLUMN].notna()
         print(f"[locations] {int(is_coastal.sum())} coastal location(s) (have a {COASTAL_ORDER_COLUMN!r} value)")
     else:
-        print(f"[locations] WARNING: column {COASTAL_ORDER_COLUMN!r} not found in towns.xlsx -- "
+        print(f"[locations] WARNING: column {COASTAL_ORDER_COLUMN!r} not found in the TC Locations sheet -- "
               f"treating every location as non-coastal, so the coastal buffer will never apply. "
               f"Available columns: {list(df.columns)}")
         is_coastal = pd.Series(False, index=df.index)
@@ -247,7 +296,7 @@ def get_best_track_geojson(cyclone_id: str) -> dict | None:
         print(f"[get_best_track_geojson] No best-track rows for {cyclone_id!r}, returning None")
         return None
 
-    interpolated_data = interpolate_best_track(raw)
+    interpolated_data = raw if _best_track_is_preprocessed() else interpolate_best_track(raw)
     interpolated_data = interpolated_data.dropna(subset=["LAT", "LON"])
 
     line = LineString(zip(interpolated_data.LON, interpolated_data.LAT))
@@ -376,7 +425,6 @@ def generate_table_a(
                 "Disturbance ID": disturbance_id,
                 "Base time": base_time_dt,
                 "Location": loc["name"],
-                "State": loc.get("state"),
                 "Distance to watch": dist_watch,
                 "Distance to warning": dist_warning,
                 "Watch": watch,
@@ -389,7 +437,7 @@ def generate_table_a(
             })
             kept += 1
         print(f"[table_a]   -> {kept} location(s) within {relevance_km}km (of {len(locations)} total)")
-    result = pd.DataFrame(rows, columns = ["Disturbance ID","Base time", "Location", "State", "Distance to watch", "Distance to warning", "Watch", "Warning"])
+    result = pd.DataFrame(rows, columns = ["Disturbance ID","Base time", "Location", "Distance to watch", "Distance to warning", "Watch", "Warning"])
     print(f"[table_a] Done: {len(result)} row(s)")
     return result
 
@@ -411,7 +459,20 @@ def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None, st
 
     rows = []
     df = load_best_track(disturbance_id)   
-    interp_df = interpolate_best_track(df, step_minutes=step_minutes)
+    if _best_track_is_preprocessed():
+        print("[table_b] Using pre-interpolated best-track data (skipping interpolation)")
+        # Interpolation itself is skipped, but numeric dtypes still need to
+        # be guaranteed -- interpolate_best_track() is normally what coerces
+        # RADIUS_COLS to numeric, and skipping it entirely would leave those
+        # columns as whatever dtype pandas guessed from the CSV (risking a
+        # TypeError later in get_quadrant_radius()'s `val > 0` comparison if
+        # any come through as strings).
+        interp_df = df.copy()
+        for col in LINEAR_COLS + RADIUS_COLS:
+            if col in interp_df.columns:
+                interp_df[col] = pd.to_numeric(interp_df[col], errors="coerce")
+    else:
+        interp_df = interpolate_best_track(df, step_minutes=step_minutes)
 
     n_steps = len(interp_df)
     for i, (_, step) in enumerate(interp_df.iterrows(), start=1):
@@ -532,9 +593,11 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFra
     merged_table["Observed"] = merged_table["Observed"].fillna(False)
     # Derived purely from Base time -- lets contingency stats be filtered by
     # cyclone season (e.g. Season="2025-26") without needing a separate
-    # season lookup table.
+    # season lookup table. State is intentionally not retained in Table D;
+    # state filtering happens before Table A is generated.
     merged_table["Season"] = merged_table["Base time"].apply(derive_season)
-    result = merged_table[["Disturbance ID", "Base time", "Location", "State", "Season", "Forecast", "Observed"]]
+    result_columns = ["Disturbance ID", "Base time", "Location", "Season", "Forecast", "Observed"]
+    result = merged_table[result_columns]
     print(f"[table_d] Done: {len(result)} row(s)")
     return result
 
@@ -543,7 +606,6 @@ def generate_contingency_dict(table_d: pd.DataFrame, **filters) -> dict:
     """
     Count hit / miss / false alarm / correct negative from Table D, with
     optional column filters applied first, e.g.:
-        generate_contingency_dict(table_d, State="WA")
         generate_contingency_dict(table_d, Season="2025-26")
         generate_contingency_dict(table_d, Location="Carnarvon")
     Also returns POD (probability of detection) and FAR (false alarm
@@ -602,17 +664,32 @@ def generate_all_tables_for_disturbance(
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
+    state: str | None = None,
 ) -> dict[str, pd.DataFrame | dict]:
-    """Generate Tables A-D and the final contingency summary for one disturbance ID."""
+    """Generate Tables A-D for one disturbance, optionally limited by state.
+
+    State filtering is applied to the TC Locations workbook before Table A is
+    built, so Tables A-D all contain only locations from the requested state.
+    """
     print(f"##### Generating contingency tables for {disturbance_id} #####")
+    announce_best_track_source()
     all_locations = load_locations()
-    table_a = generate_table_a(disturbance_id, all_locations, coastal_buffer_km=coastal_buffer_km, relevance_km=relevance_km, coastal_buffer_cutoff=coastal_buffer_cutoff)
+    if state is not None:
+        available_states = sorted(all_locations["state"].dropna().unique().tolist())
+        locations_for_table_a = all_locations[all_locations["state"] == state].reset_index(drop=True)
+        if locations_for_table_a.empty:
+            raise ValueError(f"State {state!r} was not found in the TC Locations sheet. Available states: {available_states}")
+        print(f"[state_filter] {len(locations_for_table_a)}/{len(all_locations)} location(s) retained for State={state!r}")
+    else:
+        locations_for_table_a = all_locations
+
+    table_a = generate_table_a(disturbance_id, locations_for_table_a, coastal_buffer_km=coastal_buffer_km, relevance_km=relevance_km, coastal_buffer_cutoff=coastal_buffer_cutoff)
 
     # Table B/C only need the locations that actually appear in Table A for
     # this disturbance -- not every town in towns.xlsx.
     relevant_names = set(table_a["Location"].unique())
-    locations = all_locations[all_locations["name"].isin(relevant_names)].reset_index(drop=True)
-    print(f"[relevant_locations] {len(locations)}/{len(all_locations)} location(s) appear in Table A for {disturbance_id}")
+    locations = locations_for_table_a[locations_for_table_a["name"].isin(relevant_names)].reset_index(drop=True)
+    print(f"[relevant_locations] {len(locations)}/{len(locations_for_table_a)} location(s) appear in Table A for {disturbance_id}")
 
     table_b = generate_table_b(disturbance_id, locations)
     # Pass the Table B we just built straight in, rather than letting generate_table_c() rebuild it from scratch a second time.
@@ -661,12 +738,14 @@ def generate_all_tables_for_disturbances(
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
+    state: str | None = None,
 ) -> dict[str, object]:
     """Run the full Table A-D pipeline for each disturbance ID in turn (each
     still gets its own per-disturbance CSVs, same as generate_all_tables_for_disturbance),
     then concatenate their Table D's into one combined table so contingency
-    stats can be filtered across cyclones -- by Season or State, for example
-    -- rather than being stuck within a single disturbance."""
+    stats can be filtered across cyclones by Season rather than being stuck
+    within a single disturbance. If state is supplied, it is applied before
+    each disturbance's Tables A-D are generated."""
     print(f"\n########## Generating combined tables for {len(disturbance_ids)} disturbance(s): {disturbance_ids} ##########")
     per_disturbance = {}
     table_d_frames = []
@@ -679,6 +758,7 @@ def generate_all_tables_for_disturbances(
             coastal_buffer_km=coastal_buffer_km,
             relevance_km=relevance_km,
             coastal_buffer_cutoff=coastal_buffer_cutoff,
+            state=state,
         )
         per_disturbance[disturbance_id] = outputs
         table_d_frames.append(outputs["table_d"])
@@ -686,7 +766,7 @@ def generate_all_tables_for_disturbances(
     combined_table_d = (
         pd.concat(table_d_frames, ignore_index=True)
         if table_d_frames
-        else pd.DataFrame(columns=["Disturbance ID", "Base time", "Location", "State", "Season", "Forecast", "Observed"])
+        else pd.DataFrame(columns=["Disturbance ID", "Base time", "Location", "Season", "Forecast", "Observed"])
     )
     print(f"\n[combined] Table D across all disturbances: {len(combined_table_d)} row(s)")
     combined_stats = generate_contingency_dict(combined_table_d)
@@ -714,7 +794,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate contingency tables and summary CSVs for one or more cyclone disturbance IDs.")
     parser.add_argument("disturbance_id", nargs="*", help="BOM disturbance ID(s), for example AU202526_34U. Give more than one to combine them into one contingency table. Omit entirely and use --season instead to auto-select every disturbance in a season.")
     parser.add_argument("--season", help="Jul-Jun cyclone season, e.g. '2025-26'. If given without any disturbance_id, every disturbance with a forecast base time in that season is found automatically and combined.")
-    parser.add_argument("--state", help="Filter the final contingency stats to a single State (e.g. 'WA') after building the table(s).")
+    parser.add_argument("--state", help="Limit Tables A-D to locations whose State column in the TC Locations sheet matches this value (e.g. 'WA').")
     parser.add_argument("--output-dir", default="data/contingency_tables", help="Directory to write the generated CSV tables to")
     parser.add_argument("--x-hours", type=int, default=0, help="Lower bound for observed-gale window in hours from base time (default 0: this is the Warning window's start; use 24 for the Watch window)")
     parser.add_argument("--y-hours", type=int, default=24, help="Upper bound for observed-gale window in hours from base time (default 24: this is the Warning window's end; use 48 for the Watch window). Other windows (e.g. 30, 42) can also be explored.")
@@ -748,6 +828,7 @@ if __name__ == "__main__":
                 coastal_buffer_km=args.coastal_buffer_km,
                 relevance_km=args.relevance_km,
                 coastal_buffer_cutoff=coastal_buffer_cutoff,
+                state=args.state,
             )
             table_d, stats = outputs["table_d"], outputs["stats"]
         else:
@@ -759,11 +840,9 @@ if __name__ == "__main__":
                 coastal_buffer_km=args.coastal_buffer_km,
                 relevance_km=args.relevance_km,
                 coastal_buffer_cutoff=coastal_buffer_cutoff,
+                state=args.state,
             )
             table_d, stats = outputs["combined_table_d"], outputs["combined_stats"]
-
-        if args.state:
-            stats = generate_contingency_dict(table_d, State=args.state)
 
         matrix = get_contingency_matrix_df(stats)
         print(f"\nGenerated contingency tables for {disturbance_ids}")

@@ -124,10 +124,51 @@ python backend/app/gen_cont_tables.py AU202526_34U \
   --y-hours 24
 ```
 
+#### Filter results by state or season
+
+To generate statistics for one Australian state, use `--state` with the
+state value stored in `data/towns.xlsx`:
+
+```bash
+python backend/app/gen_cont_tables.py AU202526_34U --state WA
+```
+
+The state filter is applied to the `State` column from the `TC Locations`
+sheet in `data/towns.xlsx` before any tables are generated. Only matching
+locations are passed through Tables A, B, C, and D. `State` is used for
+filtering but is not included as a column in Table A or Table D. The filter is
+not inferred from the cyclone's path or from the GML source region.
+
+To generate a combined contingency table for every disturbance in a
+Jul–Jun cyclone season, use `--season` without a disturbance ID:
+
+```bash
+python backend/app/gen_cont_tables.py --season 2025-26
+```
+
+The season is derived from each forecast base time (`fcastTime`): July to
+December starts the named season, while January to June belongs to the
+previous year's season. For example, `2025-26` covers July 2025 through June
+2026.
+
+The filters can be combined. This generates all disturbances in the season,
+then reports the final contingency statistics for one state:
+
+```bash
+python backend/app/gen_cont_tables.py --season 2025-26 --state WA
+```
+
+If a disturbance ID is supplied along with `--season`, the explicitly supplied
+disturbance ID is used; use `--season` on its own to select a whole season.
+
 - `disturbance_id` (positional, required) — the BOM disturbance ID, e.g.
   `AU202526_34U`.
 - `--output-dir` (default `data/contingency_tables`) — where the generated
   CSVs are written.
+- `--state` — generate Tables A-D using only locations whose `State` column in
+  the `TC Locations` sheet matches the supplied value (for example, `WA`).
+- `--season` — select all disturbances whose forecast base times fall in a
+  Jul–Jun season (for example, `2025-26`).
 - `--x-hours` / `--y-hours` (default `0` / `24`) — the window, relative to
   each forecast base time, in which an observed gale counts as a "hit"
   against that forecast.
@@ -139,9 +180,12 @@ progress plus the final contingency stats and matrix to the console as it
 runs.
 
 Requires step 1 (`build_gml_dataset.py`) to have already been run — it reads
-the `data/geojson/<distId>/` files that step produces — plus a
-`data/towns.xlsx` locations sheet and the `data/best_track.csv` best-track
-CSV.
+the `data/geojson/<distId>/` files that step produces — plus the `TC Locations`
+sheet in `data/towns.xlsx` and a best-track CSV. If
+`data/processed/best_track_interpolated.csv` exists, it is preferred because
+it already contains the significant-cyclone filtering and interpolation. If
+it does not exist, the script falls back to `data/best_track.csv` and performs
+the interpolation locally.
 
 If you only need one of Tables A–D rather than the full run, the individual
 `generate_table_a()` / `generate_table_b()` / `generate_table_c()` /

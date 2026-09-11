@@ -1,5 +1,6 @@
 import pandas as pd
 
+import backend.app.gen_cont_tables as gen_cont_tables
 from backend.app.gen_cont_tables import generate_contingency_dict, generate_table_d
 
 
@@ -41,3 +42,43 @@ def test_generate_table_d_merges_forecast_and_observed_columns():
     assert list(table_d.columns) == ["Disturbance ID", "Base time", "Location", "Forecast", "Observed"]
     assert table_d["Forecast"].tolist() == [True, False]
     assert table_d["Observed"].tolist() == [True, False]
+
+
+def test_state_filter_is_applied_before_table_a(monkeypatch):
+    locations = pd.DataFrame(
+        [
+            {"name": "WA town", "state": "WA"},
+            {"name": "QLD town", "state": "QLD"},
+        ]
+    )
+    locations["geometry"] = None
+    captured = {}
+
+    def fake_load_locations():
+        return locations
+
+    def fake_generate_table_a(disturbance_id, filtered_locations, **kwargs):
+        captured["locations"] = filtered_locations
+        return pd.DataFrame(
+            columns=[
+                "Disturbance ID", "Base time", "Location", "Distance to watch",
+                "Distance to warning", "Watch", "Warning",
+            ]
+        )
+
+    monkeypatch.setattr(gen_cont_tables, "load_locations", fake_load_locations)
+    monkeypatch.setattr(gen_cont_tables, "generate_table_a", fake_generate_table_a)
+    monkeypatch.setattr(gen_cont_tables, "generate_table_b", lambda *args, **kwargs: pd.DataFrame())
+    monkeypatch.setattr(gen_cont_tables, "generate_table_c", lambda *args, **kwargs: pd.DataFrame())
+    monkeypatch.setattr(
+        gen_cont_tables,
+        "generate_table_d",
+        lambda *args, **kwargs: pd.DataFrame(
+            columns=["Disturbance ID", "Base time", "Location", "Season", "Forecast", "Observed"]
+        ),
+    )
+
+    result = gen_cont_tables.generate_all_tables_for_disturbance("TEST1", state="WA")
+
+    assert captured["locations"]["name"].tolist() == ["WA town"]
+    assert "State" not in result["table_d"].columns
