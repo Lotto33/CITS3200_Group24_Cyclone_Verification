@@ -228,3 +228,25 @@ data/
 
 # Generated GML -> JSON dataset for visualize.html (regenerate with build_gml_dataset.py)
 /viz_data/
+
+# Data 
+*.gml
+*.geojson
+Data/
+viz_data/
+data/
+# Original data
+/data/
+
+# Generated GML -> JSON dataset for visualize.html (regenerate with build_gml_dataset.py)
+/viz_data/
+
+# data files
+Raw/
+Processed/
+#*.csv
+
+# ETL
+*.ipynb
+.ipynb_checkpoints/
+ETL/
