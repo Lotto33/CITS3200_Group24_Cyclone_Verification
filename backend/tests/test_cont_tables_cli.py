@@ -1,4 +1,5 @@
 import pandas as pd
+from datetime import date
 
 import backend.app.gen_cont_tables as gen_cont_tables
 from backend.app.gen_cont_tables import generate_contingency_dict, generate_table_d
@@ -82,3 +83,14 @@ def test_state_filter_is_applied_before_table_a(monkeypatch):
 
     assert captured["locations"]["name"].tolist() == ["WA town"]
     assert "State" not in result["table_d"].columns
+
+
+def test_output_filename_prefix_includes_filters_and_date():
+    prefix = gen_cont_tables._output_filename_prefix(
+        "AU202526_34U",
+        state="WA",
+        season="2025-26",
+        generated_date=date(2026, 9, 11),
+    )
+
+    assert prefix == "AU202526_34U_season-2025-26_state-WA_date-20260911"

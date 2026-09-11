@@ -1,5 +1,6 @@
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 
 import geopandas as gpd
@@ -656,6 +657,22 @@ def get_contingency_matrix_df(stats: dict) -> pd.DataFrame:
     )
     return matrix_df
 
+
+def _output_filename_prefix(
+    identifier: str,
+    state: str | None = None,
+    season: str | None = None,
+    generated_date: date | None = None,
+) -> str:
+    """Build a readable output prefix containing applied filters and run date."""
+    parts = [identifier]
+    if season is not None:
+        parts.append(f"season-{season}")
+    if state is not None:
+        parts.append(f"state-{state}")
+    parts.append(f"date-{(generated_date or date.today()).isoformat().replace('-', '')}")
+    return "_".join(parts)
+
 def generate_all_tables_for_disturbance(
     disturbance_id: str,
     output_dir: str | Path | None = None,
@@ -665,6 +682,7 @@ def generate_all_tables_for_disturbance(
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
     state: str | None = None,
+    season: str | None = None,
 ) -> dict[str, pd.DataFrame | dict]:
     """Generate Tables A-D for one disturbance, optionally limited by state.
 
@@ -710,6 +728,7 @@ def generate_all_tables_for_disturbance(
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
+        output_prefix = _output_filename_prefix(disturbance_id, state=state, season=season)
         print(f"\n[write] Writing CSVs to {out_dir} ...")
         for name, frame in (
             ("table_a", table_a),
@@ -718,11 +737,11 @@ def generate_all_tables_for_disturbance(
             ("table_d", table_d),
             ("contingency_matrix", matrix.reset_index()),
         ):
-            out_path = out_dir / f"{disturbance_id}_{name}.csv"
+            out_path = out_dir / f"{output_prefix}_{name}.csv"
             frame.to_csv(out_path, index=False)
             print(f"[write]   {out_path} ({len(frame)} row(s))")
 
-        summary_path = out_dir / f"{disturbance_id}_contingency_summary.csv"
+        summary_path = out_dir / f"{output_prefix}_contingency_summary.csv"
         pd.DataFrame([stats]).to_csv(summary_path, index=False)
         print(f"[write]   {summary_path}")
 
@@ -739,6 +758,7 @@ def generate_all_tables_for_disturbances(
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
     state: str | None = None,
+    season: str | None = None,
 ) -> dict[str, object]:
     """Run the full Table A-D pipeline for each disturbance ID in turn (each
     still gets its own per-disturbance CSVs, same as generate_all_tables_for_disturbance),
@@ -759,6 +779,7 @@ def generate_all_tables_for_disturbances(
             relevance_km=relevance_km,
             coastal_buffer_cutoff=coastal_buffer_cutoff,
             state=state,
+            season=season,
         )
         per_disturbance[disturbance_id] = outputs
         table_d_frames.append(outputs["table_d"])
@@ -775,10 +796,11 @@ def generate_all_tables_for_disturbances(
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        combined_table_path = out_dir / "combined_table_d.csv"
+        output_prefix = _output_filename_prefix("combined", state=state, season=season)
+        combined_table_path = out_dir / f"{output_prefix}_table_d.csv"
         combined_table_d.to_csv(combined_table_path, index=False)
         print(f"[write]   {combined_table_path} ({len(combined_table_d)} row(s))")
-        combined_summary_path = out_dir / "combined_contingency_summary.csv"
+        combined_summary_path = out_dir / f"{output_prefix}_contingency_summary.csv"
         pd.DataFrame([combined_stats]).to_csv(combined_summary_path, index=False)
         print(f"[write]   {combined_summary_path}")
 
@@ -819,6 +841,11 @@ if __name__ == "__main__":
         else:
             disturbance_ids = args.disturbance_id
 
+        # A supplied disturbance ID takes precedence over --season for
+        # selection, so only include season in filenames when it actually
+        # selected the disturbance set.
+        applied_season = args.season if args.season and not args.disturbance_id else None
+
         if len(disturbance_ids) == 1:
             outputs = generate_all_tables_for_disturbance(
                 disturbance_ids[0],
@@ -829,6 +856,7 @@ if __name__ == "__main__":
                 relevance_km=args.relevance_km,
                 coastal_buffer_cutoff=coastal_buffer_cutoff,
                 state=args.state,
+                season=applied_season,
             )
             table_d, stats = outputs["table_d"], outputs["stats"]
         else:
@@ -841,6 +869,7 @@ if __name__ == "__main__":
                 relevance_km=args.relevance_km,
                 coastal_buffer_cutoff=coastal_buffer_cutoff,
                 state=args.state,
+                season=applied_season,
             )
             table_d, stats = outputs["combined_table_d"], outputs["combined_stats"]
 

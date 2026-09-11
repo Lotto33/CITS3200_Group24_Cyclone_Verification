@@ -173,11 +173,17 @@ disturbance ID is used; use `--season` on its own to select a whole season.
   each forecast base time, in which an observed gale counts as a "hit"
   against that forecast.
 
-This writes `<disturbance_id>_table_a.csv` through `_table_d.csv`,
-`<disturbance_id>_contingency_matrix.csv`, and
-`<disturbance_id>_contingency_summary.csv` under `--output-dir`, and prints
-progress plus the final contingency stats and matrix to the console as it
-runs.
+This writes dated, filter-aware CSVs under `--output-dir`. For example, a WA
+run generated on 11 September 2026 produces names such as
+`AU202526_34U_state-WA_date-20260911_table_a.csv` through
+`_table_d.csv`, plus the corresponding contingency matrix and summary files.
+Season-selected combined runs include the season too, for example
+`combined_season-2025-26_state-WA_date-20260911_table_d.csv`. If no state or
+season filter is applied, those filter components are omitted. The run date is
+the date on which the CSVs are generated.
+
+Progress plus the final contingency stats and matrix are also printed to the
+console as the script runs.
 
 Requires step 1 (`build_gml_dataset.py`) to have already been run — it reads
 the `data/geojson/<distId>/` files that step produces — plus the `TC Locations`
