@@ -161,14 +161,21 @@ python backend/app/gen_cont_tables.py --season 2025-26 --state WA
 If a disturbance ID is supplied along with `--season`, the explicitly supplied
 disturbance ID is used; use `--season` on its own to select a whole season.
 
-- `disturbance_id` (positional, required) — the BOM disturbance ID, e.g.
-  `AU202526_34U`.
+- `disturbance_id` (optional when `--season` is supplied) — one or more BOM
+  disturbance IDs, e.g. `AU202526_34U`. If omitted, `--season` must be used
+  to select all disturbances in that Jul–Jun season.
 - `--output-dir` (default `data/contingency_tables`) — where the generated
   CSVs are written.
 - `--state` — generate Tables A-D using only locations whose `State` column in
   the `TC Locations` sheet matches the supplied value (for example, `WA`).
 - `--season` — select all disturbances whose forecast base times fall in a
   Jul–Jun season (for example, `2025-26`).
+- `--coastal-buffer-km` (default `6.0`) — distance from a watch/warning edge
+  within which a coastal location counts as covered for eligible bulletins.
+- `--coastal-buffer-cutoff` (default `2025-06-01`) — date from which the
+  coastal buffer is disabled.
+- `--relevance-km` (default `300.0`) — maximum distance from a watch/warning
+  area for a location to be included in Table A.
 - `--x-hours` / `--y-hours` (default `0` / `24`) — the window, relative to
   each forecast base time, in which an observed gale counts as a "hit"
   against that forecast.

@@ -27,10 +27,12 @@ BEST_TRACK_SKIPROWS = 4  # 3 copyright lines + 1 blank before the header
 # A town counts as coastal if this column has a value in the TC Locations
 # sheet. The State column from that same sheet is carried into Table A and D.
 COASTAL_ORDER_COLUMN = "Coastal Order"
-# Scope doc example uses 6km ("if we treat the buffer as 6 km"), but
-# explicitly flags this as unconfirmed ("We will confirm this limit"). Keep
-# this as a parameter callers can override, not a fact baked into the logic.
-DEFAULT_COASTAL_BUFFER_KM = 6.0
+# The 20 km rule applies to the coastal buffer: for coastal towns, being
+# within 20 km of a watch/warning polygon edge counts as covered, even if the
+# town is not strictly inside the polygon. This is a different rule from the
+# 300 km relevance filter, which decides whether a town appears in Table A at
+# all because it is close enough to any watch/warning area.
+DEFAULT_COASTAL_BUFFER_KM = 20.0
 # The coastal buffer only applies to forecasts issued before this date --
 # the threat-area creation methodology changed from this point on, so
 # post-change polygons don't have the town-A-to-town-B gap problem the
@@ -370,7 +372,10 @@ def generate_table_a(
     coastal or not.
 
     A location only appears in the output at all if its minimum distance to
-    a watch OR warning polygon is under relevance_km.
+    a watch OR warning polygon is under relevance_km. This is separate from
+    the coastal buffer rule below, which decides whether a coastal town is
+    treated as covered when the nearest watch/warning edge is within
+    coastal_buffer_km (default 20 km).
     """
     print(f"\n=== Table A: forecast watch/warning areas for {disturbance_id} ===")
     if locations is None:
@@ -418,6 +423,10 @@ def generate_table_a(
             if not candidate_distances or min(candidate_distances) >= relevance_km:
                 continue  # more than relevance_km from any watch/warning area (or neither exists) -- not relevant here
 
+            # Coastal coverage uses the nearest boundary distance to any watch/warning polygon.
+            # This is intentionally different from the relevance_km gate above: the 300 km check
+            # decides whether a town appears in the table at all, while the 20 km buffer decides
+            # whether a coastal town is treated as covered when it sits just outside the polygon.
             is_coastal = bool(loc.get("is_coastal", False)) and buffer_applies
             watch = bool(pd.notna(dist_watch) and (dist_watch <= 0 or (is_coastal and dist_watch <= coastal_buffer_km)))
             warning = bool(pd.notna(dist_warning) and (dist_warning <= 0 or (is_coastal and dist_warning <= coastal_buffer_km)))
@@ -820,7 +829,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="data/contingency_tables", help="Directory to write the generated CSV tables to")
     parser.add_argument("--x-hours", type=int, default=0, help="Lower bound for observed-gale window in hours from base time (default 0: this is the Warning window's start; use 24 for the Watch window)")
     parser.add_argument("--y-hours", type=int, default=24, help="Upper bound for observed-gale window in hours from base time (default 24: this is the Warning window's end; use 48 for the Watch window). Other windows (e.g. 30, 42) can also be explored.")
-    parser.add_argument("--coastal-buffer-km", type=float, default=DEFAULT_COASTAL_BUFFER_KM, help=f"Coastal towns within this many km of a watch/warning polygon edge count as covered (default {DEFAULT_COASTAL_BUFFER_KM}km -- scope doc flags this figure as still to be confirmed)")
+    parser.add_argument("--coastal-buffer-km", type=float, default=DEFAULT_COASTAL_BUFFER_KM, help=f"Coastal towns within this many km of a watch/warning polygon edge count as covered (default {DEFAULT_COASTAL_BUFFER_KM}km)")
     parser.add_argument("--coastal-buffer-cutoff", default=str(DEFAULT_COASTAL_BUFFER_CUTOFF.date()), help=f"Coastal buffer only applies to bulletins before this date (YYYY-MM-DD); threat-area methodology changed after this point (default {DEFAULT_COASTAL_BUFFER_CUTOFF.date()})")
     parser.add_argument("--relevance-km", type=float, default=DEFAULT_RELEVANCE_KM, help=f"Only include towns within this many km of a watch or warning area in Table A (default {DEFAULT_RELEVANCE_KM}km)")
     args = parser.parse_args()
