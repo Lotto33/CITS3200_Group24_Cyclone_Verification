@@ -127,6 +127,7 @@
   }
 
   .field { margin-bottom: 2px; }
+  .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
   fieldset {
     border: 1px solid var(--panel-border);
@@ -180,6 +181,17 @@
   <div>
     <h1>BOM Cyclone GML Visualizer</h1>
     <p class="subtitle">Browse historical BOM tropical cyclone GML bulletins on a map.</p>
+  </div>
+
+  <div class="filter-grid" aria-label="Cyclone filters">
+    <div class="field">
+      <label for="seasonSelect">Season</label>
+      <select id="seasonSelect"><option value="">All seasons</option></select>
+    </div>
+    <div class="field">
+      <label for="stateSelect">State / region</label>
+      <select id="stateSelect"><option value="">All states</option></select>
+    </div>
   </div>
 
   <div class="field">
@@ -299,6 +311,8 @@
 
   const els = {
     cyclone: document.getElementById("cycloneSelect"),
+    season: document.getElementById("seasonSelect"),
+    state: document.getElementById("stateSelect"),
     slider: document.getElementById("bulletinSlider"),
     label: document.getElementById("bulletinLabel"),
     prev: document.getElementById("prevBtn"),
@@ -428,16 +442,32 @@
       });
     });
 
-    const cyclones = Array.from(cyclonesById.values())
+    const allCyclones = Array.from(cyclonesById.values());
+    const seasons = [...new Set(allCyclones
+      .map(c => c.firstIssue ? c.firstIssue.slice(0, 4) : "")
+      .filter(Boolean))].sort();
+    const regions = [...new Set(allCyclones.flatMap(c => c.regions))].sort();
+    const selectedSeason = els.season.value;
+    const selectedState = els.state.value;
+    els.season.replaceChildren(new Option("All seasons", ""), ...seasons.map(season => new Option(season, season)));
+    els.state.replaceChildren(new Option("All states", ""), ...regions.map(region => new Option(region, region)));
+    els.season.value = seasons.includes(selectedSeason) ? selectedSeason : "";
+    els.state.value = regions.includes(selectedState) ? selectedState : "";
+
+    const cyclones = allCyclones
+      .filter(c => (!els.season.value || (c.firstIssue || "").startsWith(els.season.value))
+        && (!els.state.value || c.regions.includes(els.state.value)))
       .sort((a, b) => (a.firstIssue || "").localeCompare(b.firstIssue || ""));
+    const selectedId = els.cyclone.value;
     els.cyclone.replaceChildren(...cyclones.map(c => {
       const label = `${c.distName || c.distId} — ${c.distId} (${c.bulletinCount} bulletins, ${c.firstIssue ? c.firstIssue.slice(0,10) : "?"})${c.hasBestTrack ? " ★" : ""}`;
       return new Option(label, c.distId);
     }));
     if (cyclones.length) {
-      els.cyclone.value = cyclones[0].distId;
+      els.cyclone.value = cyclones.some(c => c.distId === selectedId) ? selectedId : cyclones[0].distId;
       loadCyclone();
     } else {
+      els.cyclone.replaceChildren(new Option("No cyclones match these filters", ""));
       currentBulletins = [];
       renderBulletin();
     }
@@ -646,6 +676,8 @@
   }
 
   els.cyclone.addEventListener("change", loadCyclone);
+  els.season.addEventListener("change", populateCyclones);
+  els.state.addEventListener("change", populateCyclones);
   els.slider.addEventListener("input", () => {
     stopPlay();
     currentIdx = Number(els.slider.value);
