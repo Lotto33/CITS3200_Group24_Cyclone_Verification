@@ -67,8 +67,6 @@
   const sidebar = document.getElementById("sidebar");
   const optionsToggle = document.getElementById("optionsToggle");
   const verificationTab = document.getElementById("verificationTab");
-  const verificationDrawer = document.getElementById("verificationDrawer");
-  const verificationClose = document.getElementById("verificationClose");
 
   function setSidebarOpen(isOpen) {
     sidebar.hidden = !isOpen;
@@ -79,18 +77,18 @@
     requestAnimationFrame(() => map.invalidateSize());
   }
 
-  function setVerificationOpen(isOpen) {
-    verificationDrawer.hidden = !isOpen;
-    verificationTab.setAttribute("aria-expanded", String(isOpen));
-    verificationTab.innerHTML = isOpen
-      ? 'Hide verification table <span aria-hidden="true">▾</span>'
-      : 'Verification table <span aria-hidden="true">▴</span>';
-    requestAnimationFrame(() => map.invalidateSize());
+  function openVerificationTab() {
+    const bulletin = currentBulletins[currentIdx];
+    localStorage.setItem("cycloneVerification", JSON.stringify({
+      distId: bulletin?.distId || els.cyclone.value,
+      distName: bulletin?.distName,
+      bulletin: bulletin ? `${currentIdx + 1}/${currentBulletins.length} — ${fmtTime(bulletin.issueTime)}` : null,
+    }));
+    window.open("verification.html", "cycloneVerification");
   }
 
   optionsToggle.addEventListener("click", () => setSidebarOpen(sidebar.hidden));
-  verificationTab.addEventListener("click", () => setVerificationOpen(verificationDrawer.hidden));
-  verificationClose.addEventListener("click", () => setVerificationOpen(false));
+  verificationTab.addEventListener("click", openVerificationTab);
   setSidebarOpen(true);
 
   function setStatus(msg, isError) {

@@ -36,16 +36,6 @@ body {
 }
 #sidebar[hidden] { display: none; }
 #map { flex: 1; height: 100%; background: #0a0e16; }
-#verificationDrawer {
-  flex: 0 0 42vh;
-  min-height: 0;
-  background: #121a29;
-  border-top: 1px solid var(--panel-border);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-#verificationDrawer[hidden] { display: none; }
 #optionsToggle {
   position: fixed;
   top: 16px;
@@ -77,26 +67,9 @@ body {
   font-size: 12px;
 }
 #verificationTab:hover, #verificationTab:focus-visible { background: #2a3852; }
-.drawer-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 10px; border-bottom: 1px solid var(--panel-border); }
-.drawer-header h2 { margin: 0; font-size: 15px; }
-.drawer-header p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
-.drawer-close { border: 1px solid var(--panel-border); border-radius: 5px; background: transparent; color: var(--muted); width: 28px; height: 28px; cursor: pointer; font-size: 16px; }
-.drawer-close:hover, .drawer-close:focus-visible { color: var(--text); background: #1f2a3f; }
-.table-wrap { overflow: auto; padding: 14px 18px 18px; }
-.contingency-table { border-collapse: collapse; min-width: 620px; width: 100%; font-size: 12px; }
-.contingency-table caption { text-align: left; color: var(--muted); margin-bottom: 8px; }
-.contingency-table th, .contingency-table td { border: 1px solid var(--panel-border); padding: 9px 12px; text-align: right; }
-.contingency-table th { background: #1b2639; color: var(--muted); font-weight: 600; }
-.contingency-table th:first-child, .contingency-table td:first-child { text-align: left; }
-.contingency-table td { background: #172235; }
-.contingency-table .highlight { color: #3ddc84; font-weight: 700; }
-.metrics { display: flex; flex-wrap: wrap; gap: 8px 24px; color: var(--muted); margin-top: 12px; }
-.metrics b { color: var(--text); }
 @media (max-width: 640px) {
   #sidebar { width: 280px; min-width: 280px; padding: 12px; }
-  #verificationDrawer { flex-basis: 55vh; }
   #verificationTab { right: 12px; }
-  .drawer-header, .table-wrap { padding-left: 12px; padding-right: 12px; }
 }
 h1 { font-size: 16px; margin: 0 0 2px; }
 .subtitle { color: var(--muted); font-size: 12px; margin: 0 0 6px; }

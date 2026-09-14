@@ -88,37 +88,9 @@
 <div id="map"></div>
 </div>
 
-<button id="verificationTab" type="button" aria-controls="verificationDrawer" aria-expanded="false">
-  Verification table <span aria-hidden="true">▴</span>
+<button id="verificationTab" type="button" title="Open verification table in a new browser tab">
+  Open verification table <span aria-hidden="true">↗</span>
 </button>
-<section id="verificationDrawer" hidden aria-labelledby="verificationTitle">
-  <div class="drawer-header">
-    <div>
-      <h2 id="verificationTitle">Watch / warning area verification</h2>
-      <p>Illustrative contingency table for the selected cyclone and bulletin.</p>
-    </div>
-    <button id="verificationClose" class="drawer-close" type="button" aria-label="Close verification table">×</button>
-  </div>
-  <div class="table-wrap">
-    <table class="contingency-table">
-      <caption>Predicted area classification against observed impact classification</caption>
-      <thead>
-        <tr><th scope="col">Predicted</th><th scope="col">Observed: Event</th><th scope="col">Observed: No event</th><th scope="col">Total</th></tr>
-      </thead>
-      <tbody>
-        <tr><th scope="row">Event</th><td class="highlight">42 (TP)</td><td>6 (FP)</td><td>48</td></tr>
-        <tr><th scope="row">No event</th><td>4 (FN)</td><td class="highlight">58 (TN)</td><td>62</td></tr>
-        <tr><th scope="row">Total</th><td>46</td><td>64</td><td>110</td></tr>
-      </tbody>
-    </table>
-    <div class="metrics">
-      <span>Accuracy <b>90.9%</b></span>
-      <span>Precision <b>87.5%</b></span>
-      <span>Recall <b>91.3%</b></span>
-      <span>F1 score <b>89.4%</b></span>
-    </div>
-  </div>
-</section>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
