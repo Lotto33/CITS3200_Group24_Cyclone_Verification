@@ -116,8 +116,7 @@ def upsert_disturbances(
             )
 
     existing = {
-        d.disturbance_id: d
-        for d in session.execute(select(Disturbance)).scalars()
+        d.disturbance_id: d for d in session.execute(select(Disturbance)).scalars()
     }
     for ident, record in seen.items():
         disturbance = existing.get(ident)
@@ -140,8 +139,7 @@ def upsert_disturbances(
     session.flush()
 
     return {
-        d.disturbance_id: d.id
-        for d in session.execute(select(Disturbance)).scalars()
+        d.disturbance_id: d.id for d in session.execute(select(Disturbance)).scalars()
     }
 
 

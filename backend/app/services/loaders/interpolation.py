@@ -81,9 +81,7 @@ def build_input_frame(
     if project_start is not None:
         statement = statement.where(BestTrackObservation.tm >= project_start)
     if watch_warning_only:
-        statement = statement.where(
-            Disturbance.has_watch | Disturbance.has_warning
-        )
+        statement = statement.where(Disturbance.has_watch | Disturbance.has_warning)
 
     rows = session.execute(statement).mappings().all()
     frame = pd.DataFrame(
@@ -144,9 +142,7 @@ def load_interpolation(
             "bulletins first (the watch/warning filter needs the bulletins)"
         )
 
-    pk_by_id = (
-        frame.groupby("DISTURBANCE_ID")["_disturbance_pk"].first().to_dict()
-    )
+    pk_by_id = frame.groupby("DISTURBANCE_ID")["_disturbance_pk"].first().to_dict()
     interpolated = interpolate_best_track(
         frame.drop(columns=["_disturbance_pk"]), step_minutes=step_minutes
     )

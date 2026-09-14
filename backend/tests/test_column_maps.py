@@ -40,9 +40,7 @@ def test_best_track_header_has_79_columns():
 
 
 def test_best_track_header_matches_the_shipped_csv(best_track_csv: Path):
-    assert _header(best_track_csv, BEST_TRACK_HEADER_ROW) == list(
-        BEST_TRACK_CSV_HEADER
-    )
+    assert _header(best_track_csv, BEST_TRACK_HEADER_ROW) == list(BEST_TRACK_CSV_HEADER)
 
 
 def test_every_mapped_column_exists_on_the_model():

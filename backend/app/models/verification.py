@@ -183,9 +183,7 @@ class VerificationPair(Base):
         CheckConstraint(sql_in_clause("outcome", Outcome), name="outcome_valid"),
         Index("ix_verification_pair_run_id_outcome", "run_id", "outcome"),
         Index("ix_verification_pair_run_id_season", "run_id", "season"),
-        Index(
-            "ix_verification_pair_run_id_disturbance_pk", "run_id", "disturbance_pk"
-        ),
+        Index("ix_verification_pair_run_id_disturbance_pk", "run_id", "disturbance_pk"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

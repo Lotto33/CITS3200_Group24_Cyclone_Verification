@@ -128,9 +128,7 @@ def load_otcr(
         ident = clean_cell(raw["DISTURBANCE_ID"])
         tm = to_datetime(raw["TM"], OTCR_TM_FORMAT, field="TM")
         if not ident or tm is None:
-            stats.notes["rows_without_key"] = (
-                stats.notes.get("rows_without_key", 0) + 1
-            )
+            stats.notes["rows_without_key"] = stats.notes.get("rows_without_key", 0) + 1
             continue
 
         row: dict[str, object] = {
@@ -181,9 +179,7 @@ def load_otcr(
     # Deliberately recomputed for the BoM dataset only, so ingesting the
     # reanalysis cannot overwrite a disturbance's best-track extent with
     # reanalysis dates.
-    refresh_disturbance_observation_stats(
-        session, dataset=TrackDataset.BOM_BEST_TRACK
-    )
+    refresh_disturbance_observation_stats(session, dataset=TrackDataset.BOM_BEST_TRACK)
     session.flush()
 
     stats.notes["observations"] = written

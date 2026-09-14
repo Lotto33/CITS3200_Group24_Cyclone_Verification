@@ -65,9 +65,7 @@ class InterpolationRun(Base):
     gf_threshold_kn: Mapped[float] = mapped_column(Float, nullable=False, default=34.0)
     sf_threshold_kn: Mapped[float] = mapped_column(Float, nullable=False, default=48.0)
     hf_threshold_kn: Mapped[float] = mapped_column(Float, nullable=False, default=64.0)
-    mps_to_knots: Mapped[float] = mapped_column(
-        Float, nullable=False, default=1.94384
-    )
+    mps_to_knots: Mapped[float] = mapped_column(Float, nullable=False, default=1.94384)
     restricted_to_watch_warning: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

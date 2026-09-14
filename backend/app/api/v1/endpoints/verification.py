@@ -25,8 +25,7 @@ router = APIRouter()
 
 
 NO_RUNS_HINT = (
-    "no verification run exists yet; load one with "
-    "`python -m app.cli verification`"
+    "no verification run exists yet; load one with `python -m app.cli verification`"
 )
 
 

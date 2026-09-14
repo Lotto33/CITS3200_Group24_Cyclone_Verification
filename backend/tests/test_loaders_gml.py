@@ -80,9 +80,7 @@ def test_coordinates_are_rounded_and_deduplicated():
     out = as_multipolygon({"type": "Polygon", "coordinates": [ring]})
     assert out
     points = out[0][0]
-    decimals = [
-        len(f"{c:.10f}".rstrip("0").split(".")[1]) for p in points for c in p
-    ]
+    decimals = [len(f"{c:.10f}".rstrip("0").split(".")[1]) for p in points for c in p]
     assert max(decimals) <= 4
     assert points[0] != points[1]
 
@@ -93,9 +91,15 @@ def test_polygon_with_a_hole_keeps_both_rings(db: Session):
     db.flush()
     assert outcome == "written"
 
-    multi_ring = db.execute(
-        select(BulletinArea).where(BulletinArea.ring_count > BulletinArea.polygon_count)
-    ).scalars().all()
+    multi_ring = (
+        db.execute(
+            select(BulletinArea).where(
+                BulletinArea.ring_count > BulletinArea.polygon_count
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert multi_ring, "this bulletin has an interior ring"
     for area in multi_ring:
         rings = [len(p) for p in area.geometry["coordinates"]]

@@ -125,9 +125,7 @@ def test_coastal_order_keeps_fractions(db: Session):
         ),
     )
     db.flush()
-    orders = sorted(
-        db.execute(select(TownGroupMembership.coastal_order)).scalars()
-    )
+    orders = sorted(db.execute(select(TownGroupMembership.coastal_order)).scalars())
     assert orders == [20.1, 20.2]
 
 

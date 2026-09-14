@@ -286,8 +286,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 "best_track_observation (bom)",
                 count(
                     BestTrackObservation,
-                    BestTrackObservation.dataset
-                    == TrackDataset.BOM_BEST_TRACK.value,
+                    BestTrackObservation.dataset == TrackDataset.BOM_BEST_TRACK.value,
                 ),
                 31_706,
             )
@@ -297,8 +296,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 "best_track_observation (otcr)",
                 count(
                     BestTrackObservation,
-                    BestTrackObservation.dataset
-                    == TrackDataset.OTCR_REANALYSIS.value,
+                    BestTrackObservation.dataset == TrackDataset.OTCR_REANALYSIS.value,
                 ),
                 13_743,
             )

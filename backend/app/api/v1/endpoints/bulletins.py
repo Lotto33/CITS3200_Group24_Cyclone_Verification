@@ -233,12 +233,8 @@ def get_bulletin_geojson(db: DbSession, bulletin_id: int) -> FeatureCollection:
     )
 
 
-@router.get(
-    "/{bulletin_id}/areas/{area_id}", response_model=BulletinAreaGeometry
-)
-def get_area(
-    db: DbSession, bulletin_id: int, area_id: int
-) -> BulletinAreaGeometry:
+@router.get("/{bulletin_id}/areas/{area_id}", response_model=BulletinAreaGeometry)
+def get_area(db: DbSession, bulletin_id: int, area_id: int) -> BulletinAreaGeometry:
     """One area with its geometry, for when a whole bulletin is too large."""
     row = db.execute(
         select(BulletinArea)

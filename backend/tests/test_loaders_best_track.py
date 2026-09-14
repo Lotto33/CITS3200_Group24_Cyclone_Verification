@@ -49,9 +49,10 @@ def test_fixture_header_is_the_real_79_columns():
 
 def test_loads_every_row(loaded):
     db, _ = loaded
-    assert db.execute(
-        select(func.count()).select_from(BestTrackObservation)
-    ).scalar_one() == 4
+    assert (
+        db.execute(select(func.count()).select_from(BestTrackObservation)).scalar_one()
+        == 4
+    )
 
 
 def test_single_space_becomes_null(loaded):
@@ -138,15 +139,11 @@ def test_reload_is_idempotent(seeded_db: Session):
     frame = read_best_track_csv(FIXTURE)
     load_best_track(seeded_db, frame)
     seeded_db.flush()
-    first = set(
-        seeded_db.execute(select(BestTrackObservation.id)).scalars()
-    )
+    first = set(seeded_db.execute(select(BestTrackObservation.id)).scalars())
 
     load_best_track(seeded_db, frame)
     seeded_db.flush()
-    second = set(
-        seeded_db.execute(select(BestTrackObservation.id)).scalars()
-    )
+    second = set(seeded_db.execute(select(BestTrackObservation.id)).scalars())
 
     assert first == second, "re-running must update in place, not insert again"
 
@@ -162,9 +159,12 @@ def test_changed_value_updates_in_place(seeded_db: Session):
 
     row = _observation(seeded_db, "AU201617_19U", "2017-02-17 00:00")
     assert row.max_wind_spd == 31.4
-    assert seeded_db.execute(
-        select(func.count()).select_from(BestTrackObservation)
-    ).scalar_one() == 4
+    assert (
+        seeded_db.execute(
+            select(func.count()).select_from(BestTrackObservation)
+        ).scalar_one()
+        == 4
+    )
 
 
 def test_has_best_track_is_derived_not_asserted(seeded_db: Session):

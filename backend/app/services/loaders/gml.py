@@ -400,9 +400,7 @@ def load_bulletin_file(
         session.add(disturbance)
     disturbance.region = disturbance.region or region
     disturbance.name = disturbance.name or dist_name
-    disturbance.is_test = disturbance.is_test or is_test_disturbance(
-        dist_id, dist_name
-    )
+    disturbance.is_test = disturbance.is_test or is_test_disturbance(dist_id, dist_name)
     session.flush()
 
     if bulletin is None:
@@ -549,9 +547,7 @@ def refresh_watch_warning_flags(session: Session) -> None:
         matching = (
             select(Bulletin.disturbance_pk)
             .join(BulletinArea, BulletinArea.bulletin_id == Bulletin.id)
-            .where(
-                (BulletinArea.kind == kind) | (BulletinArea.area_type == area_type)
-            )
+            .where((BulletinArea.kind == kind) | (BulletinArea.area_type == area_type))
             .distinct()
         )
         session.execute(

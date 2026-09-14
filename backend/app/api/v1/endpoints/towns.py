@@ -27,8 +27,8 @@ def list_towns(
     Intentionally unpaginated: the whole set is about 60 KB, and both map
     viewers want it in one request to draw the Towns layer at startup.
     """
-    query = select(Town).options(selectinload(Town.groups)).order_by(
-        Town.state, Town.name
+    query = (
+        select(Town).options(selectinload(Town.groups)).order_by(Town.state, Town.name)
     )
     if state:
         query = query.where(Town.state == state)

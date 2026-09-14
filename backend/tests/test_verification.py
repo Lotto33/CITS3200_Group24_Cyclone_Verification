@@ -185,9 +185,7 @@ class TestAgainstCommittedCsvs:
         db, counts = loaded
         mismatched = 0
         for pair in db.execute(
-            select(VerificationPair).where(
-                VerificationPair.run_id == counts["run_id"]
-            )
+            select(VerificationPair).where(VerificationPair.run_id == counts["run_id"])
         ).scalars():
             expected = Outcome.classify(pair.forecast, pair.observed).value
             mismatched += pair.outcome != expected
@@ -221,11 +219,15 @@ class TestAgainstCommittedCsvs:
 
     def test_table_b_is_keyed_on_time_not_base_time(self, loaded):
         db, counts = loaded
-        row = db.execute(
-            select(ObservedWindDistance).where(
-                ObservedWindDistance.run_id == counts["run_id"]
+        row = (
+            db.execute(
+                select(ObservedWindDistance).where(
+                    ObservedWindDistance.run_id == counts["run_id"]
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         assert row.tm is not None
         assert row.analysis_uncertainty_km is not None
 

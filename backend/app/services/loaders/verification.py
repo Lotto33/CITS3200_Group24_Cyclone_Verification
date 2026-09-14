@@ -119,8 +119,7 @@ def load_verification(
 
     town_ids = resolve_town_ids(session)
     dist_pks = {
-        d.disturbance_id: d.id
-        for d in session.execute(select(Disturbance)).scalars()
+        d.disturbance_id: d.id for d in session.execute(select(Disturbance)).scalars()
     }
 
     run = VerificationRun(
@@ -188,9 +187,7 @@ def load_verification(
     stats.notes.update({"run_id": run.id, **counts})
     return {
         "run_id": run.id,
-        "rows_written": sum(
-            v for k, v in counts.items() if k.startswith("table_")
-        ),
+        "rows_written": sum(v for k, v in counts.items() if k.startswith("table_")),
         **counts,
     }
 
@@ -285,9 +282,7 @@ def _load_table_c(session, path, base, town_ids, missing) -> int:
     return _insert(session, ObservedTownImpact, rows)
 
 
-def _load_table_d(
-    session, path, base, town_ids, missing, ident, stats: Stats
-) -> int:
+def _load_table_d(session, path, base, town_ids, missing, ident, stats: Stats) -> int:
     frame = _read(path, TABLE_D_COLUMNS)
     rows = []
     for raw in frame.to_dict("records"):

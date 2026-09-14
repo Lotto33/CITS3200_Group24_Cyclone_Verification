@@ -19,6 +19,7 @@ PROCESSED_DIR = DATA_DIR / "processed"
 
 OUTPUT_RELEVANT_IDS = PROCESSED_DIR / "relevant_disturbance_ids.csv"
 
+
 # ---------------------
 # 1. Find all GML files
 # ----------------------
@@ -84,26 +85,15 @@ def process_gml_files(gml_files):
         disturbance_files[disturbance_id].append(file_path)
         disturbance_advice[disturbance_id].update(advice)
 
-    mapped_file_count = sum(
-        len(files)
-        for files in disturbance_files.values()
-    )
+    mapped_file_count = sum(len(files) for files in disturbance_files.values())
 
     all_mapped_files = [
-        file_path
-        for files in disturbance_files.values()
-        for file_path in files
+        file_path for files in disturbance_files.values() for file_path in files
     ]
 
-    duplicate_mapped_files = (
-        len(all_mapped_files)
-        - len(set(all_mapped_files))
-    )
+    duplicate_mapped_files = len(all_mapped_files) - len(set(all_mapped_files))
 
-    relevant_count = sum(
-        bool(advice)
-        for advice in disturbance_advice.values()
-    )
+    relevant_count = sum(bool(advice) for advice in disturbance_advice.values())
 
     print("\n--- Disturbance-file mapping ---")
     print("Unique disturbance IDs:", len(disturbance_files))
@@ -115,11 +105,7 @@ def process_gml_files(gml_files):
     print("Total disturbance IDs:", len(disturbance_advice))
     print("Watch/Warning disturbance IDs:", relevant_count)
 
-    return (
-        dict(disturbance_files),
-        dict(disturbance_advice),
-        unmatched_files
-    )
+    return (dict(disturbance_files), dict(disturbance_advice), unmatched_files)
 
 
 # ----------------------------------------------
@@ -128,33 +114,35 @@ def process_gml_files(gml_files):
 def build_relevant_disturbances(
     disturbance_advice: dict[str, set[str]],
 ) -> pd.DataFrame:
-    
-    relevant_disturbances = pd.DataFrame([
-        {
-            "DISTURBANCE_ID": disturbance_id,
-            "WATCH": "watch" in advice,
-            "WARNING": "warning" in advice,
-        }
-        for disturbance_id, advice in disturbance_advice.items()
-        if advice
-    ])
 
-    relevant_disturbances = (
-        relevant_disturbances
-        .sort_values("DISTURBANCE_ID")
-        .reset_index(drop=True)
+    relevant_disturbances = pd.DataFrame(
+        [
+            {
+                "DISTURBANCE_ID": disturbance_id,
+                "WATCH": "watch" in advice,
+                "WARNING": "warning" in advice,
+            }
+            for disturbance_id, advice in disturbance_advice.items()
+            if advice
+        ]
     )
+
+    relevant_disturbances = relevant_disturbances.sort_values(
+        "DISTURBANCE_ID"
+    ).reset_index(drop=True)
 
     return relevant_disturbances
 
-#-------------------------------------
+
+# -------------------------------------
 # 5. Export relevant disturbance table
-#-------------------------------------
+# -------------------------------------
+
 
 def export_relevant_disturbances(
     relevant_disturbances: pd.DataFrame,
 ) -> None:
-    
+
     OUTPUT_RELEVANT_IDS.parent.mkdir(
         parents=True,
         exist_ok=True,
@@ -176,15 +164,10 @@ def main() -> None:
     disturbance_files, disturbance_advice, unmatched_files = process_gml_files(
         gml_files
     )
-    
 
-    relevant_disturbances = build_relevant_disturbances(
-        disturbance_advice
-    )
+    relevant_disturbances = build_relevant_disturbances(disturbance_advice)
 
-    export_relevant_disturbances(
-        relevant_disturbances
-    )
+    export_relevant_disturbances(relevant_disturbances)
 
 
 if __name__ == "__main__":

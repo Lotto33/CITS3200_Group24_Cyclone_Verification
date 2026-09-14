@@ -215,9 +215,9 @@ def test_bulletin_list_carries_no_geometry(client: TestClient, dataset):
 
 
 def test_bulletin_detail_omits_area_geometry_by_default(client: TestClient, dataset):
-    bulletin_id = client.get(
-        "/api/v1/disturbances/AU201617_19U/bulletins"
-    ).json()[0]["id"]
+    bulletin_id = client.get("/api/v1/disturbances/AU201617_19U/bulletins").json()[0][
+        "id"
+    ]
     body = client.get(f"/api/v1/bulletins/{bulletin_id}").json()
     assert body["areas"][0].get("geometry") is None
     assert "geometry" not in body["areas"][0]
@@ -226,9 +226,9 @@ def test_bulletin_detail_omits_area_geometry_by_default(client: TestClient, data
 
 
 def test_bulletin_detail_includes_geometry_on_request(client: TestClient, dataset):
-    bulletin_id = client.get(
-        "/api/v1/disturbances/AU201617_19U/bulletins"
-    ).json()[0]["id"]
+    bulletin_id = client.get("/api/v1/disturbances/AU201617_19U/bulletins").json()[0][
+        "id"
+    ]
     body = client.get(f"/api/v1/bulletins/{bulletin_id}?include=geometry").json()
     geometry = body["areas"][0]["geometry"]
     assert geometry["type"] == "MultiPolygon"
@@ -239,9 +239,9 @@ def test_vertex_budget_returns_413(client: TestClient, dataset, monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "MAX_RESPONSE_VERTICES", 1)
-    bulletin_id = client.get(
-        "/api/v1/disturbances/AU201617_19U/bulletins"
-    ).json()[0]["id"]
+    bulletin_id = client.get("/api/v1/disturbances/AU201617_19U/bulletins").json()[0][
+        "id"
+    ]
     geometry = client.get(f"/api/v1/bulletins/{bulletin_id}?include=geometry")
     assert geometry.status_code == 413
     assert client.get(f"/api/v1/bulletins/{bulletin_id}/geojson").status_code == 413
@@ -250,9 +250,9 @@ def test_vertex_budget_returns_413(client: TestClient, dataset, monkeypatch):
 
 
 def test_geojson_matches_the_viewer_shape(client: TestClient, dataset):
-    bulletin_id = client.get(
-        "/api/v1/disturbances/AU201617_19U/bulletins"
-    ).json()[0]["id"]
+    bulletin_id = client.get("/api/v1/disturbances/AU201617_19U/bulletins").json()[0][
+        "id"
+    ]
     body = client.get(f"/api/v1/bulletins/{bulletin_id}/geojson").json()
     assert body["type"] == "FeatureCollection"
     assert body["metadata"]["distId"] == "AU201617_19U"

@@ -131,9 +131,7 @@ def load_towns(
                 row[_col("Coastal Order")], field="Coastal Order"
             )
 
-    existing = {
-        (t.name, t.state): t for t in session.execute(select(Town)).scalars()
-    }
+    existing = {(t.name, t.state): t for t in session.execute(select(Town)).scalars()}
     for (name, state), record in records.items():
         town = existing.get((name, state))
         if town is None:

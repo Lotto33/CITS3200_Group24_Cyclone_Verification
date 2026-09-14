@@ -119,9 +119,7 @@ def test_utc_datetime_round_trips_as_aware(db: Session):
     db.flush()
     db.expire(disturbance)
     assert disturbance.first_obs_tm.tzinfo is not None
-    assert disturbance.first_obs_tm == datetime(
-        2020, 6, 1, 12, 30, tzinfo=UTC
-    )
+    assert disturbance.first_obs_tm == datetime(2020, 6, 1, 12, 30, tzinfo=UTC)
 
 
 def test_utc_datetime_rejects_nonsense():

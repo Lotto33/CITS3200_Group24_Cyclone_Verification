@@ -362,8 +362,7 @@ class BestTrackObservation(Base):
     mn_radius_sf_wind_method: Mapped[int | None] = mapped_column(
         Integer,
         doc=(
-            "Method for the storm-force (25 m/s and above) radii. Domain "
-            "radius_method."
+            "Method for the storm-force (25 m/s and above) radii. Domain radius_method."
         ),
     )
     mn_radius_hf_wind_method: Mapped[int | None] = mapped_column(
@@ -528,9 +527,7 @@ class BestTrackObservation(Base):
     otcr_poci_lok_hpa: Mapped[float | None] = mapped_column(
         Float, doc="OTCR 'POCI (Lok, hPa)'."
     )
-    otcr_vmax_kn: Mapped[float | None] = mapped_column(
-        Float, doc="OTCR 'Vmax (kn)'."
-    )
+    otcr_vmax_kn: Mapped[float | None] = mapped_column(Float, doc="OTCR 'Vmax (kn)'.")
     otcr_wind_gust_kn: Mapped[float | None] = mapped_column(
         Float, doc="OTCR 'Wind Gust (kn)'."
     )

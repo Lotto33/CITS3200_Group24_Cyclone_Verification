@@ -20,9 +20,9 @@ def list_domains(db: DbSession) -> list[CodeDomainRead]:
     absent from here. Unknown codes are reported in `ingest_run.stats`.
     """
     rows = db.execute(
-        select(CodeDomain).options(selectinload(CodeDomain.values)).order_by(
-            CodeDomain.code
-        )
+        select(CodeDomain)
+        .options(selectinload(CodeDomain.values))
+        .order_by(CodeDomain.code)
     ).scalars()
     return [CodeDomainRead.model_validate(r) for r in rows]
 
