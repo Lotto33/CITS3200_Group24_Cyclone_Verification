@@ -12,6 +12,20 @@
     <h1>Watch / warning area verification</h1>
     <p id="context">Illustrative contingency table for the selected cyclone and bulletin.</p>
   </header>
+  <div class="filter-grid" aria-label="Verification filters">
+    <div class="filter-field">
+      <label for="typhoonSelect">Typhoon</label>
+      <select id="typhoonSelect"></select>
+    </div>
+    <div class="filter-field">
+      <label for="stateSelect">State / region</label>
+      <select id="stateSelect"></select>
+    </div>
+    <div class="filter-field">
+      <label for="seasonSelect">Season</label>
+      <select id="seasonSelect"></select>
+    </div>
+  </div>
   <div class="table-tabs" role="tablist" aria-label="Verification tables">
     <button class="tab-button active" id="tab-area" type="button" role="tab" aria-selected="true" aria-controls="panel-area">Area classification</button>
     <button class="tab-button" id="tab-track" type="button" role="tab" aria-selected="false" aria-controls="panel-track" tabindex="-1">Track accuracy</button>
@@ -46,10 +60,33 @@
   </section>
 </main>
 <script>
-  const state = JSON.parse(localStorage.getItem("cycloneVerification") || "null");
-  if (state) {
-    document.getElementById("context").textContent = `Illustrative contingency table for ${state.distName || state.distId || "the selected cyclone"}, bulletin ${state.bulletin || "—"}.`;
+  const savedContext = JSON.parse(localStorage.getItem("cycloneVerification") || "null") || {};
+  const selects = {
+    typhoon: document.getElementById("typhoonSelect"),
+    state: document.getElementById("stateSelect"),
+    season: document.getElementById("seasonSelect"),
+  };
+  const options = {
+    typhoon: ["AU202526_34U", "Cyclone Alfred", "Cyclone Jasper", "Cyclone Ilsa"],
+    state: ["All states", "Western Australia", "Northern Territory", "Queensland", "New South Wales"],
+    season: ["All seasons", "2025-26", "2024-25", "2023-24"],
+  };
+
+  Object.entries(selects).forEach(([key, select]) => {
+    options[key].forEach((option) => select.add(new Option(option, option)));
+  });
+  selects.typhoon.value = savedContext.distName || savedContext.distId || options.typhoon[0];
+  selects.state.value = savedContext.region || options.state[0];
+  selects.season.value = savedContext.season || options.season[0];
+
+  function updateContext() {
+    const typhoon = selects.typhoon.value;
+    const state = selects.state.value;
+    const season = selects.season.value;
+    document.getElementById("context").textContent = `Illustrative contingency table for ${typhoon}, ${state}, ${season}; bulletin ${savedContext.bulletin || "—"}.`;
   }
+  Object.values(selects).forEach((select) => select.addEventListener("change", updateContext));
+  updateContext();
 
   const tabButtons = [...document.querySelectorAll(".tab-button")];
   const tablePanels = [...document.querySelectorAll(".table-panel")];

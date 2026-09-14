@@ -82,6 +82,8 @@
     localStorage.setItem("cycloneVerification", JSON.stringify({
       distId: bulletin?.distId || els.cyclone.value,
       distName: bulletin?.distName,
+      region: els.state.value || null,
+      season: els.season.value || null,
       bulletin: bulletin ? `${currentIdx + 1}/${currentBulletins.length} — ${fmtTime(bulletin.issueTime)}` : null,
     }));
     window.open("verification.html", "cycloneVerification");
