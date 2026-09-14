@@ -11,6 +11,7 @@
   <header>
     <h1>Watch / warning area verification</h1>
     <p id="context">Illustrative contingency table for the selected cyclone and bulletin.</p>
+    <button id="backToVisualizer" type="button">← Back to visualizer</button>
   </header>
   <div class="filter-grid" aria-label="Verification filters">
     <div class="filter-field">
@@ -87,6 +88,10 @@
   }
   Object.values(selects).forEach((select) => select.addEventListener("change", updateContext));
   updateContext();
+
+  document.getElementById("backToVisualizer").addEventListener("click", () => {
+    window.location.href = "visualize.html";
+  });
 
   const tabButtons = [...document.querySelectorAll(".tab-button")];
   const tablePanels = [...document.querySelectorAll(".table-panel")];

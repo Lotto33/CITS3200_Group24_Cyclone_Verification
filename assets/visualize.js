@@ -86,7 +86,7 @@
       season: els.season.value || null,
       bulletin: bulletin ? `${currentIdx + 1}/${currentBulletins.length} — ${fmtTime(bulletin.issueTime)}` : null,
     }));
-    window.open("verification.html", "cycloneVerification");
+    window.location.href = "verification.html";
   }
 
   optionsToggle.addEventListener("click", () => setSidebarOpen(sidebar.hidden));
