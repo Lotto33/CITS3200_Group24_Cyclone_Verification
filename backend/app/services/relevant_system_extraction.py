@@ -1,9 +1,8 @@
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
 import pandas as pd
-
 
 # -------
 # Paths
@@ -11,7 +10,11 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 DATA_DIR = PROJECT_ROOT / "data"
-GML_ROOT = DATA_DIR / "gml"
+# The GML bulletins ship as data/NT_GMLs, data/QLD_GMLs and data/WA_GMLs.
+# data/gml/ does not exist, so find_gml_files() globs both layouts rather
+# than silently reporting zero files.
+GML_ROOT = DATA_DIR
+GML_GLOBS = ("*_GMLs/**/*.gml", "gml/**/*.gml")
 PROCESSED_DIR = DATA_DIR / "processed"
 
 OUTPUT_RELEVANT_IDS = PROCESSED_DIR / "relevant_disturbance_ids.csv"
@@ -20,10 +23,18 @@ OUTPUT_RELEVANT_IDS = PROCESSED_DIR / "relevant_disturbance_ids.csv"
 # 1. Find all GML files
 # ----------------------
 def find_gml_files() -> list[Path]:
-    gml_files = list(GML_ROOT.rglob("*.gml"))
+    seen: dict[Path, None] = {}
+    for pattern in GML_GLOBS:
+        for path in GML_ROOT.glob(pattern):
+            if path.is_file():
+                seen[path] = None
+    gml_files = sorted(seen)
 
     print("--- GML files ---")
     print("Total GML files:", len(gml_files))
+    if not gml_files:
+        print("No .gml files found under", GML_ROOT)
+        print("Expected data/NT_GMLs, data/QLD_GMLs, data/WA_GMLs")
 
     return gml_files
 

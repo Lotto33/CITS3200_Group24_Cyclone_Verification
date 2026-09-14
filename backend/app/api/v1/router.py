@@ -2,7 +2,15 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import example
+from app.api.v1.endpoints import bulletins, codes, disturbances, towns, verification
 
 api_router = APIRouter()
-api_router.include_router(example.router, prefix="/example", tags=["example"])
+api_router.include_router(
+    disturbances.router, prefix="/disturbances", tags=["disturbances"]
+)
+api_router.include_router(bulletins.router, prefix="/bulletins", tags=["bulletins"])
+api_router.include_router(towns.router, prefix="/towns", tags=["towns"])
+api_router.include_router(codes.router, prefix="/codes", tags=["codes"])
+api_router.include_router(
+    verification.router, prefix="/verification-runs", tags=["verification"]
+)

@@ -1,0 +1,3 @@
+# Generated from backend/pyproject.toml -- do not edit by hand.
+# See the Dependencies section of backend/README.md to regenerate.
+-r backend/requirements.txt

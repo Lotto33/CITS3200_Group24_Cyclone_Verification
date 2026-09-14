@@ -13,6 +13,34 @@
 
 
 
+## The backend database and API
+
+`backend/` holds a FastAPI service over a relational database of everything in
+`data/`: the BoM best track, the code lookup tables from
+`data/TC_Database_Structure_Oct2011.pdf`, the GML bulletins, the towns layer,
+the interpolated 15-minute track, and the contingency tables.
+
+```bash
+cd backend
+pip install -e ".[dev]"
+alembic upgrade head        # create the schema (SQLite by default, no setup)
+python -m app.cli all       # seed and ingest everything (~2.5 min)
+python -m app.cli verify    # assert the expected row counts
+uvicorn app.main:app --reload
+```
+
+Then browse http://127.0.0.1:8000/docs.
+
+See [backend/README.md](backend/README.md) for the CLI, the endpoints, and --
+worth reading before using the data -- the **Data caveats** section, which
+records the things about BoM's files that code will otherwise get quietly
+wrong: `0` versus `NULL` in the radius columns, missing values written as a
+single space, the `99` sentinel, GDA94 rather than WGS84 geometry, and the six
+town names that appear twice.
+
+The database is **additive**: the build scripts below still produce the JSON
+that `visualize.html` reads, and nothing about the viewers has changed.
+
 ## Visualizing the BOM cyclone GML data
 
 `data/NT_GMLs`, `data/QLD_GMLs`, `data/WA_GMLs` contain ~3,450 individual BOM

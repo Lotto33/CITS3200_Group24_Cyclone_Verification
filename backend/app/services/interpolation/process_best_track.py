@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pandas as pd
 
-
 # -------
 # Paths
 # -------
@@ -11,7 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DATA_DIR = PROJECT_ROOT / "data"
 PROCESSED_DIR = DATA_DIR / "processed"
 
-RAW_BEST_TRACK_CSV = DATA_DIR / "IDCKMSTM0S.csv"
+# BoM publishes this as product IDCKMSTM0S ("Database of past tropical
+# cyclone tracks"); the repository ships it as best_track.csv. Same file,
+# same 4-metadata-line + header-on-line-5 layout that skiprows=4 expects.
+RAW_BEST_TRACK_CSV = DATA_DIR / "best_track.csv"
 RELEVANT_IDS_CSV = PROCESSED_DIR / "relevant_disturbance_ids.csv"
 
 RELEVANT_BEST_TRACK_CSV = PROCESSED_DIR / "relevant_best_track_raw.csv"
