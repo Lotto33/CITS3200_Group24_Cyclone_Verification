@@ -302,8 +302,10 @@ def find_pre_cutoff_near_polygon_distances(
 ) -> pd.DataFrame:
     """Find towns that are just outside pre-cutoff watch/warning polygons.
 
-    Every forecast bulletin for every cyclone is checked. A result is created
-    for each town-to-polygon-type distance where the town is outside the
+    Every forecast bulletin for every cyclone is checked. Only locations
+    marked coastal by ``load_locations()`` (the TC Locations sheet's
+    ``Coastal Order`` column) are considered. A result is created for each
+    coastal town-to-polygon-type distance where the town is outside the
     polygon (distance > 0) and strictly closer than ``max_distance_km``.
     Therefore, a town can produce two rows for one bulletin: one for a watch
     and one for a warning. ``Nearby area count`` reports how many qualifying
@@ -357,6 +359,8 @@ def find_pre_cutoff_near_polygon_distances(
 
             bulletin_matches: list[dict] = []
             for _, location in locations.iterrows():
+                if not bool(location.get("is_coastal", False)):
+                    continue
                 for area_name, polygon_union in polygon_unions.items():
                     distance = signed_distance_to_polygon_km(location.geometry, polygon_union)
                     if pd.notna(distance) and 0 < distance < max_distance_km:
