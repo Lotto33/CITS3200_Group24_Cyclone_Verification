@@ -293,6 +293,99 @@ def load_forecast_geojson(disturbance_id: str, fcast_time: str) -> dict | None:
         return None
     return json.loads(path.read_text())
 
+
+def find_pre_cutoff_near_polygon_distances(
+    locations: gpd.GeoDataFrame | None = None,
+    cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
+    max_distance_km: float = DEFAULT_COASTAL_BUFFER_KM,
+    output_csv: str | Path | None = None,
+) -> pd.DataFrame:
+    """Find towns that are just outside pre-cutoff watch/warning polygons.
+
+    Every forecast bulletin for every cyclone is checked. A result is created
+    for each town-to-polygon-type distance where the town is outside the
+    polygon (distance > 0) and strictly closer than ``max_distance_km``.
+    Therefore, a town can produce two rows for one bulletin: one for a watch
+    and one for a warning. ``Nearby area count`` reports how many qualifying
+    watch/warning distances that town has for that cyclone and bulletin.
+
+    If ``output_csv`` is supplied, the same results are also written to a
+    CSV file. This is an analysis/reporting function; it does not change
+    Table A's relevance filtering or coastal coverage decisions.
+    """
+    if max_distance_km <= 0:
+        raise ValueError("max_distance_km must be greater than 0")
+
+    cutoff = pd.Timestamp(cutoff)
+    if cutoff.tzinfo is not None:
+        cutoff = cutoff.tz_localize(None)
+    if locations is None:
+        locations = load_locations()
+
+    columns = [
+        "Disturbance ID", "Base time", "Location", "Area type",
+        "Distance (km)", "Nearby area count",
+    ]
+    matches: list[dict] = []
+
+    for disturbance_id in list_available_disturbance_ids():
+        for fcast_time in get_reference_times(disturbance_id):
+            base_time = pd.Timestamp(fcast_time)
+            if base_time.tzinfo is not None:
+                base_time = base_time.tz_localize(None)
+            if base_time >= cutoff:
+                continue
+
+            geo = load_forecast_geojson(disturbance_id, fcast_time)
+            if geo is None:
+                continue
+
+            polygon_unions = {"Watch": None, "Warning": None}
+            geometries = {"Watch": [], "Warning": []}
+            for feature in geo.get("features", []):
+                properties = feature.get("properties", {})
+                if properties.get("featureType") not in ("tcWarningArea", "tcWatchArea"):
+                    continue
+                area_type = (properties.get("areaType") or "").lower()
+                area_name = "Warning" if "warning" in area_type else "Watch" if "watch" in area_type else None
+                if area_name is not None:
+                    geometries[area_name].append(shapely_shape(feature["geometry"]))
+
+            for area_name, area_geometries in geometries.items():
+                if area_geometries:
+                    polygon_unions[area_name] = unary_union(area_geometries)
+
+            bulletin_matches: list[dict] = []
+            for _, location in locations.iterrows():
+                for area_name, polygon_union in polygon_unions.items():
+                    distance = signed_distance_to_polygon_km(location.geometry, polygon_union)
+                    if pd.notna(distance) and 0 < distance < max_distance_km:
+                        bulletin_matches.append({
+                            "Disturbance ID": disturbance_id,
+                            "Base time": base_time,
+                            "Location": location["name"],
+                            "Area type": area_name,
+                            "Distance (km)": distance,
+                        })
+
+            if bulletin_matches:
+                counts = pd.Series(
+                    [match["Location"] for match in bulletin_matches]
+                ).value_counts()
+                for match in bulletin_matches:
+                    match["Nearby area count"] = int(counts[match["Location"]])
+                matches.extend(bulletin_matches)
+
+    result = pd.DataFrame(matches, columns=columns)
+
+    if output_csv is not None:
+        output_path = Path(output_csv)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        result.to_csv(output_path, index=False)
+        print(f"[near_polygon_report] Wrote {len(result)} matching distance(s) to {output_path}")
+
+    return result
+
 def get_best_track_geojson(cyclone_id: str) -> dict | None:
     raw = load_best_track(cyclone_id)
     if raw.empty:
@@ -832,8 +925,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--coastal-buffer-km", type=float, default=DEFAULT_COASTAL_BUFFER_KM, help=f"Coastal towns within this many km of a watch/warning polygon edge count as covered (default {DEFAULT_COASTAL_BUFFER_KM}km)")
     parser.add_argument("--coastal-buffer-cutoff", default=str(DEFAULT_COASTAL_BUFFER_CUTOFF.date()), help=f"Coastal buffer only applies to bulletins before this date (YYYY-MM-DD); threat-area methodology changed after this point (default {DEFAULT_COASTAL_BUFFER_CUTOFF.date()})")
     parser.add_argument("--relevance-km", type=float, default=DEFAULT_RELEVANCE_KM, help=f"Only include towns within this many km of a watch or warning area in Table A (default {DEFAULT_RELEVANCE_KM}km)")
+    parser.add_argument(
+        "--near-polygon-output",
+        nargs="?",
+        const="data/near_polygon_distances.csv",
+        help="Write the all-cyclone pre-cutoff town-to-watch/warning distance report to this CSV file and exit (default: data/near_polygon_distances.csv)",
+    )
     args = parser.parse_args()
-    if not args.disturbance_id and not args.season:
+    if not args.disturbance_id and not args.season and not args.near_polygon_output:
         parser.error("Provide at least one disturbance_id, or use --season to select a whole season's worth automatically.")
     return args
 
@@ -842,6 +941,14 @@ if __name__ == "__main__":
     args = _parse_args()
     try:
         coastal_buffer_cutoff = pd.Timestamp(args.coastal_buffer_cutoff)
+
+        if args.near_polygon_output:
+            find_pre_cutoff_near_polygon_distances(
+                cutoff=coastal_buffer_cutoff,
+                max_distance_km=args.coastal_buffer_km,
+                output_csv=args.near_polygon_output,
+            )
+            raise SystemExit(0)
 
         if args.season and not args.disturbance_id:
             disturbance_ids = list_disturbance_ids_for_season(args.season)
