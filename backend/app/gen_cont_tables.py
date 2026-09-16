@@ -468,6 +468,15 @@ def generate_table_a(
     date onward don't have this gap and get strict containment only,
     coastal or not.
 
+    For coastal towns with the buffer applied, Watch and Warning are
+    mutually exclusive: Warning takes priority. If the town is within coastal_buffer_km of the warning polygon, it's
+    Warning only, regardless of its distance to any watch polygon. Watch is
+    only considered if that warning condition doesn't hold. Non-coastal
+    towns (and coastal towns on/after coastal_buffer_cutoff) don't get this
+    exclusivity -- Watch and Warning are evaluated independently via strict
+    containment only, and can both be True if the town is genuinely inside
+    two overlapping polygons.
+
     A location only appears in the output at all if its minimum distance to
     a watch OR warning polygon is under relevance_km. This is separate from
     the coastal buffer rule below, which decides whether a coastal town is
@@ -525,8 +534,22 @@ def generate_table_a(
             # decides whether a town appears in the table at all, while the 20 km buffer decides
             # whether a coastal town is treated as covered when it sits just outside the polygon.
             is_coastal = bool(loc.get("is_coastal", False)) and buffer_applies
-            watch = bool(pd.notna(dist_watch) and (dist_watch <= 0 or (is_coastal and dist_watch <= coastal_buffer_km)))
-            warning = bool(pd.notna(dist_warning) and (dist_warning <= 0 or (is_coastal and dist_warning <= coastal_buffer_km)))
+            if is_coastal:
+                # a coastal town should never be classified as both Watch and Warning at once. Warning takes
+                # priority if the town is within coastal_buffer_km of the
+                # warning polygon (this also covers strict containment, since
+                # being inside gives a distance <= 0, which is always within
+                # the buffer), it's Warning only. Watch is only checked if
+                # that Warning condition doesn't hold.
+                warning = bool(pd.notna(dist_warning) and dist_warning <= coastal_buffer_km)
+                watch = bool(not warning and pd.notna(dist_watch) and dist_watch <= coastal_buffer_km)
+            else:
+                # Non-coastal towns (or coastal towns on/after the buffer
+                # cutoff date): strict polygon containment only, evaluated
+                # independently -- both can legitimately be True if the town
+                # is genuinely inside two overlapping polygons.
+                watch = bool(pd.notna(dist_watch) and dist_watch <= 0)
+                warning = bool(pd.notna(dist_warning) and dist_warning <= 0)
 
             rows.append({
                 "Disturbance ID": disturbance_id,
