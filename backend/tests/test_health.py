@@ -17,3 +17,16 @@ def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_viewer_is_served():
+    response = client.get("/visualize.html")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "BOM Cyclone GML Visualizer" in response.text
+
+
+def test_root_redirects_to_viewer():
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code in (302, 307)
+    assert response.headers["location"] == "/visualize.html"

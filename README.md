@@ -60,6 +60,25 @@ bulletins into a single timeline.
   check" panel that shows exactly which GML fields survived into the JSON
   for the bulletin on screen, plus the raw JSON itself.
 
+### Data sources
+
+`visualize.html` does not read any GML, CSV or the database directly. It only
+fetches pre-built JSON from `data/`, which the build scripts below produce
+from the raw files:
+
+| Fetched by the page | Built by | Raw source |
+| --- | --- | --- |
+| `data/index.json` (cyclone list) | `backend/app/build_gml_dataset.py` | `data/NT_GMLs/`, `data/QLD_GMLs/`, `data/WA_GMLs/` (`productfile.*.gml`) |
+| `data/<REGION>/<distId>.json` (bulletins: tracks, fixes, areas) | `backend/app/build_gml_dataset.py` | same GML folders; only cyclones with at least one watch/warning area |
+| `data/best_track/<distId>.json` (best-track overlay) | `backend/app/build_gml_dataset.py` | `data/best_track.csv` (BoM IDCKMSTM0S), matched on `DISTURBANCE_ID` |
+| `data/towns.json` (Towns layer) | `backend/app/build_towns_dataset.py` | `TC Locations` sheet of `data/towns.xlsx` |
+| `data/map_config.json` (basemap tile URL) | `backend/app/build_map_config.py` | `CARTO_API_KEY` in `.env` |
+
+Not used by the viewer: `data/OTCR_alldata_final_external.csv`,
+`data/processed/*.csv`, `data/contingency_tables/*.csv`, `data/geojson/`
+(built alongside the viewer JSON, but consumed by `gen_cont_tables.py`), and
+the database / `/api/v1` endpoints. The FastAPI app only serves the page and
+mounts `data/` at `/data`.
 
 ### 1. Build the dataset (one-off, or whenever `data/` changes)
 
@@ -136,15 +155,22 @@ either way.
 
 ### 3. Serve the page
 
-Browsers block `fetch()` of local files opened via `file://`, so serve the
-folder with any simple static server, e.g.:
+Browsers block `fetch()` of local files opened via `file://`, so the page has
+to be served over HTTP. The FastAPI backend serves `visualize.html` and the
+`data/` folder alongside the API:
 
 ```bash
-python -m http.server 8000
+cd backend
+uvicorn app.main:app --reload
 ```
 
-Then open [http://localhost:8000/visualize.html](http://localhost:8000/visualize.html) (Leaflet) or
-[http://localhost:8000/visualize_ol.html](http://localhost:8000/visualize_ol.html) (OpenLayers).
+Then open [http://localhost:8000/visualize.html](http://localhost:8000/visualize.html)
+(`/` redirects there). The page still reads the JSON built in steps 1 and 2,
+not the database, so those steps are still required.
+
+Any static server on the repository root works too, e.g.
+`python -m http.server 8000`, which is also how to open
+[visualize_ol.html](http://localhost:8000/visualize_ol.html) (OpenLayers).
 
 ### Data retention
 

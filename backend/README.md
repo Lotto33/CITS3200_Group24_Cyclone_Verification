@@ -117,6 +117,8 @@ uvicorn app.main:app --reload
 
 - Docs: http://127.0.0.1:8000/docs
 - Health check: http://127.0.0.1:8000/health
+- Map viewer: http://127.0.0.1:8000/visualize.html (`/` redirects there), with
+  the repository's `data/` folder mounted at `/data`
 
 ```bash
 curl "http://127.0.0.1:8000/api/v1/disturbances?season=2016-17"
@@ -229,7 +231,8 @@ instead, and produces the same 60,644 rows.
 
 > The database is **additive**. `visualize.html` still reads `data/index.json`,
 > `data/<REGION>/<distId>.json`, `data/towns.json` and `data/map_config.json`
-> straight off a static server, so those build scripts are still needed.
+> as static files (served by this app at `/data`, or by any static server), so
+> those build scripts are still needed.
 > Repointing the viewer at the API is a separate change.
 
 ## Dependencies

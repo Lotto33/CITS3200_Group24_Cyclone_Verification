@@ -6,9 +6,13 @@ Run locally with:
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
-from app.core.config import settings
+from app.core.config import PROJECT_ROOT, settings
+
+VIEWER_PAGE = PROJECT_ROOT / "visualize.html"
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -16,8 +20,8 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
 )
 
-# The static map viewers are served from a different origin (python -m
-# http.server on the repo root), so they need CORS to reach this API.
+# visualize.html is served by this app (below), so it needs no CORS. This is
+# for viewers still served from another origin, e.g. python -m http.server.
 if settings.cors_origins:
     app.add_middleware(
         CORSMiddleware,
@@ -27,6 +31,26 @@ if settings.cors_origins:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+# visualize.html fetches its JSON with relative "data/..." URLs, so the page
+# must sit at the root and data/ must be mounted beside it at /data.
+# check_dir=False: data/ is git-ignored, and a fresh clone should still boot.
+app.mount(
+    "/data",
+    StaticFiles(directory=settings.DATA_DIR, check_dir=False),
+    name="data",
+)
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    return RedirectResponse(url="/visualize.html")
+
+
+@app.get("/visualize.html", include_in_schema=False)
+def visualize() -> FileResponse:
+    """The Leaflet viewer. Its data still comes from the build_*.py JSON."""
+    return FileResponse(VIEWER_PAGE, media_type="text/html")
 
 
 @app.get("/health", tags=["health"])
