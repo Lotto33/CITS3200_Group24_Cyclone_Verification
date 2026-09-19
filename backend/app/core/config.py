@@ -4,6 +4,8 @@ Settings are read from environment variables / a `.env` file (see
 `.env.example`) via pydantic-settings.
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,10 +18,11 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    REPO_ROOT = ...
-    DATA_DIR = REPO_ROOT / "data"
-    UPLOAD_DIR = DATA_DIR / "uploads"
-    GEOJSON_DIR = DATA_DIR / "geojson"
+
+    REPO_ROOT: Path = Path(__file__).resolve().parents[3]
+    DATA_DIR: Path = REPO_ROOT / "data"
+    UPLOAD_DIR: Path = DATA_DIR / "uploads"
+    GEOJSON_DIR: Path = DATA_DIR / "geojson"
 
 
 settings = Settings()
