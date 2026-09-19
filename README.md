@@ -39,7 +39,12 @@ single space, the `99` sentinel, GDA94 rather than WGS84 geometry, and the six
 town names that appear twice.
 
 The database is **additive**: the build scripts below still produce the JSON
-that `visualize.html` reads, and nothing about the viewers has changed.
+that `visualize.html` reads for its cyclone list, bulletins and towns. The one
+layer that now comes from the database instead is the best-track overlay --
+see [Data sources](#data-sources) below.
+
+[docs/architecture.md](docs/architecture.md) explains how the two pipelines,
+the backend layers and the viewer's data sources fit together.
 
 ## Visualizing the BOM cyclone GML data
 
@@ -174,11 +179,14 @@ uvicorn app.main:app --reload
 ```
 
 Then open [http://localhost:8000/visualize.html](http://localhost:8000/visualize.html)
-(`/` redirects there). The page still reads the JSON built in steps 1 and 2,
-not the database, so those steps are still required.
+(`/` redirects there). The page still reads the JSON built in steps 1 and 2
+for its cyclone list, bulletins and towns, so those steps are still required.
+Only the best-track overlay comes from the database, and it falls back to
+`data/best_track/<distId>.json` when the API cannot answer.
 
 Any static server on the repository root works too, e.g.
-`python -m http.server 8000`, which is also how to open
+`python -m http.server 8000` -- the viewer works there, with the best-track
+overlay falling back to the 6-hourly fixes. That is also how to open
 [visualize_ol.html](http://localhost:8000/visualize_ol.html) (OpenLayers).
 
 ### Data retention
@@ -200,7 +208,7 @@ records for that disturbance: `time`, `coord` (`[lon, lat]`), `pressure`
 per-cyclone, not per-bulletin — one fixed post-event track, independent of
 which bulletin is currently on screen.
 
-### 3. Generate contingency tables
+### 4. Generate contingency tables
 
 `backend/app/gen_cont_tables.py` builds Tables A–D and the hit/miss/false
 alarm/correct-negative contingency summary for a single disturbance ID,
@@ -318,9 +326,11 @@ avoid rebuilding it (Table B is the most expensive of the four to compute).
   defaults).
 - In the viewers, GML `tcTrack` styling distinguishes the two `trackType`
   values: **Forecast** is solid, **Observed** is dashed. The best-track
-  overlay (green, toggleable via the "Best track (post-event)" layer) is a
-  separate line drawn from the CSV data described above, not a `trackType`
-  value — cyclones with one are marked ★ in the cyclone dropdown.
+  overlay (teal, toggleable via the "Best track (interpolated grid, or raw
+  fixes)" layer) is a separate line, not a `trackType` value — cyclones with
+  a best track are marked ★ in the cyclone dropdown. It prefers the
+  interpolated 15-minute grid from the API and falls back to the 6-hourly CSV
+  data described above.
 - `tcWindArea` polygons distinguish their `fixType`: **Current** areas are
   red and **Forecast** areas are blue.
 - Town dots are drawn once at startup into their own Leaflet pane above the

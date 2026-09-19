@@ -14,8 +14,13 @@ backend/
 │   ├── env.py               # takes the URL from app.core.config.settings
 │   └── versions/            # schema truth lives here
 ├── app/
-│   ├── main.py              # FastAPI() app instance, CORS, routers
+│   ├── main.py              # FastAPI() app instance, CORS, routers, pages
 │   ├── cli.py               # ingest entry point (python -m app.cli)
+│   ├── build_gml_dataset.py # \
+│   ├── build_towns_dataset.py#  | file pipeline: raw data/ -> static JSON
+│   ├── build_map_config.py  # /  for the viewers. No database.
+│   ├── gml_to_geojson.py    # one GML bulletin -> GeoJSON FeatureCollection
+│   ├── gen_cont_tables.py   # contingency tables from the GeoJSON + best track
 │   ├── api/
 │   │   ├── deps.py          # get_db, DbSession, pagination
 │   │   └── v1/
@@ -118,11 +123,14 @@ uvicorn app.main:app --reload
 - Docs: http://127.0.0.1:8000/docs
 - Health check: http://127.0.0.1:8000/health
 - Map viewer: http://127.0.0.1:8000/visualize.html (`/` redirects there), with
-  the repository's `data/` folder mounted at `/data`
+  the repository's `data/` folder mounted at `/data` and the pages' CSS/JS at
+  `/assets`
+- Contingency page: http://127.0.0.1:8000/verification.html
 
 ```bash
 curl "http://127.0.0.1:8000/api/v1/disturbances?season=2016-17"
 curl "http://127.0.0.1:8000/api/v1/disturbances/AU201617_19U/best-track"
+curl "http://127.0.0.1:8000/api/v1/disturbances/AU201617_19U/interpolated-track"
 curl "http://127.0.0.1:8000/api/v1/disturbances/AU201617_19U/bulletins"
 curl "http://127.0.0.1:8000/api/v1/bulletins/1/geojson"
 curl "http://127.0.0.1:8000/api/v1/towns?state=WA"
@@ -233,7 +241,11 @@ instead, and produces the same 60,644 rows.
 > `data/<REGION>/<distId>.json`, `data/towns.json` and `data/map_config.json`
 > as static files (served by this app at `/data`, or by any static server), so
 > those build scripts are still needed.
-> Repointing the viewer at the API is a separate change.
+> Its best-track overlay is the exception: it asks
+> `/disturbances/{id}/interpolated-track` first and only falls back to
+> `data/best_track/<distId>.json`. Repointing the remaining layers is a
+> separate change -- see
+> [docs/architecture.md](../docs/architecture.md).
 
 ## Dependencies
 
@@ -243,8 +255,11 @@ is generated from it — do not edit it by hand:
 ```bash
 pip install pip-tools
 pip-compile --no-strip-extras --extra dev \
-    --output-file requirements.txt backend/pyproject.toml   # run from repo root
+    --output-file backend/requirements.txt backend/pyproject.toml  # from repo root
 ```
+
+The root `requirements.txt` is a one-line `-r backend/requirements.txt`
+pointer and is not generated -- do not aim `--output-file` at it.
 
 Add/remove a dependency by editing `[project].dependencies` (or the `dev` /
 `postgres` extras) in `pyproject.toml`, then re-run the command above.

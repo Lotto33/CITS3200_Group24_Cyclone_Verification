@@ -99,7 +99,7 @@ python-dotenv==1.2.3
     #   uvicorn
 pyyaml==6.0.3
     # via uvicorn
-ruff==0.16.7
+ruff==0.16.8
     # via cyclone-verification-backend (backend/pyproject.toml)
 shapely==2.1.2
     # via
