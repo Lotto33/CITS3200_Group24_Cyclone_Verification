@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     REPO_ROOT: Path = Path(__file__).resolve().parents[3]
     DATA_DIR: Path = REPO_ROOT / "data"
+    GML_DIR: Path = DATA_DIR / "gml"
     UPLOAD_DIR: Path = DATA_DIR / "uploads"
     GEOJSON_DIR: Path = DATA_DIR / "geojson"
 

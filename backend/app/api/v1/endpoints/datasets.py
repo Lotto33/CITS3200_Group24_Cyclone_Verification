@@ -10,7 +10,7 @@ router = APIRouter()
 def create_dataset():
     try:
         return dataset_service.process_gml_dataset(
-            input_dir=settings.DATA_DIR,
+            input_dir=settings.GML_DIR,
             data_dir=settings.DATA_DIR,
         )
     except (FileNotFoundError, ValueError) as exc:
