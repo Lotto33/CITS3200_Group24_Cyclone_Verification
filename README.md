@@ -32,10 +32,12 @@ bulletins into a single timeline.
   check" panel that shows exactly which GML fields survived into the JSON
   for the bulletin on screen, plus the raw JSON itself.
 
+Both read the identical dataset produced in step 1, so they stay in sync
+automatically.
 
 ### 1. Build the dataset (one-off, or whenever `data/` changes)
 
-The GML files are parsed once into compact per-cyclone GEOJSON files so the
+The GML files are parsed once into compact per-cyclone JSON files so the
 browser doesn't have to parse thousands of raw XML files. The build script
 lives at `backend/app/build_gml_dataset.py` — **run it from the repository
 root**, not from inside `backend/app/`, since its `--data-dir`/`--out-dir`
@@ -136,6 +138,112 @@ records for that disturbance: `time`, `coord` (`[lon, lat]`), `pressure`
 (`CENTRAL_PRES`), and `windSpeed` (`MAX_WIND_SPD`), sorted by time. It's
 per-cyclone, not per-bulletin — one fixed post-event track, independent of
 which bulletin is currently on screen.
+
+### 3. Generate contingency tables
+
+`backend/app/gen_cont_tables.py` builds Tables A–D and the hit/miss/false
+alarm/correct-negative contingency summary for a single disturbance ID,
+comparing forecast watch/warning areas (from step 1's GeoJSON output) against
+observed gales (from the best-track CSV). Unlike `build_gml_dataset.py`, its
+data paths are resolved from `__file__` rather than the current working
+directory, so it can be run from anywhere — the repo root or elsewhere:
+
+```bash
+python backend/app/gen_cont_tables.py AU202526_34U
+```
+
+Optional flags:
+
+```bash
+python backend/app/gen_cont_tables.py AU202526_34U \
+  --output-dir data/contingency_tables \
+  --x-hours 0 \
+  --y-hours 24
+```
+
+#### Filter results by state or season
+
+To generate statistics for one Australian state, use `--state` with the
+state value stored in `data/towns.xlsx`:
+
+```bash
+python backend/app/gen_cont_tables.py AU202526_34U --state WA
+```
+
+The state filter is applied to the `State` column from the `TC Locations`
+sheet in `data/towns.xlsx` before any tables are generated. Only matching
+locations are passed through Tables A, B, C, and D. `State` is used for
+filtering but is not included as a column in Table A or Table D. The filter is
+not inferred from the cyclone's path or from the GML source region.
+
+To generate a combined contingency table for every disturbance in a
+Jul–Jun cyclone season, use `--season` without a disturbance ID:
+
+```bash
+python backend/app/gen_cont_tables.py --season 2025-26
+```
+
+The season is derived from each forecast base time (`fcastTime`): July to
+December starts the named season, while January to June belongs to the
+previous year's season. For example, `2025-26` covers July 2025 through June
+2026.
+
+The filters can be combined. This generates all disturbances in the season,
+then reports the final contingency statistics for one state:
+
+```bash
+python backend/app/gen_cont_tables.py --season 2025-26 --state WA
+```
+
+If a disturbance ID is supplied along with `--season`, the explicitly supplied
+disturbance ID is used; use `--season` on its own to select a whole season.
+
+- `disturbance_id` (optional when `--season` is supplied) — one or more BOM
+  disturbance IDs, e.g. `AU202526_34U`. If omitted, `--season` must be used
+  to select all disturbances in that Jul–Jun season.
+- `--output-dir` (default `data/contingency_tables`) — where the generated
+  CSVs are written.
+- `--state` — generate Tables A-D using only locations whose `State` column in
+  the `TC Locations` sheet matches the supplied value (for example, `WA`).
+- `--season` — select all disturbances whose forecast base times fall in a
+  Jul–Jun season (for example, `2025-26`).
+- `--coastal-buffer-km` (default `6.0`) — distance from a watch/warning edge
+  within which a coastal location counts as covered for eligible bulletins.
+- `--coastal-buffer-cutoff` (default `2025-06-01`) — date from which the
+  coastal buffer is disabled.
+- `--relevance-km` (default `300.0`) — maximum distance from a watch/warning
+  area for a location to be included in Table A.
+- `--x-hours` / `--y-hours` (default `0` / `24`) — the window, relative to
+  each forecast base time, in which an observed gale counts as a "hit"
+  against that forecast.
+
+This writes dated, filter-aware CSVs under `--output-dir`. For example, a WA
+run generated on 11 September 2026 produces names such as
+`AU202526_34U_state-WA_date-20260911_table_a.csv` through
+`_table_d.csv`, plus the corresponding contingency matrix and summary files.
+Season-selected combined runs include the season too, for example
+`combined_season-2025-26_state-WA_date-20260911_table_d.csv`. If no state or
+season filter is applied, those filter components are omitted. The run date is
+the date on which the CSVs are generated.
+
+Progress plus the final contingency stats and matrix are also printed to the
+console as the script runs.
+
+Requires step 1 (`build_gml_dataset.py`) to have already been run — it reads
+the `data/geojson/<distId>/` files that step produces — plus the `TC Locations`
+sheet in `data/towns.xlsx` and a best-track CSV. If
+`data/processed/best_track_interpolated.csv` exists, it is preferred because
+it already contains the significant-cyclone filtering and interpolation. If
+it does not exist, the script falls back to `data/best_track.csv` and performs
+the interpolation locally.
+
+If you only need one of Tables A–D rather than the full run, the individual
+`generate_table_a()` / `generate_table_b()` / `generate_table_c()` /
+`generate_table_d()` functions can be imported and called directly; Table C
+also accepts an already-computed Table B via its `table_b=` parameter to
+avoid rebuilding it (Table B is the most expensive of the four to compute).
+
+#### NOTE THAT RUNNING IT STRAIGHT FROM THE TERMINAL IS FOR TESTING ONLY. TODO: IMPLEMENT FRONTEND TO REQUEST THIS CODE BE RUN. 
 
 ### Notes
 
