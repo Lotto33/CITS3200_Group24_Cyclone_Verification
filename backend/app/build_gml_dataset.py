@@ -45,7 +45,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-import gml_to_geojson
+from app import gml_to_geojson
 
 NAMESPACES = {
     "tc": "http://www.bom.gov.au/dtd/tc",

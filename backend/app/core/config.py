@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    REPO_ROOT = ...
+    DATA_DIR = REPO_ROOT / "data"
+    UPLOAD_DIR = DATA_DIR / "uploads"
+    GEOJSON_DIR = DATA_DIR / "geojson"
 
 
 settings = Settings()
