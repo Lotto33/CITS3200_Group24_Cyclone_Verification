@@ -12,6 +12,11 @@ dependencies = [
     "sqlalchemy>=2.0.30",
     "alembic>=1.13",
     "openpyxl>=3.1",
+    # app/gen_cont_tables.py: contingency tables are built by intersecting
+    # the bulletin GeoJSON with town points on the WGS84 ellipsoid.
+    "geopandas>=1.0",
+    "shapely>=2.0",
+    "pyproj>=3.6",
 ]
 
 [project.optional-dependencies]

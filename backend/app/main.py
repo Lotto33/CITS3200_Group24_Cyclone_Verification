@@ -13,6 +13,8 @@ from app.api.v1.router import api_router
 from app.core.config import PROJECT_ROOT, settings
 
 VIEWER_PAGE = PROJECT_ROOT / "visualize.html"
+VERIFICATION_PAGE = PROJECT_ROOT / "verification.html"
+ASSETS_DIR = PROJECT_ROOT / "assets"
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -41,6 +43,10 @@ app.mount(
     name="data",
 )
 
+# The pages' CSS and JS were split out of the HTML into assets/, and both
+# reference it as a relative "assets/..." URL, so it mounts at /assets.
+app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
 
 @app.get("/", include_in_schema=False)
 def root() -> RedirectResponse:
@@ -49,8 +55,15 @@ def root() -> RedirectResponse:
 
 @app.get("/visualize.html", include_in_schema=False)
 def visualize() -> FileResponse:
-    """The Leaflet viewer. Its data still comes from the build_*.py JSON."""
+    """The Leaflet viewer. Its bulletins still come from the build_*.py JSON;
+    only the best-track overlay reads this app's /api/v1."""
     return FileResponse(VIEWER_PAGE, media_type="text/html")
+
+
+@app.get("/verification.html", include_in_schema=False)
+def verification() -> FileResponse:
+    """The contingency-table page the viewer links to."""
+    return FileResponse(VERIFICATION_PAGE, media_type="text/html")
 
 
 @app.get("/health", tags=["health"])
