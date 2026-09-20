@@ -241,3 +241,7 @@ Processed/
 *.ipynb
 .ipynb_checkpoints/
 ETL/
+# Local SQLite database (regenerate with `alembic upgrade head` + `app.cli`)
+*.db
+*.db-wal
+*.db-shm

@@ -9,6 +9,14 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "pandas>=2.2",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13",
+    "openpyxl>=3.1",
+    # app/gen_cont_tables.py: contingency tables are built by intersecting
+    # the bulletin GeoJSON with town points on the WGS84 ellipsoid.
+    "geopandas>=1.0",
+    "shapely>=2.0",
+    "pyproj>=3.6",
 ]
 
 [project.optional-dependencies]
@@ -17,6 +25,19 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.6",
 ]
+# Opt-in: the default DATABASE_URL is SQLite, which needs no driver.
+postgres = [
+    "psycopg[binary]>=3.2",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Only `app` is an importable package; `alembic/` holds migration scripts that
+# the alembic CLI loads from disk, and `tests/` shouldn't ship.
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -28,3 +49,8 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic writes these; reformatting generated output would be undone by the
+# next `alembic revision --autogenerate`.
+"alembic/versions/*.py" = ["E501"]

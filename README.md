@@ -13,6 +13,39 @@
 
 
 
+## The backend database and API
+
+`backend/` holds a FastAPI service over a relational database of everything in
+`data/`: the BoM best track, the code lookup tables from
+`data/TC_Database_Structure_Oct2011.pdf`, the GML bulletins, the towns layer,
+the interpolated 15-minute track, and the contingency tables.
+
+```bash
+cd backend
+pip install -e ".[dev]"
+alembic upgrade head        # create the schema (SQLite by default, no setup)
+python -m app.cli all       # seed and ingest everything (~2.5 min)
+python -m app.cli verify    # assert the expected row counts
+uvicorn app.main:app --reload
+```
+
+Then browse http://127.0.0.1:8000/docs.
+
+See [backend/README.md](backend/README.md) for the CLI, the endpoints, and --
+worth reading before using the data -- the **Data caveats** section, which
+records the things about BoM's files that code will otherwise get quietly
+wrong: `0` versus `NULL` in the radius columns, missing values written as a
+single space, the `99` sentinel, GDA94 rather than WGS84 geometry, and the six
+town names that appear twice.
+
+The database is **additive**: the build scripts below still produce the JSON
+that `visualize.html` reads for its cyclone list, bulletins and towns. The one
+layer that now comes from the database instead is the best-track overlay --
+see [Data sources](#data-sources) below.
+
+[docs/architecture.md](docs/architecture.md) explains how the two pipelines,
+the backend layers and the viewer's data sources fit together.
+
 ## Visualizing the BOM cyclone GML data
 
 `data/NT_GMLs`, `data/QLD_GMLs`, `data/WA_GMLs` contain ~3,450 individual BOM
@@ -34,6 +67,32 @@ bulletins into a single timeline.
 
 Both read the identical dataset produced in step 1, so they stay in sync
 automatically.
+
+### Data sources
+
+`visualize.html` never reads GML or CSV directly. Almost everything it draws
+is pre-built JSON under `data/`, which the build scripts below produce from
+the raw files:
+
+| Fetched by the page | Built by | Raw source |
+| --- | --- | --- |
+| `data/index.json` (cyclone list) | `backend/app/build_gml_dataset.py` | `data/NT_GMLs/`, `data/QLD_GMLs/`, `data/WA_GMLs/` (`productfile.*.gml`) |
+| `data/<REGION>/<distId>.json` (bulletins: tracks, fixes, areas) | `backend/app/build_gml_dataset.py` | same GML folders; only cyclones with at least one watch/warning area |
+| `data/best_track/<distId>.json` (best-track overlay, fallback only) | `backend/app/build_gml_dataset.py` | `data/best_track.csv` (BoM IDCKMSTM0S), matched on `DISTURBANCE_ID` |
+| `data/towns.json` (Towns layer) | `backend/app/build_towns_dataset.py` | `TC Locations` sheet of `data/towns.xlsx` |
+| `data/map_config.json` (basemap tile URL) | `backend/app/build_map_config.py` | `CARTO_API_KEY` in `.env` |
+
+The one exception is the best-track overlay. The verification is scored on
+the interpolated 15-minute grid, so the page asks
+`/api/v1/disturbances/<distId>/interpolated-track` for it first and only falls
+back to the raw 6-hourly `data/best_track/<distId>.json` when that route is
+unavailable -- served from `python -m http.server` rather than the FastAPI
+app, or before `python -m app.cli interpolate` has produced a run. The info
+panel names whichever one is on screen.
+
+Not used by the viewer: `data/OTCR_alldata_final_external.csv`,
+`data/processed/*.csv`, `data/contingency_tables/*.csv` and `data/geojson/`
+(built alongside the viewer JSON, but consumed by `gen_cont_tables.py`).
 
 ### 1. Build the dataset (one-off, or whenever `data/` changes)
 
@@ -110,15 +169,25 @@ either way.
 
 ### 3. Serve the page
 
-Browsers block `fetch()` of local files opened via `file://`, so serve the
-folder with any simple static server, e.g.:
+Browsers block `fetch()` of local files opened via `file://`, so the page has
+to be served over HTTP. The FastAPI backend serves `visualize.html` and the
+`data/` folder alongside the API:
 
 ```bash
-python -m http.server 8000
+cd backend
+uvicorn app.main:app --reload
 ```
 
-Then open [http://localhost:8000/visualize.html](http://localhost:8000/visualize.html) (Leaflet) or
-[http://localhost:8000/visualize_ol.html](http://localhost:8000/visualize_ol.html) (OpenLayers).
+Then open [http://localhost:8000/visualize.html](http://localhost:8000/visualize.html)
+(`/` redirects there). The page still reads the JSON built in steps 1 and 2
+for its cyclone list, bulletins and towns, so those steps are still required.
+Only the best-track overlay comes from the database, and it falls back to
+`data/best_track/<distId>.json` when the API cannot answer.
+
+Any static server on the repository root works too, e.g.
+`python -m http.server 8000` -- the viewer works there, with the best-track
+overlay falling back to the 6-hourly fixes. That is also how to open
+[visualize_ol.html](http://localhost:8000/visualize_ol.html) (OpenLayers).
 
 ### Data retention
 
@@ -139,7 +208,7 @@ records for that disturbance: `time`, `coord` (`[lon, lat]`), `pressure`
 per-cyclone, not per-bulletin — one fixed post-event track, independent of
 which bulletin is currently on screen.
 
-### 3. Generate contingency tables
+### 4. Generate contingency tables
 
 `backend/app/gen_cont_tables.py` builds Tables A–D and the hit/miss/false
 alarm/correct-negative contingency summary for a single disturbance ID,
@@ -257,9 +326,11 @@ avoid rebuilding it (Table B is the most expensive of the four to compute).
   defaults).
 - In the viewers, GML `tcTrack` styling distinguishes the two `trackType`
   values: **Forecast** is solid, **Observed** is dashed. The best-track
-  overlay (green, toggleable via the "Best track (post-event)" layer) is a
-  separate line drawn from the CSV data described above, not a `trackType`
-  value — cyclones with one are marked ★ in the cyclone dropdown.
+  overlay (teal, toggleable via the "Best track (interpolated grid, or raw
+  fixes)" layer) is a separate line, not a `trackType` value — cyclones with
+  a best track are marked ★ in the cyclone dropdown. It prefers the
+  interpolated 15-minute grid from the API and falls back to the 6-hourly CSV
+  data described above.
 - `tcWindArea` polygons distinguish their `fixType`: **Current** areas are
   red and **Forecast** areas are blue.
 - Town dots are drawn once at startup into their own Leaflet pane above the

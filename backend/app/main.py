@@ -5,9 +5,16 @@ Run locally with:
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
-from app.core.config import settings
+from app.core.config import PROJECT_ROOT, settings
+
+VIEWER_PAGE = PROJECT_ROOT / "visualize.html"
+VERIFICATION_PAGE = PROJECT_ROOT / "verification.html"
+ASSETS_DIR = PROJECT_ROOT / "assets"
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -15,7 +22,48 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
 )
 
+# visualize.html is served by this app (below), so it needs no CORS. This is
+# for viewers still served from another origin, e.g. python -m http.server.
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
+
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+# visualize.html fetches its JSON with relative "data/..." URLs, so the page
+# must sit at the root and data/ must be mounted beside it at /data.
+# check_dir=False: data/ is git-ignored, and a fresh clone should still boot.
+app.mount(
+    "/data",
+    StaticFiles(directory=settings.DATA_DIR, check_dir=False),
+    name="data",
+)
+
+# The pages' CSS and JS were split out of the HTML into assets/, and both
+# reference it as a relative "assets/..." URL, so it mounts at /assets.
+app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    return RedirectResponse(url="/visualize.html")
+
+
+@app.get("/visualize.html", include_in_schema=False)
+def visualize() -> FileResponse:
+    """The Leaflet viewer. Its bulletins still come from the build_*.py JSON;
+    only the best-track overlay reads this app's /api/v1."""
+    return FileResponse(VIEWER_PAGE, media_type="text/html")
+
+
+@app.get("/verification.html", include_in_schema=False)
+def verification() -> FileResponse:
+    """The contingency-table page the viewer links to."""
+    return FileResponse(VERIFICATION_PAGE, media_type="text/html")
 
 
 @app.get("/health", tags=["health"])

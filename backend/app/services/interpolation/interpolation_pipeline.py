@@ -1,11 +1,11 @@
-from app.services.relevant_system_extraction import (
-    main as relevant_system_extraction_main,
+from app.services.interpolation.interpolate_best_track import (
+    main as interpolate_best_track_main,
 )
 from app.services.interpolation.process_best_track import (
     main as process_best_track_main,
 )
-from app.services.interpolation.interpolate_best_track import (
-    main as interpolate_best_track_main,
+from app.services.relevant_system_extraction import (
+    main as relevant_system_extraction_main,
 )
 
 
