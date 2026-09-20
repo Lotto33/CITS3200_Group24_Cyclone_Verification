@@ -17,8 +17,6 @@
 
   const els = {
     cyclone: document.getElementById("cycloneSelect"),
-    season: document.getElementById("seasonSelect"),
-    state: document.getElementById("stateSelect"),
     slider: document.getElementById("bulletinSlider"),
     label: document.getElementById("bulletinLabel"),
     prev: document.getElementById("prevBtn"),
@@ -115,8 +113,6 @@
     localStorage.setItem("cycloneVerification", JSON.stringify({
       distId: bulletin?.distId || els.cyclone.value,
       distName: bulletin?.distName,
-      region: els.state.value || null,
-      season: els.season.value || null,
       bulletin: bulletin ? `${currentIdx + 1}/${currentBulletins.length} — ${fmtTime(bulletin.issueTime)}` : null,
     }));
     window.location.href = "verification.html";
@@ -216,19 +212,7 @@
       });
     });
 
-    const allCyclones = Array.from(cyclonesById.values());
-    const seasons = [...new Set(allCyclones.map(c => c.firstIssue ? c.firstIssue.slice(0, 4) : "").filter(Boolean))].sort();
-    const regions = [...new Set(allCyclones.flatMap(c => c.regions))].sort();
-    const selectedSeason = els.season.value;
-    const selectedState = els.state.value;
-    els.season.replaceChildren(new Option("All seasons", ""), ...seasons.map(season => new Option(season, season)));
-    els.state.replaceChildren(new Option("All states", ""), ...regions.map(region => new Option(region, region)));
-    els.season.value = seasons.includes(selectedSeason) ? selectedSeason : "";
-    els.state.value = regions.includes(selectedState) ? selectedState : "";
-
-    const cyclones = allCyclones
-      .filter(c => (!els.season.value || (c.firstIssue || "").startsWith(els.season.value))
-        && (!els.state.value || c.regions.includes(els.state.value)))
+    const cyclones = Array.from(cyclonesById.values())
       .sort((a, b) => (a.firstIssue || "").localeCompare(b.firstIssue || ""));
     const selectedId = els.cyclone.value;
     els.cyclone.replaceChildren(...cyclones.map(c => {
@@ -239,7 +223,7 @@
       els.cyclone.value = cyclones.some(c => c.distId === selectedId) ? selectedId : cyclones[0].distId;
       loadCyclone();
     } else {
-      els.cyclone.replaceChildren(new Option("No cyclones match these filters", ""));
+      els.cyclone.replaceChildren(new Option("No cyclones available", ""));
       currentBulletins = [];
       renderBulletin();
     }
@@ -507,8 +491,6 @@
   }
 
   els.cyclone.addEventListener("change", loadCyclone);
-  els.season.addEventListener("change", populateCyclones);
-  els.state.addEventListener("change", populateCyclones);
   els.slider.addEventListener("input", () => {
     stopPlay(); currentIdx = Number(els.slider.value); renderBulletin(false);
   });
