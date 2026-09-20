@@ -5,7 +5,9 @@ from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
-DATA_DIR = Path("data")
+from app.core.config import settings
+
+DATA_DIR = settings.DATA_DIR
 
 @router.get("/map")
 def get_map_config():

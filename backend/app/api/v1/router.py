@@ -2,15 +2,14 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import cyclones, datasets, towns, config
+from app.api.v1.endpoints import contingency, cyclones, datasets, towns, config, diagnostics
 
 api_router = APIRouter()
 
 
-api_router.include_router(datasets.router,prefix="/datasets",tags=["datasets"])
-
-api_router.include_router(datasets.router,prefix="/cyclones",tags=["cyclones"])
-
-api_router.include_router(datasets.router,prefix="/towns",tags=["towns"])
-
-api_router.include_router(datasets.router,prefix="/config",tags=["config"])
+api_router.include_router(datasets.router, prefix="/datasets", tags=["datasets"])
+api_router.include_router(contingency.router, prefix="/contingency-tables", tags=["contingency tables"])
+api_router.include_router(cyclones.router, prefix="/cyclones", tags=["cyclones"])
+api_router.include_router(towns.router, prefix="/towns", tags=["towns"])
+api_router.include_router(config.router, prefix="/config", tags=["config"])
+api_router.include_router(diagnostics.router, prefix="/diagnostics", tags=["diagnostics"])

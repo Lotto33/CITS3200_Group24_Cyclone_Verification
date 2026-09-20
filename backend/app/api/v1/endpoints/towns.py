@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.services import town_service
 
@@ -11,4 +11,7 @@ def get_towns():
 
 @router.get("/{town}")
 def get_town(town:str):
-    return town_service.get_town(town)
+    try:
+        return town_service.get_town(town)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Town not found: {town}") from exc

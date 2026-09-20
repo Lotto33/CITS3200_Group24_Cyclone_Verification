@@ -1,6 +1,9 @@
 from pathlib import Path
+import tempfile
+import zipfile
 
 from app.build_gml_dataset import build
+from app.services.interpolation.interpolation_pipeline import run_interpolation_pipeline
 
 
 def process_gml_dataset(input_dir: Path, data_dir: Path) -> dict:
@@ -100,3 +103,45 @@ def get_status(data_dir: Path) -> dict:
         "geojson_exists": geojson_dir.is_dir(),
         "geojson_file_count": geojson_count,
     }
+
+
+def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
+    """Extract a GML ZIP and immediately run the existing parser."""
+    archive_path = Path(archive_path).resolve()
+    if not archive_path.is_file() or archive_path.suffix.lower() != ".zip":
+        raise ValueError("Expected a .zip archive containing *_GMLs directories")
+
+    with tempfile.TemporaryDirectory(prefix="cyclone-gml-") as temp_dir:
+        staging_dir = Path(temp_dir)
+        with zipfile.ZipFile(archive_path) as archive:
+            for member in archive.infolist():
+                target = (staging_dir / member.filename).resolve()
+                if target != staging_dir and staging_dir not in target.parents:
+                    raise ValueError("ZIP contains an unsafe path")
+            archive.extractall(staging_dir)
+
+        # Allow archives with a single top-level folder around the region dirs.
+        input_dir = staging_dir
+        children = list(staging_dir.iterdir())
+        if len(children) == 1 and children[0].is_dir():
+            input_dir = children[0]
+        return process_gml_dataset(input_dir, data_dir)
+
+
+def interpolate_and_process_dataset(data_dir: Path) -> dict:
+    """Interpolate best track, then rebuild JSON/GeoJSON outputs from it."""
+    run_interpolation_pipeline()
+    return process_gml_dataset(Path(data_dir) / "gml", data_dir)
+
+
+def process_uploaded_best_track(csv_path: Path, data_dir: Path) -> dict:
+    """Store a raw best-track upload, interpolate it, then rebuild datasets."""
+    csv_path = Path(csv_path).resolve()
+    data_dir = Path(data_dir).resolve()
+    if not csv_path.is_file() or csv_path.suffix.lower() != ".csv":
+        raise ValueError("Expected a best-track .csv file")
+
+    raw_target = data_dir / "best_track.csv"
+    raw_target.parent.mkdir(parents=True, exist_ok=True)
+    raw_target.write_bytes(csv_path.read_bytes())
+    return interpolate_and_process_dataset(data_dir)
