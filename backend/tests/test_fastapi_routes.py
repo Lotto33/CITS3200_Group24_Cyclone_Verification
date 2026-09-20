@@ -15,7 +15,7 @@ def test_required_api_routes_are_in_openapi():
         "/api/v1/cyclones/",
         "/api/v1/cyclones/{region}/{dist_id}",
         "/api/v1/cyclones/{dist_id}/best-track",
-        "/api/v1/towns/",
+        "/api/v1/towns",
         "/api/v1/config/map",
     }
     assert expected <= set(paths)

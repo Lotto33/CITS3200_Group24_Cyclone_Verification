@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pandas as pd
 
-
 # -------
 # Paths
 # -------
@@ -11,7 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DATA_DIR = PROJECT_ROOT / "data"
 PROCESSED_DIR = DATA_DIR / "processed"
 
-RAW_BEST_TRACK_CSV = DATA_DIR / "IDCKMSTM0S.csv"
+# BoM publishes this as product IDCKMSTM0S ("Database of past tropical
+# cyclone tracks"); the repository ships it as best_track.csv. Same file,
+# same 4-metadata-line + header-on-line-5 layout that skiprows=4 expects.
+RAW_BEST_TRACK_CSV = DATA_DIR / "best_track.csv"
 RELEVANT_IDS_CSV = PROCESSED_DIR / "relevant_disturbance_ids.csv"
 
 RELEVANT_BEST_TRACK_CSV = PROCESSED_DIR / "relevant_best_track_raw.csv"
@@ -26,27 +28,23 @@ INTERPOLATION_COLUMNS = [
     "NAME",
     "DISTURBANCE_ID",
     "TM",
-
     # Position and intensity
     "LAT",
     "LON",
     "POSITION_UNCERTAINTY",
     "MAX_WIND_SPD",
-
     # Gale-force wind radii
     "MN_RADIUS_GF_WIND",
     "MN_RADIUS_GF_SECNE",
     "MN_RADIUS_GF_SECSE",
     "MN_RADIUS_GF_SECSW",
     "MN_RADIUS_GF_SECNW",
-
     # Storm-force wind radii
     "MN_RADIUS_SF_WIND",
     "MN_RADIUS_SF_SECNE",
     "MN_RADIUS_SF_SECSE",
     "MN_RADIUS_SF_SECSW",
     "MN_RADIUS_SF_SECNW",
-
     # Hurricane-force wind radii
     "MN_RADIUS_HF_WIND",
     "MN_RADIUS_HF_SECNE",
@@ -60,19 +58,16 @@ NUMERIC_COLUMNS = [
     "LON",
     "POSITION_UNCERTAINTY",
     "MAX_WIND_SPD",
-
     "MN_RADIUS_GF_WIND",
     "MN_RADIUS_GF_SECNE",
     "MN_RADIUS_GF_SECSE",
     "MN_RADIUS_GF_SECSW",
     "MN_RADIUS_GF_SECNW",
-
     "MN_RADIUS_SF_WIND",
     "MN_RADIUS_SF_SECNE",
     "MN_RADIUS_SF_SECSE",
     "MN_RADIUS_SF_SECSW",
     "MN_RADIUS_SF_SECNW",
-
     "MN_RADIUS_HF_WIND",
     "MN_RADIUS_HF_SECNE",
     "MN_RADIUS_HF_SECSE",
@@ -104,9 +99,7 @@ def filter_project_period(raw: pd.DataFrame) -> pd.DataFrame:
     # The metadata states that TM is UTC.
     best_track["TM"] = pd.to_datetime(best_track["TM"], utc=True)
 
-    best_track_2016_onwards = best_track[
-        best_track["TM"] >= PROJECT_START
-    ].copy()
+    best_track_2016_onwards = best_track[best_track["TM"] >= PROJECT_START].copy()
 
     print("\n--- Project-period filter ---")
     print("Raw rows:", len(raw))
@@ -125,10 +118,7 @@ def load_relevant_ids() -> tuple[pd.DataFrame, set[str]]:
     relevant_disturbances = pd.read_csv(RELEVANT_IDS_CSV)
 
     relevant_ids = set(
-        relevant_disturbances["DISTURBANCE_ID"]
-        .dropna()
-        .astype(str)
-        .str.strip()
+        relevant_disturbances["DISTURBANCE_ID"].dropna().astype(str).str.strip()
     )
 
     print("\n--- Relevant GML disturbances ---")
@@ -143,13 +133,11 @@ def load_relevant_ids() -> tuple[pd.DataFrame, set[str]]:
 def filter_relevant_systems(
     best_track_2016_onwards: pd.DataFrame,
     relevant_ids: set[str],
-) -> tuple[pd.DataFrame, set[str]]:   
+) -> tuple[pd.DataFrame, set[str]]:
     # Standardise ID whitespace before matching.
     best_track_2016_onwards = best_track_2016_onwards.copy()
     best_track_2016_onwards["DISTURBANCE_ID"] = (
-        best_track_2016_onwards["DISTURBANCE_ID"]
-        .astype(str)
-        .str.strip()
+        best_track_2016_onwards["DISTURBANCE_ID"].astype(str).str.strip()
     )
 
     best_track_relevant = best_track_2016_onwards[
@@ -187,9 +175,7 @@ def prepare_interpolation_input(
     # Before numeric conversion, record the distinction between blank values
     # and explicit zeros in the source data.
     blank_counts = best_track_interpolation_input.apply(
-        lambda col: col.map(
-            lambda x: isinstance(x, str) and x.strip() == ""
-        ).sum()
+        lambda col: col.map(lambda x: isinstance(x, str) and x.strip() == "").sum()
     )
 
     zero_counts = best_track_interpolation_input.apply(
@@ -204,10 +190,9 @@ def prepare_interpolation_input(
 
     # Convert measurement fields to numeric.
     # Blank/non-numeric values become NaN; explicit zero stays 0.
-    best_track_interpolation_input[NUMERIC_COLUMNS] = (
-        best_track_interpolation_input[NUMERIC_COLUMNS]
-        .apply(pd.to_numeric, errors="coerce")
-    )
+    best_track_interpolation_input[NUMERIC_COLUMNS] = best_track_interpolation_input[
+        NUMERIC_COLUMNS
+    ].apply(pd.to_numeric, errors="coerce")
 
     return best_track_interpolation_input
 
@@ -233,19 +218,15 @@ def print_data_quality_summary(
     if not duplicates.empty:
         print(duplicates[["DISTURBANCE_ID", "TM"]])
 
-    time_gaps = (
-        best_track_interpolation_input
-        .groupby("DISTURBANCE_ID")["TM"]
-        .diff()
-    )
+    time_gaps = best_track_interpolation_input.groupby("DISTURBANCE_ID")["TM"].diff()
 
     print("\n--- Observation time gaps ---")
     print(time_gaps.value_counts().sort_index())
 
     missing_linear = best_track_interpolation_input[
-        best_track_interpolation_input[
-            ["POSITION_UNCERTAINTY", "MAX_WIND_SPD"]
-        ].isna().any(axis=1)
+        best_track_interpolation_input[["POSITION_UNCERTAINTY", "MAX_WIND_SPD"]]
+        .isna()
+        .any(axis=1)
     ][
         [
             "DISTURBANCE_ID",
@@ -304,9 +285,7 @@ def main() -> None:
         relevant_ids,
     )
 
-    best_track_interpolation_input = prepare_interpolation_input(
-        best_track_relevant
-    )
+    best_track_interpolation_input = prepare_interpolation_input(best_track_relevant)
 
     print_data_quality_summary(best_track_interpolation_input)
 

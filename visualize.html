@@ -21,17 +21,6 @@
     <p class="subtitle">Browse historical BOM tropical cyclone GML bulletins on a map.</p>
   </div>
 
-  <div class="filter-grid" aria-label="Cyclone filters">
-    <div class="field">
-      <label for="seasonSelect">Season</label>
-      <select id="seasonSelect"><option value="">All seasons</option></select>
-    </div>
-    <div class="field">
-      <label for="stateSelect">State / region</label>
-      <select id="stateSelect"><option value="">All states</option></select>
-    </div>
-  </div>
-
   <div class="field">
     <label for="cycloneSelect">Cyclone / event (distId) — ★ has best track</label>
     <select id="cycloneSelect"></select>
@@ -69,7 +58,10 @@
     <div class="layer-row"><input type="checkbox" id="layer-allBulletins">
       <span class="swatch" style="background:#8892a6"></span> Show all bulletins' tracks (ghost trails)</div>
     <div class="layer-row"><input type="checkbox" id="layer-bestTrack" checked>
-      <span class="swatch" style="background:#2fd4d9"></span> Best track (post-event)</div>
+      <span class="swatch" style="background:#2fd4d9"></span> Best track (interpolated grid, or raw fixes)</div>
+    <div class="layer-row"><input type="checkbox" id="layer-towns" checked>
+      <span class="swatch" style="background:#cfd8e6"></span> Towns (TC locations)</div>
+    <div class="layer-note" id="townsNote"></div>
   </fieldset>
 
   <fieldset>

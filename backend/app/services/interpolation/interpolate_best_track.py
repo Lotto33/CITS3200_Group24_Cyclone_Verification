@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-
 # -------
 # Paths
 # -------
@@ -89,11 +88,7 @@ def interpolate_linear_fields(
             limit_area="inside",
         )
 
-    return (
-        reindexed.loc[grid]
-        .reset_index()
-        .rename(columns={"index": "TM"})
-    )
+    return reindexed.loc[grid].reset_index().rename(columns={"index": "TM"})
 
 
 # --------------------------
@@ -153,19 +148,15 @@ def _interpolate_radius_values(
 
         # Case 1: both radii are known -> linear interpolation.
         if left_has_radius and right_has_radius:
-            fraction = (
-                (output_ns[i] - original_ns[left_pos])
-                / (original_ns[right_pos] - original_ns[left_pos])
+            fraction = (output_ns[i] - original_ns[left_pos]) / (
+                original_ns[right_pos] - original_ns[left_pos]
             )
             values[i] = radius_left + fraction * (radius_right - radius_left)
             continue
 
         # Explicit no-radius (0) <-> actual radius:
         # use the nearest original observation; earlier wins an exact midpoint.
-        if (
-            (left_has_radius and right_zero)
-            or (left_zero and right_has_radius)
-        ):
+        if (left_has_radius and right_zero) or (left_zero and right_has_radius):
             values[i] = radius_left if choose_left[i] else radius_right
             continue
 
@@ -173,12 +164,9 @@ def _interpolate_radius_values(
         if left_missing and right_missing:
             continue
 
-        # 0 means known absence, while NaN means unknown. 
+        # 0 means known absence, while NaN means unknown.
         # The supplied client examples do not define interpolation between these states, so leave interior values unknown.
-        if (
-            (left_zero and right_missing)
-            or (left_missing and right_zero)
-        ):
+        if (left_zero and right_missing) or (left_missing and right_zero):
             continue
 
         # The remaining cases require endpoint wind speeds.
@@ -243,27 +231,15 @@ def interpolate_wind_radii(
         output_ns = output_times.asi8
         original_ns = original_times.asi8
 
-        left_distance = (
-            output_ns[valid]
-            - original_ns[left_positions[valid]]
-        )
-        right_distance = (
-            original_ns[right_positions[valid]]
-            - output_ns[valid]
-        )
+        left_distance = output_ns[valid] - original_ns[left_positions[valid]]
+        right_distance = original_ns[right_positions[valid]] - output_ns[valid]
 
         choose_left[valid] = left_distance <= right_distance
 
-    output_winds = (
-        result["MAX_WIND_SPD"].to_numpy(dtype=float)
-        * MPS_TO_KNOTS
-    )
+    output_winds = result["MAX_WIND_SPD"].to_numpy(dtype=float) * MPS_TO_KNOTS
 
     for level, threshold in RADIUS_THRESHOLDS.items():
-        quadrant_cols = [
-            f"MN_RADIUS_{level}_{quadrant}"
-            for quadrant in QUADRANTS
-        ]
+        quadrant_cols = [f"MN_RADIUS_{level}_{quadrant}" for quadrant in QUADRANTS]
 
         mean_radius_col = MEAN_RADIUS_COLS[level]
 
@@ -281,9 +257,7 @@ def interpolate_wind_radii(
         )
 
         # Check whether quadrant-specific data is completely unavailable at the surrounding original best-track observations
-        original_quadrants = original[
-            quadrant_cols
-        ].to_numpy(dtype=float)
+        original_quadrants = original[quadrant_cols].to_numpy(dtype=float)
 
         no_quadrants_available = np.zeros(
             len(output_times),
@@ -307,18 +281,11 @@ def interpolate_wind_radii(
             if left_pos < 0 or right_pos >= len(original):
                 continue
 
-            left_all_missing = np.all(
-                pd.isna(original_quadrants[left_pos])
-            )
+            left_all_missing = np.all(pd.isna(original_quadrants[left_pos]))
 
-            right_all_missing = np.all(
-                pd.isna(original_quadrants[right_pos])
-            )
+            right_all_missing = np.all(pd.isna(original_quadrants[right_pos]))
 
-            no_quadrants_available[i] = (
-                left_all_missing
-                and right_all_missing
-            )
+            no_quadrants_available[i] = left_all_missing and right_all_missing
 
         # Interpolate each quadrant normally first.
         for quadrant in QUADRANTS:
@@ -348,9 +315,7 @@ def interpolate_wind_radii(
                 & (output_winds >= threshold)
             )
 
-            quadrant_values[use_mean_radius] = (
-                mean_radius_values[use_mean_radius]
-            )
+            quadrant_values[use_mean_radius] = mean_radius_values[use_mean_radius]
 
             result[radius_col] = quadrant_values
 
@@ -396,16 +361,13 @@ def interpolate_best_track(
     )
 
 
-
 def main() -> None:
     best_track = pd.read_csv(
         INPUT_CSV,
         parse_dates=["TM"],
     )
 
-    best_track_interpolated = interpolate_best_track(
-        best_track
-    )
+    best_track_interpolated = interpolate_best_track(best_track)
 
     OUTPUT_CSV.parent.mkdir(
         parents=True,

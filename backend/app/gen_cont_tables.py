@@ -9,15 +9,16 @@ import pandas as pd
 from pyproj import Geod
 from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
-from shapely.ops import nearest_points
-from shapely.ops import unary_union
+from shapely.ops import nearest_points, unary_union
 
 geod = Geod(ellps="WGS84")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 GEOJSON_DIR = PROJECT_ROOT / "data" / "geojson"
 BEST_TRACK_CSV = PROJECT_ROOT / "data" / "best_track.csv"
-BEST_TRACK_INTERPOLATED_CSV = PROJECT_ROOT / "data" / "processed" / "best_track_interpolated.csv"
+BEST_TRACK_INTERPOLATED_CSV = (
+    PROJECT_ROOT / "data" / "processed" / "best_track_interpolated.csv"
+)
 # Location/state source for Table A. The TC Locations sheet is authoritative;
 # data/towns.csv is not read by this pipeline (and is currently an Excel
 # workbook despite its .csv filename).
@@ -50,18 +51,37 @@ LINEAR_COLS = ["LAT", "LON", "MAX_WIND_SPD", "POSITION_UNCERTAINTY", "CENTRAL_PR
 # SF = Storm force
 
 RADIUS_COLS = [
-    "MN_RADIUS_GF_WIND", "MN_RADIUS_GF_SECNE", "MN_RADIUS_GF_SECSE", "MN_RADIUS_GF_SECSW", "MN_RADIUS_GF_SECNW",
-    "MN_RADIUS_SF_WIND", "MN_RADIUS_SF_SECNE", "MN_RADIUS_SF_SECSE", "MN_RADIUS_SF_SECSW", "MN_RADIUS_SF_SECNW",
-    "MN_RADIUS_HF_WIND", "MN_RADIUS_HF_SECNE", "MN_RADIUS_HF_SECSE", "MN_RADIUS_HF_SECSW", "MN_RADIUS_HF_SECNW",
+    "MN_RADIUS_GF_WIND",
+    "MN_RADIUS_GF_SECNE",
+    "MN_RADIUS_GF_SECSE",
+    "MN_RADIUS_GF_SECSW",
+    "MN_RADIUS_GF_SECNW",
+    "MN_RADIUS_SF_WIND",
+    "MN_RADIUS_SF_SECNE",
+    "MN_RADIUS_SF_SECSE",
+    "MN_RADIUS_SF_SECSW",
+    "MN_RADIUS_SF_SECNW",
+    "MN_RADIUS_HF_WIND",
+    "MN_RADIUS_HF_SECNE",
+    "MN_RADIUS_HF_SECSE",
+    "MN_RADIUS_HF_SECSW",
+    "MN_RADIUS_HF_SECNW",
 ]
 _geojson_index_cache: dict | None = None
-_best_track_cache: pd.DataFrame | None = None #TODO make some way to udate this cache when new dataset is added
+_best_track_cache: pd.DataFrame | None = (
+    None  # TODO make some way to udate this cache when new dataset is added
+)
 _best_track_cache_path: Path | None = None
 
 
 def _best_track_source_path() -> Path:
     """Use the ETL output when available, otherwise fall back to raw data."""
-    return BEST_TRACK_INTERPOLATED_CSV if BEST_TRACK_INTERPOLATED_CSV.is_file() else BEST_TRACK_CSV
+    return (
+        BEST_TRACK_INTERPOLATED_CSV
+        if BEST_TRACK_INTERPOLATED_CSV.is_file()
+        else BEST_TRACK_CSV
+    )
+
 
 def _best_track_is_preprocessed() -> bool:
     return _best_track_source_path() == BEST_TRACK_INTERPOLATED_CSV
@@ -77,8 +97,9 @@ def announce_best_track_source() -> None:
         print(f"[best_track] Interpolated CSV not found; using raw CSV: {source_path}")
         print("[best_track] Local interpolation will be performed")
 
-#NOTE pd.DataFrame A collection of labelled columns, where each column is essentially an array of values.
-def load_full_best_track() -> pd.DataFrame: 
+
+# NOTE pd.DataFrame A collection of labelled columns, where each column is essentially an array of values.
+def load_full_best_track() -> pd.DataFrame:
     global _best_track_cache, _best_track_cache_path
     source_path = _best_track_source_path()
     if _best_track_cache is None or _best_track_cache_path != source_path:
@@ -88,8 +109,11 @@ def load_full_best_track() -> pd.DataFrame:
             read_options["skiprows"] = BEST_TRACK_SKIPROWS
         _best_track_cache = pd.read_csv(source_path, **read_options)
         _best_track_cache_path = source_path
-        print(f"[best_track] Loaded {len(_best_track_cache)} rows from {source_path.name}")
+        print(
+            f"[best_track] Loaded {len(_best_track_cache)} rows from {source_path.name}"
+        )
     return _best_track_cache
+
 
 def load_best_track(cyclone_id: str) -> pd.DataFrame:
     df = load_full_best_track()
@@ -104,12 +128,15 @@ def load_best_track(cyclone_id: str) -> pd.DataFrame:
     # would otherwise just look like a KeyError with no context.
     missing_linear_cols = [col for col in LINEAR_COLS if col not in df.columns]
     if missing_linear_cols:
-        print(f"[best_track] WARNING: column(s) {missing_linear_cols} not present in this best-track source, "
-              f"skipping numeric coercion for them. Available columns: {list(df.columns)}")
+        print(
+            f"[best_track] WARNING: column(s) {missing_linear_cols} not present in this best-track source, "
+            f"skipping numeric coercion for them. Available columns: {list(df.columns)}"
+        )
     for col in LINEAR_COLS:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df.sort_values("TM").reset_index(drop = True)
+    return df.sort_values("TM").reset_index(drop=True)
+
 
 def _nearest_observed_fill(series: pd.Series) -> pd.Series:
     """
@@ -118,13 +145,13 @@ def _nearest_observed_fill(series: pd.Series) -> pd.Series:
     so a system newly crossing an intensity threshold jumps to the first
     real observation instead of ramping up from an assumed zero.
     """
-     
+
     observed = series.dropna()
     if observed.empty:
         return series
     obs_times = pd.Series(observed.index, index=observed.index)
-    forward = obs_times.reindex(series.index, method = "ffill")
-    backward = obs_times.reindex(series.index, method = "bfill")
+    forward = obs_times.reindex(series.index, method="ffill")
+    backward = obs_times.reindex(series.index, method="bfill")
     forward_dist = (series.index.to_series() - forward).abs()
     backward_dist = (backward - series.index.to_series()).abs()
     forward_vals = observed.reindex(series.index, method="ffill")
@@ -145,14 +172,18 @@ def _nearest_observed_fill(series: pd.Series) -> pd.Series:
 def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataFrame:
     # NOTE THIS FUNCTION IS TEMPORARY. USE SIYUS VIA IMPORT -> TODO
     if df.empty:
-        print("[interpolate_best_track] Input best-track slice is empty, nothing to interpolate")
+        print(
+            "[interpolate_best_track] Input best-track slice is empty, nothing to interpolate"
+        )
         return df
 
     indexed = df.set_index("TM")
 
     # Build a regular grid, merged with the original observation timestamps
     # so you don't lose the real observed points.
-    grid = pd.date_range(indexed.index.min(), indexed.index.max(), freq=f"{step_minutes}min")
+    grid = pd.date_range(
+        indexed.index.min(), indexed.index.max(), freq=f"{step_minutes}min"
+    )
     full_index = indexed.index.union(grid).sort_values()
     reindexed = indexed.reindex(full_index)
 
@@ -164,21 +195,30 @@ def interpolate_best_track(df: pd.DataFrame, step_minutes: int = 15) -> pd.DataF
         # fix stays NaN for every interpolated step before/after it, even
         # though RADIUS_COLS below don't have that gap (they use
         # _nearest_observed_fill, which already reaches the edges).
-        reindexed[col] = pd.to_numeric(reindexed[col], errors="coerce").interpolate(method="time", limit_direction="both")
+        reindexed[col] = pd.to_numeric(reindexed[col], errors="coerce").interpolate(
+            method="time", limit_direction="both"
+        )
     for col in RADIUS_COLS:
-        reindexed[col] = _nearest_observed_fill(pd.to_numeric(reindexed[col], errors="coerce"))
+        reindexed[col] = _nearest_observed_fill(
+            pd.to_numeric(reindexed[col], errors="coerce")
+        )
 
     reindexed = reindexed.reset_index().rename(columns={"index": "TM"})
     result = reindexed[reindexed.TM.isin(grid)].reset_index(drop=True)
-    print(f"[interpolate_best_track] {len(df)} observed rows -> {len(result)} rows at {step_minutes}min steps")
+    print(
+        f"[interpolate_best_track] {len(df)} observed rows -> {len(result)} rows at {step_minutes}min steps"
+    )
     return result
+
 
 def load_locations() -> gpd.GeoDataFrame:
     """
     Real BOM locations list. Latitude/Longitude are plain WGS84 degrees
     already -- no reprojection needed, unlike the earlier GIS towns layer.
     """
-    print(f"[locations] Loading {TOWNS_XLSX} (sheet 'TC Locations'; State/coordinates source) ...")
+    print(
+        f"[locations] Loading {TOWNS_XLSX} (sheet 'TC Locations'; State/coordinates source) ..."
+    )
     df = pd.read_excel(TOWNS_XLSX, sheet_name="TC Locations")
     print(f"[locations] Loaded {len(df)} raw row(s)")
 
@@ -190,32 +230,44 @@ def load_locations() -> gpd.GeoDataFrame:
     valid = df["Name"].notna() & df["Latitude"].notna() & df["Longitude"].notna()
     n_dropped = int((~valid).sum())
     if n_dropped:
-        print(f"[locations] Dropping {n_dropped} row(s) with missing Name/Latitude/Longitude (blank separator rows)")
+        print(
+            f"[locations] Dropping {n_dropped} row(s) with missing Name/Latitude/Longitude (blank separator rows)"
+        )
     df = df[valid].reset_index(drop=True)
     print(f"[locations] {len(df)} usable location(s)")
 
     if COASTAL_ORDER_COLUMN in df.columns:
         is_coastal = df[COASTAL_ORDER_COLUMN].notna()
-        print(f"[locations] {int(is_coastal.sum())} coastal location(s) (have a {COASTAL_ORDER_COLUMN!r} value)")
+        print(
+            f"[locations] {int(is_coastal.sum())} coastal location(s) (have a {COASTAL_ORDER_COLUMN!r} value)"
+        )
     else:
-        print(f"[locations] WARNING: column {COASTAL_ORDER_COLUMN!r} not found in the TC Locations sheet -- "
-              f"treating every location as non-coastal, so the coastal buffer will never apply. "
-              f"Available columns: {list(df.columns)}")
+        print(
+            f"[locations] WARNING: column {COASTAL_ORDER_COLUMN!r} not found in the TC Locations sheet -- "
+            f"treating every location as non-coastal, so the coastal buffer will never apply. "
+            f"Available columns: {list(df.columns)}"
+        )
         is_coastal = pd.Series(False, index=df.index)
     return gpd.GeoDataFrame(
         {"name": df["Name"], "state": df["State"], "is_coastal": is_coastal},
         geometry=gpd.points_from_xy(df["Longitude"], df["Latitude"]),
         crs="EPSG:4283",
     )
-def calculate_geodesic_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+
+
+def calculate_geodesic_distance_km(
+    lat1: float, lon1: float, lat2: float, lon2: float
+) -> float:
     """Calculates Vincenty/WGS84 distance in kilometers between two points."""
     _, _, distance_m = geod.inv(lon1, lat1, lon2, lat2)
     return distance_m / 1000.0
+
 
 def get_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculates the initial compass bearing from point 1 to point 2 in degrees (0 - 360)."""
     initial_bearing, _, _ = geod.inv(lon1, lat1, lon2, lat2)
     return initial_bearing % 360
+
 
 def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
     """
@@ -248,6 +300,7 @@ def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
 
     return np.nan
 
+
 def signed_distance_to_polygon_km(point, polygon_union) -> float:
     """Geodesic distance in km from point to the nearest edge of
     polygon_union. Negative when point is inside the polygon, matching
@@ -257,8 +310,11 @@ def signed_distance_to_polygon_km(point, polygon_union) -> float:
     if polygon_union is None:
         return np.nan
     nearest_on_boundary, _ = nearest_points(polygon_union.boundary, point)
-    dist_km = calculate_geodesic_distance_km(point.y, point.x, nearest_on_boundary.y, nearest_on_boundary.x)
+    dist_km = calculate_geodesic_distance_km(
+        point.y, point.x, nearest_on_boundary.y, nearest_on_boundary.x
+    )
     return -dist_km if polygon_union.contains(point) else dist_km
+
 
 def _geojson_index() -> dict:
     """(distId, fcastTime) -> filepath, built once by scanning what gml_to_geojson.py already wrote.
@@ -269,7 +325,7 @@ def _geojson_index() -> dict:
     until load_forecast_geojson() actually needs a specific file.\
     
     NOTE that logic in gml_to_geojson.py has to be run prior to this so that there are jeojson files for each cyclone"""
-    
+
     global _geojson_index_cache
     if _geojson_index_cache is None:
         print(f"[geojson_index] Scanning {GEOJSON_DIR} for *.geojson files ...")
@@ -280,16 +336,22 @@ def _geojson_index() -> dict:
             meta = json.loads(path.read_text()).get("metadata", {})
             key = (meta.get("distId"), meta.get("fcastTime"))
             _geojson_index_cache[key] = path
-        print(f"[geojson_index] Found {scanned} file(s), indexed {len(_geojson_index_cache)} unique (distId, fcastTime) key(s)")
+        print(
+            f"[geojson_index] Found {scanned} file(s), indexed {len(_geojson_index_cache)} unique (distId, fcastTime) key(s)"
+        )
         if scanned == 0:
-            print(f"[geojson_index] WARNING: no .geojson files found under {GEOJSON_DIR} -- did you run build_gml_dataset.py?")
+            print(
+                f"[geojson_index] WARNING: no .geojson files found under {GEOJSON_DIR} -- did you run build_gml_dataset.py?"
+            )
     return _geojson_index_cache
 
 
 def load_forecast_geojson(disturbance_id: str, fcast_time: str) -> dict | None:
     path = _geojson_index().get((disturbance_id, fcast_time))
     if path is None:
-        print(f"[load_forecast_geojson] No file indexed for ({disturbance_id!r}, {fcast_time!r})")
+        print(
+            f"[load_forecast_geojson] No file indexed for ({disturbance_id!r}, {fcast_time!r})"
+        )
         return None
     return json.loads(path.read_text())
 
@@ -325,8 +387,12 @@ def find_pre_cutoff_near_polygon_distances(
         locations = load_locations()
 
     columns = [
-        "Disturbance ID", "Base time", "Location", "Area type",
-        "Distance (km)", "Nearby area count",
+        "Disturbance ID",
+        "Base time",
+        "Location",
+        "Area type",
+        "Distance (km)",
+        "Nearby area count",
     ]
     matches: list[dict] = []
 
@@ -346,10 +412,19 @@ def find_pre_cutoff_near_polygon_distances(
             geometries = {"Watch": [], "Warning": []}
             for feature in geo.get("features", []):
                 properties = feature.get("properties", {})
-                if properties.get("featureType") not in ("tcWarningArea", "tcWatchArea"):
+                if properties.get("featureType") not in (
+                    "tcWarningArea",
+                    "tcWatchArea",
+                ):
                     continue
                 area_type = (properties.get("areaType") or "").lower()
-                area_name = "Warning" if "warning" in area_type else "Watch" if "watch" in area_type else None
+                area_name = (
+                    "Warning"
+                    if "warning" in area_type
+                    else "Watch"
+                    if "watch" in area_type
+                    else None
+                )
                 if area_name is not None:
                     geometries[area_name].append(shapely_shape(feature["geometry"]))
 
@@ -362,15 +437,19 @@ def find_pre_cutoff_near_polygon_distances(
                 if not bool(location.get("is_coastal", False)):
                     continue
                 for area_name, polygon_union in polygon_unions.items():
-                    distance = signed_distance_to_polygon_km(location.geometry, polygon_union)
+                    distance = signed_distance_to_polygon_km(
+                        location.geometry, polygon_union
+                    )
                     if pd.notna(distance) and 0 < distance < max_distance_km:
-                        bulletin_matches.append({
-                            "Disturbance ID": disturbance_id,
-                            "Base time": base_time,
-                            "Location": location["name"],
-                            "Area type": area_name,
-                            "Distance (km)": distance,
-                        })
+                        bulletin_matches.append(
+                            {
+                                "Disturbance ID": disturbance_id,
+                                "Base time": base_time,
+                                "Location": location["name"],
+                                "Area type": area_name,
+                                "Distance (km)": distance,
+                            }
+                        )
 
             if bulletin_matches:
                 counts = pd.Series(
@@ -386,26 +465,42 @@ def find_pre_cutoff_near_polygon_distances(
         output_path = Path(output_csv)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         result.to_csv(output_path, index=False)
-        print(f"[near_polygon_report] Wrote {len(result)} matching distance(s) to {output_path}")
+        print(
+            f"[near_polygon_report] Wrote {len(result)} matching distance(s) to {output_path}"
+        )
 
     return result
+
 
 def get_best_track_geojson(cyclone_id: str) -> dict | None:
     raw = load_best_track(cyclone_id)
     if raw.empty:
-        print(f"[get_best_track_geojson] No best-track rows for {cyclone_id!r}, returning None")
+        print(
+            f"[get_best_track_geojson] No best-track rows for {cyclone_id!r}, returning None"
+        )
         return None
 
-    interpolated_data = raw if _best_track_is_preprocessed() else interpolate_best_track(raw)
+    interpolated_data = (
+        raw if _best_track_is_preprocessed() else interpolate_best_track(raw)
+    )
     interpolated_data = interpolated_data.dropna(subset=["LAT", "LON"])
 
     line = LineString(zip(interpolated_data.LON, interpolated_data.LAT))
-    gdf = gpd.GeoDataFrame([{"disturbance_id": cyclone_id}], geometry=[line], crs="EPSG:4283")
+    gdf = gpd.GeoDataFrame(
+        [{"disturbance_id": cyclone_id}], geometry=[line], crs="EPSG:4283"
+    )
     return gdf.__geo_interface__["features"][0]
 
+
 def get_reference_times(disturbance_id: str) -> list[str]:
-    times = sorted(fcast_time for (dist_id, fcast_time) in _geojson_index() if disturbance_id==dist_id and fcast_time)
-    print(f"[get_reference_times] {len(times)} forecast base time(s) found for {disturbance_id!r}")
+    times = sorted(
+        fcast_time
+        for (dist_id, fcast_time) in _geojson_index()
+        if disturbance_id == dist_id and fcast_time
+    )
+    print(
+        f"[get_reference_times] {len(times)} forecast base time(s) found for {disturbance_id!r}"
+    )
     return times
 
 
@@ -436,11 +531,14 @@ def list_disturbance_ids_for_season(season: str) -> list[str]:
         if derive_season(fcast_time) == season:
             ids.add(dist_id)
     result = sorted(ids)
-    print(f"[list_disturbance_ids_for_season] season {season!r}: {len(result)} disturbance(s) -> {result}")
+    print(
+        f"[list_disturbance_ids_for_season] season {season!r}: {len(result)} disturbance(s) -> {result}"
+    )
     return result
 
 
 """See the client's scope and deliverables"""
+
 
 def generate_table_a(
     disturbance_id: str,
@@ -490,15 +588,17 @@ def generate_table_a(
     fcast_times = get_reference_times(disturbance_id)
     for i, fcast_time in enumerate(fcast_times, start=1):
         print(f"[table_a] ({i}/{len(fcast_times)}) base time {fcast_time}")
-        geo = load_forecast_geojson(disturbance_id,fcast_time)
+        geo = load_forecast_geojson(disturbance_id, fcast_time)
         if geo is None:
-            print(f"[table_a]   -> no geojson found, skipping this base time")
+            print("[table_a]   -> no geojson found, skipping this base time")
             continue
 
         base_time_dt = pd.to_datetime(fcast_time).tz_localize(None)
         buffer_applies = base_time_dt < coastal_buffer_cutoff
         if not buffer_applies:
-            print(f"[table_a]   -> base time is on/after {coastal_buffer_cutoff.date()}, coastal buffer disabled for this bulletin")
+            print(
+                f"[table_a]   -> base time is on/after {coastal_buffer_cutoff.date()}, coastal buffer disabled for this bulletin"
+            )
 
         # This bulletin's own declared validity period is used later by
         # generate_table_c, not here -- Table A's schema doesn't include it.
@@ -509,7 +609,13 @@ def generate_table_a(
             if feature_type not in ("tcWarningArea", "tcWatchArea"):
                 continue
             area_type = (f["properties"].get("areaType") or "").lower()
-            target = warning_geoms if "warning" in area_type else watch_geoms if "watch" in area_type else None
+            target = (
+                warning_geoms
+                if "warning" in area_type
+                else watch_geoms
+                if "watch" in area_type
+                else None
+            )
             if target is not None:
                 target.append(shapely_shape(f["geometry"]))
 
@@ -517,7 +623,9 @@ def generate_table_a(
             watch_union = unary_union(watch_geoms)
         if warning_geoms:
             warning_union = unary_union(warning_geoms)
-        print(f"[table_a]   -> {len(watch_geoms)} watch polygon(s), {len(warning_geoms)} warning polygon(s)")
+        print(
+            f"[table_a]   -> {len(watch_geoms)} watch polygon(s), {len(warning_geoms)} warning polygon(s)"
+        )
 
         kept = 0
         for _, loc in locations.iterrows():
@@ -541,8 +649,14 @@ def generate_table_a(
                 # being inside gives a distance <= 0, which is always within
                 # the buffer), it's Warning only. Watch is only checked if
                 # that Warning condition doesn't hold.
-                warning = bool(pd.notna(dist_warning) and dist_warning <= coastal_buffer_km)
-                watch = bool(not warning and pd.notna(dist_watch) and dist_watch <= coastal_buffer_km)
+                warning = bool(
+                    pd.notna(dist_warning) and dist_warning <= coastal_buffer_km
+                )
+                watch = bool(
+                    not warning
+                    and pd.notna(dist_watch)
+                    and dist_watch <= coastal_buffer_km
+                )
             else:
                 # Non-coastal towns (or coastal towns on/after the buffer
                 # cutoff date): strict polygon containment only, evaluated
@@ -551,29 +665,47 @@ def generate_table_a(
                 watch = bool(pd.notna(dist_watch) and dist_watch <= 0)
                 warning = bool(pd.notna(dist_warning) and dist_warning <= 0)
 
-            rows.append({
-                "Disturbance ID": disturbance_id,
-                "Base time": base_time_dt,
-                "Location": loc["name"],
-                "Distance to watch": dist_watch,
-                "Distance to warning": dist_warning,
-                "Watch": watch,
-                "Warning": warning,
-                # contains() (via signed_distance_to_polygon_km's use of polygon_union.contains)
-                # is strict -- a location sitting exactly on a polygon's boundary line
-                # (vanishingly unlikely with real coordinates, but technically possible)
-                # would come out as outside with distance 0, not inside. Not worth
-                # changing unless it actually comes up.
-            })
+            rows.append(
+                {
+                    "Disturbance ID": disturbance_id,
+                    "Base time": base_time_dt,
+                    "Location": loc["name"],
+                    "Distance to watch": dist_watch,
+                    "Distance to warning": dist_warning,
+                    "Watch": watch,
+                    "Warning": warning,
+                    # contains() (via signed_distance_to_polygon_km's use of polygon_union.contains)
+                    # is strict -- a location sitting exactly on a polygon's boundary line
+                    # (vanishingly unlikely with real coordinates, but technically possible)
+                    # would come out as outside with distance 0, not inside. Not worth
+                    # changing unless it actually comes up.
+                }
+            )
             kept += 1
-        print(f"[table_a]   -> {kept} location(s) within {relevance_km}km (of {len(locations)} total)")
-    result = pd.DataFrame(rows, columns = ["Disturbance ID","Base time", "Location", "Distance to watch", "Distance to warning", "Watch", "Warning"])
+        print(
+            f"[table_a]   -> {kept} location(s) within {relevance_km}km (of {len(locations)} total)"
+        )
+    result = pd.DataFrame(
+        rows,
+        columns=[
+            "Disturbance ID",
+            "Base time",
+            "Location",
+            "Distance to watch",
+            "Distance to warning",
+            "Watch",
+            "Warning",
+        ],
+    )
     print(f"[table_a] Done: {len(result)} row(s)")
     return result
 
-def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None, step_minutes: int = 15) -> pd.DataFrame:
+
+def generate_table_b(
+    disturbance_id: str, locations: gpd.GeoDataFrame | None, step_minutes: int = 15
+) -> pd.DataFrame:
     """
-    for every system create the following table at the agreed time interval for all relevant locations. 
+    for every system create the following table at the agreed time interval for all relevant locations.
     A negative distance to a wind radii means that location is experiencing those winds.
 
     `locations` should already be filtered down to the "relevant" locations
@@ -582,15 +714,19 @@ def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None, st
     this filtering before calling in; pass a pre-filtered GeoDataFrame here
     if calling this directly.
     """
-    print(f"\n=== Table B: distance-to-wind-radii for {disturbance_id} (step={step_minutes}min) ===")
+    print(
+        f"\n=== Table B: distance-to-wind-radii for {disturbance_id} (step={step_minutes}min) ==="
+    )
 
     if locations is None:
         locations = load_locations()
 
     rows = []
-    df = load_best_track(disturbance_id)   
+    df = load_best_track(disturbance_id)
     if _best_track_is_preprocessed():
-        print("[table_b] Using pre-interpolated best-track data (skipping interpolation)")
+        print(
+            "[table_b] Using pre-interpolated best-track data (skipping interpolation)"
+        )
         # Interpolation itself is skipped, but numeric dtypes still need to
         # be guaranteed -- interpolate_best_track() is normally what coerces
         # RADIUS_COLS to numeric, and skipping it entirely would leave those
@@ -608,39 +744,54 @@ def generate_table_b(disturbance_id: str, locations: gpd.GeoDataFrame | None, st
     for i, (_, step) in enumerate(interp_df.iterrows(), start=1):
         if i == 1 or i == n_steps or i % 25 == 0:
             print(f"[table_b] processing time step {i}/{n_steps} ({step.get('TM')})")
-        cyc_lat, cyc_lon = step['LAT'], step['LON']
+        cyc_lat, cyc_lon = step["LAT"], step["LON"]
         if pd.isna(cyc_lat) or pd.isna(cyc_lon):
             continue
 
         for _, loc in locations.iterrows():
             loc_lat, loc_lon = loc.geometry.y, loc.geometry.x
-            dist_center_km = calculate_geodesic_distance_km(cyc_lat, cyc_lon, loc_lat, loc_lon)
-            
+            dist_center_km = calculate_geodesic_distance_km(
+                cyc_lat, cyc_lon, loc_lat, loc_lon
+            )
+
             bearing = get_bearing(cyc_lat, cyc_lon, loc_lat, loc_lon)
 
             # TODO CHECK IS THIS CORRECT BELOW THESE NEXT SEVEN LINES
-            gale_radius_km = get_quadrant_radius(step, "MN_RADIUS_GF", bearing) 
-            storm_radius_km = get_quadrant_radius(step, "MN_RADIUS_SF", bearing) 
-            hurricane_radius_km = get_quadrant_radius(step, "MN_RADIUS_HF", bearing) 
+            gale_radius_km = get_quadrant_radius(step, "MN_RADIUS_GF", bearing)
+            storm_radius_km = get_quadrant_radius(step, "MN_RADIUS_SF", bearing)
+            hurricane_radius_km = get_quadrant_radius(step, "MN_RADIUS_HF", bearing)
 
-            
             dist_gale_km = dist_center_km - gale_radius_km
             dist_storm_km = dist_center_km - storm_radius_km
             dist_hurricane_km = dist_center_km - hurricane_radius_km
-            
-            rows.append({
-                "Disturbance ID":disturbance_id,
-                "Location": loc["name"],
-                "Time":step["TM"],
-                "Analysis Uncertainty": step.get("POSITION_UNCERTAINTY", np.nan),
-                "Distance to gale": dist_gale_km,
-                "Distance to storm": dist_storm_km,
-                "Distance to hurricane": dist_hurricane_km,
-            })
-        
-    result = pd.DataFrame(rows, columns = ["Disturbance ID","Location", "Time", "Analysis Uncertainty", "Distance to gale", "Distance to storm", "Distance to hurricane"])
+
+            rows.append(
+                {
+                    "Disturbance ID": disturbance_id,
+                    "Location": loc["name"],
+                    "Time": step["TM"],
+                    "Analysis Uncertainty": step.get("POSITION_UNCERTAINTY", np.nan),
+                    "Distance to gale": dist_gale_km,
+                    "Distance to storm": dist_storm_km,
+                    "Distance to hurricane": dist_hurricane_km,
+                }
+            )
+
+    result = pd.DataFrame(
+        rows,
+        columns=[
+            "Disturbance ID",
+            "Location",
+            "Time",
+            "Analysis Uncertainty",
+            "Distance to gale",
+            "Distance to storm",
+            "Distance to hurricane",
+        ],
+    )
     print(f"[table_b] Done: {len(result)} row(s)")
     return result
+
 
 def generate_table_c(
     disturbance_id: str,
@@ -666,7 +817,9 @@ def generate_table_c(
     assumption that turned out to be wrong. Other windows (e.g. 0-30h, 0-42h)
     can be explored by passing different x_hours/y_hours values.
     """
-    print(f"\n=== Table C: observed gales within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} ===")
+    print(
+        f"\n=== Table C: observed gales within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} ==="
+    )
     if locations is None:
         locations = load_locations()
 
@@ -677,7 +830,9 @@ def generate_table_c(
 
     if table_b.empty:
         print("[table_c] Table B is empty, returning empty Table C")
-        return pd.DataFrame(columns=["Disturbance ID", "Base time", "Location", "Observed"])
+        return pd.DataFrame(
+            columns=["Disturbance ID", "Base time", "Location", "Observed"]
+        )
     # Work on a copy -- table_b may be a caller-owned DataFrame (passed in to
     # skip regeneration above), and mutating it here would be a surprising
     # side effect for the caller.
@@ -695,30 +850,45 @@ def generate_table_c(
         start_window = base_time + pd.Timedelta(hours=x_hours)
         end_window = base_time + pd.Timedelta(hours=y_hours)
         window_df = table_b[
-            (table_b["Time"] >= start_window) & 
-            (table_b["Time"] <= end_window)
+            (table_b["Time"] >= start_window) & (table_b["Time"] <= end_window)
         ]
-        print(f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: {len(window_df)} best-track row(s) in window")
+        print(
+            f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: {len(window_df)} best-track row(s) in window"
+        )
 
         for _, loc in locations.iterrows():
             loc_name = loc["name"]
             loc_subset = window_df[window_df["Location"] == loc_name]
-            observed = bool((loc_subset["Distance to gale"] <= 0).any()) if not loc_subset.empty else False
-            rows.append({
-                "Disturbance ID":disturbance_id,
-                "Base time":base_time,
-                "Location": loc["name"],
-                "Observed": observed
-            })
-    result = pd.DataFrame(rows, columns = ["Disturbance ID","Base time", "Location", "Observed"])
-    print(f"[table_c] Done: {len(result)} row(s), {int(result['Observed'].sum()) if not result.empty else 0} observed=True")
+            observed = (
+                bool((loc_subset["Distance to gale"] <= 0).any())
+                if not loc_subset.empty
+                else False
+            )
+            rows.append(
+                {
+                    "Disturbance ID": disturbance_id,
+                    "Base time": base_time,
+                    "Location": loc["name"],
+                    "Observed": observed,
+                }
+            )
+    result = pd.DataFrame(
+        rows, columns=["Disturbance ID", "Base time", "Location", "Observed"]
+    )
+    print(
+        f"[table_c] Done: {len(result)} row(s), {int(result['Observed'].sum()) if not result.empty else 0} observed=True"
+    )
     return result
 
+
 def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFrame:
-    
     """this is the base to build the contingency table for the given options."""
-    print(f"\n=== Table D: merging Table A ({len(table_a)} rows) with Table C ({len(table_c)} rows) ===")
-    merged_table = table_a.merge(table_c, on =["Disturbance ID", "Base time", "Location"], how="left")
+    print(
+        f"\n=== Table D: merging Table A ({len(table_a)} rows) with Table C ({len(table_c)} rows) ==="
+    )
+    merged_table = table_a.merge(
+        table_c, on=["Disturbance ID", "Base time", "Location"], how="left"
+    )
     merged_table["Forecast"] = merged_table["Watch"] | merged_table["Warning"]
     merged_table["Observed"] = merged_table["Observed"].fillna(False)
     # Derived purely from Base time -- lets contingency stats be filtered by
@@ -726,7 +896,14 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFra
     # season lookup table. State is intentionally not retained in Table D;
     # state filtering happens before Table A is generated.
     merged_table["Season"] = merged_table["Base time"].apply(derive_season)
-    result_columns = ["Disturbance ID", "Base time", "Location", "Season", "Forecast", "Observed"]
+    result_columns = [
+        "Disturbance ID",
+        "Base time",
+        "Location",
+        "Season",
+        "Forecast",
+        "Observed",
+    ]
     result = merged_table[result_columns]
     print(f"[table_d] Done: {len(result)} row(s)")
     return result
@@ -760,29 +937,42 @@ def generate_contingency_dict(table_d: pd.DataFrame, **filters) -> dict:
     miss = int((~df.Forecast & df.Observed).sum())
     correct_negative = int((~df.Forecast & ~df.Observed).sum())
     total = hit + false_alarm + miss + correct_negative
-    results =  {
+    results = {
         "hit": hit,
         "false alarm": false_alarm,
         "miss": miss,
         "correct negative": correct_negative,
-        "total": total
+        "total": total,
     }
     print(f"[stats] {results}")
     return results
 
+
 def get_contingency_matrix_df(stats: dict) -> pd.DataFrame:
     """
-    Takes the dictionary from build_contingency_table and converts it into 
+    Takes the dictionary from build_contingency_table and converts it into
     a formatted 2x2 Contingency Matrix with row/column totals.
     """
     matrix_df = pd.DataFrame(
-        data = [
+        data=[
             [stats["hit"], stats["false alarm"], stats["hit"] + stats["false alarm"]],
-            [stats["miss"], stats["correct negative"], stats["miss"]+  stats["correct negative"]],
-            [stats["hit"] + stats["miss"], stats["false alarm"] + stats["correct negative"], stats["total"]],
+            [
+                stats["miss"],
+                stats["correct negative"],
+                stats["miss"] + stats["correct negative"],
+            ],
+            [
+                stats["hit"] + stats["miss"],
+                stats["false alarm"] + stats["correct negative"],
+                stats["total"],
+            ],
         ],
-        index = pd.MultiIndex.from_tuples([("Forecast", "Yes"), ("Forecast", "No"), ("Forecast", "Total")]),
-        columns = pd.MultiIndex.from_tuples([("Observed", "Yes"), ("Observed", "No"), ("Observed", "Total")])
+        index=pd.MultiIndex.from_tuples(
+            [("Forecast", "Yes"), ("Forecast", "No"), ("Forecast", "Total")]
+        ),
+        columns=pd.MultiIndex.from_tuples(
+            [("Observed", "Yes"), ("Observed", "No"), ("Observed", "Total")]
+        ),
     )
     return matrix_df
 
@@ -799,8 +989,11 @@ def _output_filename_prefix(
         parts.append(f"season-{season}")
     if state is not None:
         parts.append(f"state-{state}")
-    parts.append(f"date-{(generated_date or date.today()).isoformat().replace('-', '')}")
+    parts.append(
+        f"date-{(generated_date or date.today()).isoformat().replace('-', '')}"
+    )
     return "_".join(parts)
+
 
 def generate_all_tables_for_disturbance(
     disturbance_id: str,
@@ -823,24 +1016,42 @@ def generate_all_tables_for_disturbance(
     all_locations = load_locations()
     if state is not None:
         available_states = sorted(all_locations["state"].dropna().unique().tolist())
-        locations_for_table_a = all_locations[all_locations["state"] == state].reset_index(drop=True)
+        locations_for_table_a = all_locations[
+            all_locations["state"] == state
+        ].reset_index(drop=True)
         if locations_for_table_a.empty:
-            raise ValueError(f"State {state!r} was not found in the TC Locations sheet. Available states: {available_states}")
-        print(f"[state_filter] {len(locations_for_table_a)}/{len(all_locations)} location(s) retained for State={state!r}")
+            raise ValueError(
+                f"State {state!r} was not found in the TC Locations sheet. Available states: {available_states}"
+            )
+        print(
+            f"[state_filter] {len(locations_for_table_a)}/{len(all_locations)} location(s) retained for State={state!r}"
+        )
     else:
         locations_for_table_a = all_locations
 
-    table_a = generate_table_a(disturbance_id, locations_for_table_a, coastal_buffer_km=coastal_buffer_km, relevance_km=relevance_km, coastal_buffer_cutoff=coastal_buffer_cutoff)
+    table_a = generate_table_a(
+        disturbance_id,
+        locations_for_table_a,
+        coastal_buffer_km=coastal_buffer_km,
+        relevance_km=relevance_km,
+        coastal_buffer_cutoff=coastal_buffer_cutoff,
+    )
 
     # Table B/C only need the locations that actually appear in Table A for
     # this disturbance -- not every town in towns.xlsx.
     relevant_names = set(table_a["Location"].unique())
-    locations = locations_for_table_a[locations_for_table_a["name"].isin(relevant_names)].reset_index(drop=True)
-    print(f"[relevant_locations] {len(locations)}/{len(locations_for_table_a)} location(s) appear in Table A for {disturbance_id}")
+    locations = locations_for_table_a[
+        locations_for_table_a["name"].isin(relevant_names)
+    ].reset_index(drop=True)
+    print(
+        f"[relevant_locations] {len(locations)}/{len(locations_for_table_a)} location(s) appear in Table A for {disturbance_id}"
+    )
 
     table_b = generate_table_b(disturbance_id, locations)
     # Pass the Table B we just built straight in, rather than letting generate_table_c() rebuild it from scratch a second time.
-    table_c = generate_table_c(disturbance_id, locations, x_hours=x_hours, y_hours=y_hours, table_b=table_b)
+    table_c = generate_table_c(
+        disturbance_id, locations, x_hours=x_hours, y_hours=y_hours, table_b=table_b
+    )
     table_d = generate_table_d(table_a, table_c)
     stats = generate_contingency_dict(table_d)
     matrix = get_contingency_matrix_df(stats)
@@ -857,7 +1068,9 @@ def generate_all_tables_for_disturbance(
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        output_prefix = _output_filename_prefix(disturbance_id, state=state, season=season)
+        output_prefix = _output_filename_prefix(
+            disturbance_id, state=state, season=season
+        )
         print(f"\n[write] Writing CSVs to {out_dir} ...")
         for name, frame in (
             ("table_a", table_a),
@@ -895,7 +1108,9 @@ def generate_all_tables_for_disturbances(
     stats can be filtered across cyclones by Season rather than being stuck
     within a single disturbance. If state is supplied, it is applied before
     each disturbance's Tables A-D are generated."""
-    print(f"\n########## Generating combined tables for {len(disturbance_ids)} disturbance(s): {disturbance_ids} ##########")
+    print(
+        f"\n########## Generating combined tables for {len(disturbance_ids)} disturbance(s): {disturbance_ids} ##########"
+    )
     per_disturbance = {}
     table_d_frames = []
     for disturbance_id in disturbance_ids:
@@ -916,9 +1131,20 @@ def generate_all_tables_for_disturbances(
     combined_table_d = (
         pd.concat(table_d_frames, ignore_index=True)
         if table_d_frames
-        else pd.DataFrame(columns=["Disturbance ID", "Base time", "Location", "Season", "Forecast", "Observed"])
+        else pd.DataFrame(
+            columns=[
+                "Disturbance ID",
+                "Base time",
+                "Location",
+                "Season",
+                "Forecast",
+                "Observed",
+            ]
+        )
     )
-    print(f"\n[combined] Table D across all disturbances: {len(combined_table_d)} row(s)")
+    print(
+        f"\n[combined] Table D across all disturbances: {len(combined_table_d)} row(s)"
+    )
     combined_stats = generate_contingency_dict(combined_table_d)
     combined_matrix = get_contingency_matrix_df(combined_stats)
 
@@ -942,16 +1168,56 @@ def generate_all_tables_for_disturbances(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate contingency tables and summary CSVs for one or more cyclone disturbance IDs.")
-    parser.add_argument("disturbance_id", nargs="*", help="BOM disturbance ID(s), for example AU202526_34U. Give more than one to combine them into one contingency table. Omit entirely and use --season instead to auto-select every disturbance in a season.")
-    parser.add_argument("--season", help="Jul-Jun cyclone season, e.g. '2025-26'. If given without any disturbance_id, every disturbance with a forecast base time in that season is found automatically and combined.")
-    parser.add_argument("--state", help="Limit Tables A-D to locations whose State column in the TC Locations sheet matches this value (e.g. 'WA').")
-    parser.add_argument("--output-dir", default="data/contingency_tables", help="Directory to write the generated CSV tables to")
-    parser.add_argument("--x-hours", type=int, default=0, help="Lower bound for observed-gale window in hours from base time (default 0: this is the Warning window's start; use 24 for the Watch window)")
-    parser.add_argument("--y-hours", type=int, default=24, help="Upper bound for observed-gale window in hours from base time (default 24: this is the Warning window's end; use 48 for the Watch window). Other windows (e.g. 30, 42) can also be explored.")
-    parser.add_argument("--coastal-buffer-km", type=float, default=DEFAULT_COASTAL_BUFFER_KM, help=f"Coastal towns within this many km of a watch/warning polygon edge count as covered (default {DEFAULT_COASTAL_BUFFER_KM}km)")
-    parser.add_argument("--coastal-buffer-cutoff", default=str(DEFAULT_COASTAL_BUFFER_CUTOFF.date()), help=f"Coastal buffer only applies to bulletins before this date (YYYY-MM-DD); threat-area methodology changed after this point (default {DEFAULT_COASTAL_BUFFER_CUTOFF.date()})")
-    parser.add_argument("--relevance-km", type=float, default=DEFAULT_RELEVANCE_KM, help=f"Only include towns within this many km of a watch or warning area in Table A (default {DEFAULT_RELEVANCE_KM}km)")
+    parser = argparse.ArgumentParser(
+        description="Generate contingency tables and summary CSVs for one or more cyclone disturbance IDs."
+    )
+    parser.add_argument(
+        "disturbance_id",
+        nargs="*",
+        help="BOM disturbance ID(s), for example AU202526_34U. Give more than one to combine them into one contingency table. Omit entirely and use --season instead to auto-select every disturbance in a season.",
+    )
+    parser.add_argument(
+        "--season",
+        help="Jul-Jun cyclone season, e.g. '2025-26'. If given without any disturbance_id, every disturbance with a forecast base time in that season is found automatically and combined.",
+    )
+    parser.add_argument(
+        "--state",
+        help="Limit Tables A-D to locations whose State column in the TC Locations sheet matches this value (e.g. 'WA').",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="data/contingency_tables",
+        help="Directory to write the generated CSV tables to",
+    )
+    parser.add_argument(
+        "--x-hours",
+        type=int,
+        default=0,
+        help="Lower bound for observed-gale window in hours from base time (default 0: this is the Warning window's start; use 24 for the Watch window)",
+    )
+    parser.add_argument(
+        "--y-hours",
+        type=int,
+        default=24,
+        help="Upper bound for observed-gale window in hours from base time (default 24: this is the Warning window's end; use 48 for the Watch window). Other windows (e.g. 30, 42) can also be explored.",
+    )
+    parser.add_argument(
+        "--coastal-buffer-km",
+        type=float,
+        default=DEFAULT_COASTAL_BUFFER_KM,
+        help=f"Coastal towns within this many km of a watch/warning polygon edge count as covered (default {DEFAULT_COASTAL_BUFFER_KM}km)",
+    )
+    parser.add_argument(
+        "--coastal-buffer-cutoff",
+        default=str(DEFAULT_COASTAL_BUFFER_CUTOFF.date()),
+        help=f"Coastal buffer only applies to bulletins before this date (YYYY-MM-DD); threat-area methodology changed after this point (default {DEFAULT_COASTAL_BUFFER_CUTOFF.date()})",
+    )
+    parser.add_argument(
+        "--relevance-km",
+        type=float,
+        default=DEFAULT_RELEVANCE_KM,
+        help=f"Only include towns within this many km of a watch or warning area in Table A (default {DEFAULT_RELEVANCE_KM}km)",
+    )
     parser.add_argument(
         "--near-polygon-output",
         nargs="?",
@@ -960,7 +1226,9 @@ def _parse_args() -> argparse.Namespace:
     )
     args = parser.parse_args()
     if not args.disturbance_id and not args.season and not args.near_polygon_output:
-        parser.error("Provide at least one disturbance_id, or use --season to select a whole season's worth automatically.")
+        parser.error(
+            "Provide at least one disturbance_id, or use --season to select a whole season's worth automatically."
+        )
     return args
 
 
@@ -980,14 +1248,18 @@ if __name__ == "__main__":
         if args.season and not args.disturbance_id:
             disturbance_ids = list_disturbance_ids_for_season(args.season)
             if not disturbance_ids:
-                raise SystemExit(f"No disturbances found for season {args.season!r}. Has build_gml_dataset.py been run?")
+                raise SystemExit(
+                    f"No disturbances found for season {args.season!r}. Has build_gml_dataset.py been run?"
+                )
         else:
             disturbance_ids = args.disturbance_id
 
         # A supplied disturbance ID takes precedence over --season for
         # selection, so only include season in filenames when it actually
         # selected the disturbance set.
-        applied_season = args.season if args.season and not args.disturbance_id else None
+        applied_season = (
+            args.season if args.season and not args.disturbance_id else None
+        )
 
         if len(disturbance_ids) == 1:
             outputs = generate_all_tables_for_disturbance(
@@ -1022,4 +1294,6 @@ if __name__ == "__main__":
         print("\nContingency matrix:")
         print(matrix)
     except Exception as exc:  # pragma: no cover - CLI safety path
-        raise SystemExit(f"Failed to generate contingency tables: {type(exc).__name__}: {exc}")
+        raise SystemExit(
+            f"Failed to generate contingency tables: {type(exc).__name__}: {exc}"
+        )
