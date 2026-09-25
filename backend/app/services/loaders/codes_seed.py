@@ -304,6 +304,7 @@ def seed_code_tables(session: Session) -> tuple[int, int]:
     domain_count = 0
     value_count = 0
 
+    domains: dict[str, CodeDomain] = {}
     for spec in DOMAINS:
         domain = existing_domains.get(spec.code)
         if domain is None:
@@ -311,17 +312,19 @@ def seed_code_tables(session: Session) -> tuple[int, int]:
             session.add(domain)
         domain.label = spec.label
         domain.description = spec.description
-        session.flush()
+        domains[spec.code] = domain
         domain_count += 1
+    # One flush for every domain id, then one read of every value, rather than
+    # a flush and a query per domain.
+    session.flush()
 
-        existing_values = {
-            v.code: v
-            for v in session.execute(
-                select(CodeValue).where(CodeValue.domain_id == domain.id)
-            ).scalars()
-        }
+    existing_values = {
+        (v.domain_id, v.code): v for v in session.execute(select(CodeValue)).scalars()
+    }
+    for spec in DOMAINS:
+        domain = domains[spec.code]
         for order, (code, description) in enumerate(spec.values):
-            value = existing_values.get(code)
+            value = existing_values.get((domain.id, code))
             if value is None:
                 value = CodeValue(domain_id=domain.id, code=code)
                 session.add(value)
