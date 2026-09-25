@@ -37,6 +37,11 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    REPO_ROOT: Path = PROJECT_ROOT
+    GML_DIR: Path = DATA_DIR / "gml"
+    UPLOAD_DIR: Path = DATA_DIR / "uploads"
+    GEOJSON_DIR: Path = DATA_DIR / "geojson"
+
     @property
     def cors_origins(self) -> list[str]:
         """BACKEND_CORS_ORIGINS split into a list, blanks dropped."""
