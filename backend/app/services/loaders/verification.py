@@ -200,6 +200,7 @@ def compute_verification(
     interpolation_run_id: int | None = None,
     label: str | None = None,
     replace: bool = False,
+    keep_table_b: bool = False,
     stats: Stats | None = None,
 ) -> dict[str, int]:
     """Score every watch/warning disturbance from what the database holds.
@@ -214,6 +215,11 @@ def compute_verification(
     regional office issues for a system; their areas are pooled, since a town
     inside any issued area was forecast. Disturbances with no track points in
     the interpolation run are skipped rather than scored as all-unobserved.
+
+    Table B (``verification_observed_distance``) is not stored unless
+    ``keep_table_b``: it is the per-15-minute distance of every relevant town
+    to the wind radii, ~93% of the rows a run writes, and only an input to
+    Table C. Nothing serves it, and it can be regenerated from the database.
     """
     import contextlib
     import io
@@ -247,7 +253,10 @@ def compute_verification(
         town_count=len(locations),
         disturbance_count=len(forecasts),
         code_version=code_version(),
-        notes="Computed from the database by app.gen_cont_tables.",
+        notes=(
+            "Computed from the database by app.gen_cont_tables. "
+            + ("Table B stored." if keep_table_b else "Table B not stored.")
+        ),
     )
     session.add(run)
     session.flush()
@@ -272,6 +281,8 @@ def compute_verification(
                 ident, locations=locations, forecasts=forecasts[dist_pk], track=track
             )
         base = {"run_id": run.id, "disturbance_pk": dist_pk}
+        if not keep_table_b:
+            outputs.pop("table_b")
         _write_tables(session, outputs, base, town_ids, missing_towns, ident, counts)
         scored.add(ident)
 

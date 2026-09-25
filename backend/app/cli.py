@@ -220,6 +220,7 @@ def cmd_verification(args: argparse.Namespace) -> int:
                     interpolation_run_id=args.interpolation_run,
                     label=args.label,
                     replace=args.replace,
+                    keep_table_b=args.keep_table_b,
                     stats=stats,
                 )
             else:
@@ -284,7 +285,11 @@ def cmd_all(args: argparse.Namespace) -> int:
             "verification",
             cmd_verification,
             argparse.Namespace(
-                dir=None, interpolation_run=None, label="cli all", replace=True
+                dir=None,
+                interpolation_run=None,
+                label="cli all",
+                replace=True,
+                keep_table_b=False,
             ),
         ),
     ]
@@ -465,6 +470,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--interpolation-run",
         type=int,
         help="interpolation run to score against (default: the latest)",
+    )
+    verif.add_argument(
+        "--keep-table-b",
+        action="store_true",
+        help="also store Table B, the per-timestep wind-radii distances "
+        "(~93%% of the rows; not needed for the scores)",
     )
     verif.add_argument("--label")
     verif.add_argument(

@@ -16,18 +16,28 @@
 `backend/` holds a FastAPI service over a relational database of everything in
 `data/`: the BoM best track, the code lookup tables from
 `data/TC_Database_Structure_Oct2011.pdf`, the GML bulletins, the towns layer,
-the interpolated 15-minute track, and the contingency tables.
+the interpolated 15-minute track, and the verification (contingency) results
+computed from them.
 
 ```bash
 cd backend
 pip install -e ".[dev]"
 alembic upgrade head        # create the schema (SQLite by default, no setup)
-python -m app.cli all       # seed and ingest everything (~2.5 min)
+python -m app.cli all       # seed, ingest and score everything (~12 min)
 python -m app.cli verify    # assert the expected row counts
 uvicorn app.main:app --reload
 ```
 
 Then browse http://127.0.0.1:8000/docs.
+
+**Sharing one database.** If `DATABASE_URL` points at the team's server, you
+can run `cli all` without worrying about overwriting anyone else's data:
+what you load is merged into what the server already holds, and nothing is
+deleted because it is missing from your copy of `data/`. The interpolation and
+the verification are then recomputed from the merged server data, so the
+result is the same whoever runs it. See
+[Re-running against a shared database](backend/README.md#re-running-against-a-shared-database)
+for exactly what each step does.
 
 See [backend/README.md](backend/README.md) for the CLI, the endpoints, and --
 worth reading before using the data -- the **Data caveats** section, which
