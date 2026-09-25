@@ -5,6 +5,25 @@ structured following common FastAPI conventions (routers versioned under
 `app/api/v1/`, config under `app/core/`, persistence split into `app/models/`
 and `app/schemas/`, business logic in `app/services/`).
 
+## Quick run
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+## OR run the line below if on macOS or Linux
+# source .venv/bin/activate
+pip install -e ".[dev]"
+cp ../.env.example .env
+# place best_track.csv, towns.xlsx, and then GML folders under data/ (Go to "Data Setup" to see more)
+alembic upgrade head
+python -m app.cli all
+uvicorn app.main:app --reload
+```
+After running these commands in terminal open http://127.0.0.1:8000/docs
+
+The full process in detail is outlined below.
+
 ## Layout
 
 ```
@@ -47,7 +66,8 @@ backend/
 cd backend
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-# source .venv/bin/activate      # macOS/Linux
+## OR run the line below if on macOS or Linux
+# source .venv/bin/activate
 pip install -e ".[dev]"
 cp ../.env.example .env
 ```
