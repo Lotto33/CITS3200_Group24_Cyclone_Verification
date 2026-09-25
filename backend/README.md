@@ -47,7 +47,7 @@ backend/
 cd backend
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-# .venv\Scripts\activate      # macOS/Linux
+# source .venv/bin/activate      # macOS/Linux
 pip install -e ".[dev]"
 cp ../.env.example .env
 ```
@@ -60,6 +60,23 @@ PostgreSQL — install the extra and point `DATABASE_URL` at it:
 pip install -e ".[dev,postgres]"
 # DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/cyclone
 ```
+
+## Data setup
+
+The raw and generated cyclone data files are not stored in Git. Place them
+under `data/` at the repository root:
+
+```text
+data/
+├── best_track.csv                     # BoM product IDCKMSTM0S
+├── towns.xlsx                         # sheet "TC Locations"
+├── OTCR_alldata_final_external.csv    # optional, reference only
+├── NT_GMLs/ QLD_GMLs/ WA_GMLs/        # the supplied GML folders
+└── contingency_tables/                # optional, generator output
+```
+
+`data/processed/` holds files written by the interpolation pipeline and does
+not need to be created by hand.
 
 ## Database
 
@@ -207,23 +224,6 @@ be quietly wrong.
    `app.db.upsert.upsert_many` so it stays idempotent.
 5. Add an endpoint module in `app/api/v1/endpoints/`, then register it in
    `app/api/v1/router.py`.
-
-## Data setup
-
-The raw and generated cyclone data files are not stored in Git. Place them
-under `data/` at the repository root:
-
-```text
-data/
-├── best_track.csv                     # BoM product IDCKMSTM0S
-├── towns.xlsx                         # sheet "TC Locations"
-├── OTCR_alldata_final_external.csv    # optional, reference only
-├── NT_GMLs/ QLD_GMLs/ WA_GMLs/        # the supplied GML folders
-└── contingency_tables/                # optional, generator output
-```
-
-`data/processed/` holds files written by the interpolation pipeline and does
-not need to be created by hand.
 
 ## Data processing
 
