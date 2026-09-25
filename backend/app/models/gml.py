@@ -28,6 +28,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -247,10 +248,12 @@ class BulletinArea(Base):
         String(40), doc="Likely Tracks Area, Warning Area, Watch Area."
     )
     extent: Mapped[str | None] = mapped_column(
-        String(160),
+        Text,
         doc="Free-text extent, e.g. 'Port McArthur to NT/Qld Border' or 'Up "
-        "to 72 hours'. At least one bulletin contains mojibake here, so read "
-        "the GML bytes and let the XML declaration decide the encoding.",
+        "to 72 hours'; warning-area extents can run to full paragraphs (observed "
+        "up to ~800 chars), hence unbounded rather than a fixed VARCHAR. At "
+        "least one bulletin contains mojibake here, so read the GML bytes and "
+        "let the XML declaration decide the encoding.",
     )
 
     # Wind areas (tcWindArea)
