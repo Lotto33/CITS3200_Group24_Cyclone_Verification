@@ -10,6 +10,7 @@ from pyproj import Geod
 from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import nearest_points, unary_union
+from shapely.validation import make_valid
 
 geod = Geod(ellps="WGS84")
 
@@ -314,6 +315,21 @@ def signed_distance_to_polygon_km(point, polygon_union) -> float:
         point.y, point.x, nearest_on_boundary.y, nearest_on_boundary.x
     )
     return -dist_km if polygon_union.contains(point) else dist_km
+
+
+def _valid_polygonal(geom):
+    """Repair a self-intersecting polygon, keeping only its areal parts.
+
+    ~2% of the BoM watch/warning polygons self-intersect, which makes
+    unary_union raise a TopologyException. make_valid can return a
+    GeometryCollection with stray lines, whose .boundary is None, so those
+    parts are dropped.
+    """
+    if geom.is_valid:
+        return geom
+    fixed = make_valid(geom)
+    parts = getattr(fixed, "geoms", [fixed])
+    return unary_union([p for p in parts if p.geom_type in ("Polygon", "MultiPolygon")])
 
 
 def _geojson_index() -> dict:
@@ -627,7 +643,7 @@ def generate_table_a(
                 else None
             )
             if target is not None:
-                target.append(shapely_shape(f["geometry"]))
+                target.append(_valid_polygonal(shapely_shape(f["geometry"])))
 
         if watch_geoms:
             watch_union = unary_union(watch_geoms)
