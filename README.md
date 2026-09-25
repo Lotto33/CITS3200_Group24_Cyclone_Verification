@@ -25,53 +25,6 @@ The deliverables are:
 2. A Python codebase that ingests the provided data and outputs verification statistics.
 3. A web app for post processing, applies filtering, create verification contingency tables and metric, and output the data tables as a CSV.
 
-## Backend (FastAPI)
-
-Ensure that the code is being ran in the backend folder
-```bash
-cd backend
-```
-Setting up virtual environment
-```bash
-python -m venv .venv
-source .venv/bin/activate # for MacOS & Linux
-## OR
-.venv\Scripts\activate # for Windows
-```
-
-Install requirements.txt
-```bash
-pip install -r requirements.txt
-```
-
-Copy .env.example to new file .env
-```bash
-cp .env.example .env
-```
-
-Start the app using uvicorn as the server, and auto-restart whenever the code changes
-```bash
-uvicorn app.main:app --reload 
-```
-Note: The frontend doesn't use the API yet, so the port doesn't matter right now. Once it does, run the backend on a different port than the frontend (e.g. `--port 8001`), since both can't use the same one.
-
-Once the above is running:
-- Docs: http://127.0.0.1:8000/docs
-- Health check: http://127.0.0.1:8000/health
-
-Run the following for testing:
-```bash
-pytest
-```
-
-Do the following to add a new resource:
-1. Add a Pydantic schema in `app/schemas/`.
-2. Add an ORM model in `app/models/` if it's persisted.
-3. Add business logic in `app/services/`.
-4. Add an endpoint module in `app/api/v1/endpoints/`, then register it in
-   `app/api/v1/router.py`.
-
-
 ## The backend database and API
 
 `backend/` holds a FastAPI service over a relational database of everything in

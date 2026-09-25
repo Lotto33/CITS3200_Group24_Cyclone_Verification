@@ -47,6 +47,7 @@ backend/
 cd backend
 python -m venv .venv
 .venv\Scripts\activate        # Windows
+# .venv\Scripts\activate      # macOS/Linux
 pip install -e ".[dev]"
 cp ../.env.example .env
 ```
