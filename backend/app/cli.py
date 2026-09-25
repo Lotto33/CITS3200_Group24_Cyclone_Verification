@@ -184,6 +184,7 @@ def cmd_interpolate(args: argparse.Namespace) -> int:
                 step_minutes=args.step_minutes,
                 watch_warning_only=not args.all_disturbances,
                 label=args.label,
+                replace=args.replace,
                 stats=stats,
             )
             run.rows_read = counts["rows_read"]
@@ -194,32 +195,57 @@ def cmd_interpolate(args: argparse.Namespace) -> int:
         f"run {counts['run_id']}: {counts['rows_read']} observations -> "
         f"{counts['rows_written']} points at {args.step_minutes}-minute spacing"
     )
+    if stats.notes.get("replaced_runs"):
+        print(f"  replaced {stats.notes['replaced_runs']} earlier run(s)")
     return 0
 
 
 def cmd_verification(args: argparse.Namespace) -> int:
     from app.services.loaders.interpolation import latest_run_id
-    from app.services.loaders.verification import load_verification
+    from app.services.loaders.verification import (
+        compute_verification,
+        load_verification,
+    )
 
     directory = Path(args.dir) if args.dir else None
     with _session() as session:
         stats = Stats()
-        with ingest_run(
-            session,
-            IngestKind.VERIFICATION,
-            source=str(directory or "contingency_tables"),
-        ) as run:
-            counts = load_verification(
-                session,
-                directory=directory,
-                interpolation_run_id=latest_run_id(session),
-                stats=stats,
-            )
+        source = str(directory) if directory else "database"
+        with ingest_run(session, IngestKind.VERIFICATION, source=source) as run:
+            if directory is None:
+                # Scored from the server's own towns, bulletins and track, so
+                # the result does not depend on who runs it.
+                counts = compute_verification(
+                    session,
+                    interpolation_run_id=args.interpolation_run,
+                    label=args.label,
+                    replace=args.replace,
+                    stats=stats,
+                )
+            else:
+                counts = load_verification(
+                    session,
+                    directory=directory,
+                    interpolation_run_id=latest_run_id(session),
+                    label=args.label,
+                    replace=args.replace,
+                    stats=stats,
+                )
             run.rows_written = counts["rows_written"]
             run.stats = stats.as_dict()
         session.commit()
     print(f"run {counts['run_id']}: {counts['rows_written']} rows")
-    for key in ("table_a", "table_b", "table_c", "table_d", "summaries"):
+    if stats.notes.get("replaced_runs"):
+        print(f"  replaced {stats.notes['replaced_runs']} earlier run(s)")
+    keys = (
+        "table_a",
+        "table_b",
+        "table_c",
+        "table_d",
+        "summaries",
+        "skipped_disturbances",
+    )
+    for key in keys:
         if key in counts:
             print(f"  {key}: {counts[key]}")
     for conflict in stats.conflicts:
@@ -228,7 +254,12 @@ def cmd_verification(args: argparse.Namespace) -> int:
 
 
 def cmd_all(args: argparse.Namespace) -> int:
-    """Everything, in dependency order."""
+    """Everything, in dependency order.
+
+    Safe to re-run against a populated database: the reference loaders upsert,
+    the GML loader skips unchanged files, and the interpolation and
+    verification steps replace their previous "cli all" run.
+    """
     steps = [
         ("code tables", cmd_seed_codes, argparse.Namespace()),
         ("towns", cmd_towns, argparse.Namespace(xlsx=None)),
@@ -243,10 +274,19 @@ def cmd_all(args: argparse.Namespace) -> int:
             "interpolation",
             cmd_interpolate,
             argparse.Namespace(
-                step_minutes=15, all_disturbances=False, label="cli all"
+                step_minutes=15,
+                all_disturbances=False,
+                label="cli all",
+                replace=True,
             ),
         ),
-        ("verification", cmd_verification, argparse.Namespace(dir=None)),
+        (
+            "verification",
+            cmd_verification,
+            argparse.Namespace(
+                dir=None, interpolation_run=None, label="cli all", replace=True
+            ),
+        ),
     ]
     for name, handler, namespace in steps:
         print(f"\n=== {name} ===")
@@ -407,10 +447,31 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="do not restrict to watch/warning systems",
     )
+    interp.add_argument(
+        "--replace",
+        action="store_true",
+        help="delete earlier runs with the same --label first",
+    )
     interp.set_defaults(handler=cmd_interpolate)
 
-    verif = sub.add_parser("verification", help="load data/contingency_tables")
-    verif.add_argument("--dir")
+    verif = sub.add_parser(
+        "verification", help="score the forecasts from the database contents"
+    )
+    verif.add_argument(
+        "--dir",
+        help="import precomputed contingency CSVs from here instead of computing",
+    )
+    verif.add_argument(
+        "--interpolation-run",
+        type=int,
+        help="interpolation run to score against (default: the latest)",
+    )
+    verif.add_argument("--label")
+    verif.add_argument(
+        "--replace",
+        action="store_true",
+        help="delete earlier runs with the same label first",
+    )
     verif.set_defaults(handler=cmd_verification)
 
     everything = sub.add_parser("all", help="seed and ingest everything, in order")
