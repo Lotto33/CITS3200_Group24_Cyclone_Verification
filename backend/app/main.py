@@ -4,40 +4,29 @@ Run locally with:
     uvicorn app.main:app --reload
 """
 
-import subprocess
-import sys
-import threading
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.router import api_router
 from app.core.config import PROJECT_ROOT, settings
+from app.db.session import engine
 
 VIEWER_PAGE = PROJECT_ROOT / "visualize.html"
 VERIFICATION_PAGE = PROJECT_ROOT / "verification.html"
 ASSETS_DIR = PROJECT_ROOT / "assets"
-BACKEND_DIR = PROJECT_ROOT / "backend"
 
-_initialization_lock = threading.Lock()
-_initialization_started = False
-_initialization_status = "not started"
-
-
-def _initialize_backend() -> None:
-    """Run the documented database setup once for this server process."""
-    global _initialization_status
-    try:
-        for command in (
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
-            [sys.executable, "-m", "app.cli", "all"],
-        ):
-            subprocess.run(command, cwd=BACKEND_DIR, check=True)
-        _initialization_status = "complete"
-    except Exception as exc:  # noqa: BLE001 - report status to the homepage
-        _initialization_status = f"failed: {exc}"
+_READINESS_TABLES = (
+    "disturbance",
+    "best_track_observation",
+    "bulletin",
+    "town",
+    "interpolation_run",
+    "verification_run",
+)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -76,17 +65,30 @@ def root() -> FileResponse:
     return FileResponse(PROJECT_ROOT / "homepage.html", media_type="text/html")
 
 
-@app.post("/initialize", tags=["startup"])
-def initialize() -> dict[str, str]:
-    """Start the one-time schema and data initialization requested by the homepage."""
-    global _initialization_started, _initialization_status
-    with _initialization_lock:
-        if not _initialization_started:
-            _initialization_started = True
-            _initialization_status = "running"
-            threading.Thread(target=_initialize_backend, daemon=True).start()
-            return {"status": "running", "message": "Backend initialization started."}
-    return {"status": _initialization_status, "message": "Backend initialization already started."}
+@app.get("/initialize", tags=["startup"])
+def initialize() -> dict:
+    """Report database readiness without changing the database."""
+    try:
+        with engine.connect() as connection:
+            revision = connection.execute(
+                text("SELECT version_num FROM alembic_version LIMIT 1")
+            ).scalar_one_or_none()
+            row_counts = {
+                table: connection.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one()
+                for table in _READINESS_TABLES
+            }
+    except SQLAlchemyError:
+        return {
+            "status": "not ready",
+            "message": "Database is not ready.",
+        }
+
+    return {
+        "status": "ready",
+        "revision": revision,
+        "row_counts": row_counts,
+        "message": "Database is ready.",
+    }
 
 
 @app.get("/visualize.html", include_in_schema=False)

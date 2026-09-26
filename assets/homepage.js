@@ -5,12 +5,12 @@ document.querySelectorAll("[data-destination]").forEach(link => {
 	link.addEventListener("click", () => {
 		if (initializationRequested) return;
 		initializationRequested = true;
-		status.textContent = "Starting the backend data initialization…";
-		fetch("initialize", { method: "POST" })
+		status.textContent = "Checking backend data readiness...";
+		fetch("initialize")
 			.then(response => response.json())
 			.then(data => { status.textContent = data.message; })
 			.catch(() => {
-				status.textContent = "The page opened, but backend initialization could not be started.";
+				status.textContent = "The page opened, but backend readiness could not be checked.";
 			});
 	});
 });
