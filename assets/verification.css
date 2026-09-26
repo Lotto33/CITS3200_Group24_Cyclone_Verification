@@ -7,9 +7,18 @@ p, caption { color: var(--muted); }
 .verification-page header { position: relative; }
 #backToVisualizer { margin-top: 12px; border: 1px solid var(--border); border-radius: 6px; background: #1f2a3f; color: var(--text); padding: 9px 14px; cursor: pointer; font: inherit; font-size: 13px; }
 #backToVisualizer:hover, #backToVisualizer:focus-visible { background: #2a3852; }
+.upload-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
+.upload-toolbar button {
+  border: 1px solid var(--border); border-radius: 6px; background: #1f2a3f; color: var(--text);
+  padding: 9px 12px; cursor: pointer; font: inherit; font-size: 13px;
+}
+.upload-toolbar button:hover, .upload-toolbar button:focus-visible { background: #2a3852; }
+.upload-status { min-height: 18px; font-size: 11px; color: var(--muted); }
+.upload-status.error { color: #ff7a7a; }
 .filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
 .filter-field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .filter-field select { width: 100%; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
+.filter-field select[multiple] { min-height: 120px; }
 .filter-field select:focus-visible { outline: 2px solid #4fa8ff; outline-offset: 2px; }
 .table-tabs { display: flex; gap: 6px; margin-top: 28px; border-bottom: 1px solid var(--border); overflow-x: auto; }
 .tab-button { flex: 0 0 auto; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--muted); padding: 10px 14px; cursor: pointer; font: inherit; font-size: 13px; }
