@@ -15,7 +15,10 @@
   </header>
   <div class="filter-grid" aria-label="Verification filters">
     <div class="filter-field">
-      <label for="typhoonSelect">Typhoon</label>
+      <!-- Single-select for now; the request already supports multiple
+           disturbance_ids, so this becomes a multi-select later without any
+           JS changes beyond how the selected values are read. -->
+      <label for="typhoonSelect">Cyclone</label>
       <select id="typhoonSelect"></select>
     </div>
     <div class="filter-field">
@@ -27,6 +30,29 @@
       <select id="seasonSelect"></select>
     </div>
   </div>
+  <div class="filter-grid filter-grid-params" aria-label="Contingency table parameters">
+    <div class="filter-field">
+      <label for="xHoursInput">Lead time from (hours)</label>
+      <input type="number" id="xHoursInput" min="0" step="1" value="0">
+    </div>
+    <div class="filter-field">
+      <label for="yHoursInput">Lead time to (hours)</label>
+      <input type="number" id="yHoursInput" min="1" step="1" value="24">
+    </div>
+    <div class="filter-field">
+      <label for="coastalBufferInput">Coastal buffer (km)</label>
+      <input type="number" id="coastalBufferInput" min="0" step="1" value="20">
+    </div>
+    <div class="filter-field">
+      <label for="relevanceInput">Relevance radius (km)</label>
+      <input type="number" id="relevanceInput" min="0" step="1" value="300">
+    </div>
+  </div>
+  <div class="action-row">
+    <button id="generateButton" type="button">Generate contingency table</button>
+    <p id="apiStatus" class="api-status" role="status"></p>
+  </div>
+  <p id="matchedDisturbances" class="layer-note"></p>
   <div class="table-tabs" role="tablist" aria-label="Verification tables">
     <button class="tab-button active" id="tab-area" type="button" role="tab" aria-selected="true" aria-controls="panel-area">Area classification</button>
     <button class="tab-button" id="tab-track" type="button" role="tab" aria-selected="false" aria-controls="panel-track" tabindex="-1">Track accuracy</button>
@@ -39,81 +65,55 @@
     <table class="contingency-table">
       <caption>Predicted area classification against observed impact classification</caption>
       <thead><tr><th scope="col">Predicted</th><th scope="col">Observed: Event</th><th scope="col">Observed: No event</th><th scope="col">Total</th></tr></thead>
-      <tbody><tr><th scope="row">Event</th><td class="highlight">42 (TP)</td><td>6 (FP)</td><td>48</td></tr><tr><th scope="row">No event</th><td>4 (FN)</td><td class="highlight">58 (TN)</td><td>62</td></tr><tr><th scope="row">Total</th><td>46</td><td>64</td><td>110</td></tr></tbody>
+      <tbody>
+        <tr><th scope="row">Event</th><td id="cellTP" class="highlight">—</td><td id="cellFP">—</td><td id="cellPredYesTotal">—</td></tr>
+        <tr><th scope="row">No event</th><td id="cellFN">—</td><td id="cellTN" class="highlight">—</td><td id="cellPredNoTotal">—</td></tr>
+        <tr><th scope="row">Total</th><td id="cellObsYesTotal">—</td><td id="cellObsNoTotal">—</td><td id="cellGrandTotal">—</td></tr>
+      </tbody>
     </table>
-    <div class="metrics"><span>Accuracy <b>90.9%</b></span><span>Precision <b>87.5%</b></span><span>Recall <b>91.3%</b></span><span>F1 score <b>89.4%</b></span></div>
+    <div class="metrics">
+      <span>Accuracy <b id="metricAccuracy">—</b></span>
+      <span>Precision <b id="metricPrecision">—</b></span>
+      <span>Recall <b id="metricRecall">—</b></span>
+      <span>F1 score <b id="metricF1">—</b></span>
+      <span>POD <b id="metricPod">—</b></span>
+      <span>FAR <b id="metricFar">—</b></span>
+      <span>CSI <b id="metricCsi">—</b></span>
+      <span>Bias <b id="metricBias">—</b></span>
+    </div>
+    <div class="results-io">
+      <div>
+        <h2>Download</h2>
+        <ul id="downloadList" class="file-list"></ul>
+      </div>
+      <div>
+        <h2>Upload</h2>
+        <input type="file" id="uploadInput" accept=".csv" disabled title="Not implemented yet">
+        <button id="uploadButton" type="button" class="placeholder-button">Upload</button>
+      </div>
+    </div>
   </section>
 
   <section class="table-panel" id="panel-track" role="tabpanel" aria-labelledby="tab-track" hidden>
+    <p class="layer-note">No backend endpoint yet — illustrative placeholder data.</p>
     <table class="contingency-table"><caption>Dummy track position accuracy by forecast horizon</caption><thead><tr><th scope="col">Horizon</th><th scope="col">Within 50 km</th><th scope="col">Outside 50 km</th><th scope="col">Total</th></tr></thead><tbody><tr><th scope="row">0-12 hours</th><td class="highlight">34</td><td>3</td><td>37</td></tr><tr><th scope="row">12-24 hours</th><td class="highlight">28</td><td>9</td><td>37</td></tr><tr><th scope="row">24-48 hours</th><td>21</td><td>16</td><td>37</td></tr></tbody></table>
   </section>
 
   <section class="table-panel" id="panel-wind" role="tabpanel" aria-labelledby="tab-wind" hidden>
+    <p class="layer-note">No backend endpoint yet — illustrative placeholder data.</p>
     <table class="contingency-table"><caption>Dummy maximum wind category predictions</caption><thead><tr><th scope="col">Predicted</th><th scope="col">Observed: Cat 1+</th><th scope="col">Observed: Below Cat 1</th><th scope="col">Total</th></tr></thead><tbody><tr><th scope="row">Cat 1+</th><td class="highlight">31 (TP)</td><td>5 (FP)</td><td>36</td></tr><tr><th scope="row">Below Cat 1</th><td>7 (FN)</td><td class="highlight">44 (TN)</td><td>51</td></tr><tr><th scope="row">Total</th><td>38</td><td>49</td><td>87</td></tr></tbody></table>
   </section>
 
   <section class="table-panel" id="panel-warning" role="tabpanel" aria-labelledby="tab-warning" hidden>
+    <p class="layer-note">No backend endpoint yet — illustrative placeholder data.</p>
     <table class="contingency-table"><caption>Dummy warning lead time distribution</caption><thead><tr><th scope="col">Lead time</th><th scope="col">Warnings issued</th><th scope="col">Events covered</th><th scope="col">Coverage</th></tr></thead><tbody><tr><th scope="row">More than 24 hours</th><td>18</td><td class="highlight">16</td><td>88.9%</td></tr><tr><th scope="row">12-24 hours</th><td>24</td><td class="highlight">20</td><td>83.3%</td></tr><tr><th scope="row">Less than 12 hours</th><td>11</td><td>8</td><td>72.7%</td></tr></tbody></table>
   </section>
 
   <section class="table-panel" id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" hidden>
+    <p class="layer-note">No backend endpoint yet — illustrative placeholder data.</p>
     <table class="contingency-table"><caption>Dummy model summary metrics</caption><thead><tr><th scope="col">Metric</th><th scope="col">Current season</th><th scope="col">Previous season</th><th scope="col">Change</th></tr></thead><tbody><tr><th scope="row">Accuracy</th><td class="highlight">90.9%</td><td>88.4%</td><td>+2.5 pp</td></tr><tr><th scope="row">Precision</th><td class="highlight">87.5%</td><td>85.1%</td><td>+2.4 pp</td></tr><tr><th scope="row">Recall</th><td class="highlight">91.3%</td><td>89.7%</td><td>+1.6 pp</td></tr></tbody></table>
   </section>
 </main>
-<script>
-  const savedContext = JSON.parse(localStorage.getItem("cycloneVerification") || "null") || {};
-  const selects = {
-    typhoon: document.getElementById("typhoonSelect"),
-    state: document.getElementById("stateSelect"),
-    season: document.getElementById("seasonSelect"),
-  };
-  const options = {
-    typhoon: ["AU202526_34U", "Cyclone Alfred", "Cyclone Jasper", "Cyclone Ilsa"],
-    state: ["All states", "Western Australia", "Northern Territory", "Queensland", "New South Wales"],
-    season: ["All seasons", "2025-26", "2024-25", "2023-24"],
-  };
-
-  Object.entries(selects).forEach(([key, select]) => {
-    options[key].forEach((option) => select.add(new Option(option, option)));
-  });
-  selects.typhoon.value = savedContext.distName || savedContext.distId || options.typhoon[0];
-  selects.state.value = savedContext.region || options.state[0];
-  selects.season.value = savedContext.season || options.season[0];
-
-  function updateContext() {
-    const typhoon = selects.typhoon.value;
-    const state = selects.state.value;
-    const season = selects.season.value;
-    document.getElementById("context").textContent = `Illustrative contingency table for ${typhoon}, ${state}, ${season}; bulletin ${savedContext.bulletin || "—"}.`;
-  }
-  Object.values(selects).forEach((select) => select.addEventListener("change", updateContext));
-  updateContext();
-
-  document.getElementById("backToVisualizer").addEventListener("click", () => {
-    window.location.href = "visualize.html";
-  });
-
-  const tabButtons = [...document.querySelectorAll(".tab-button")];
-  const tablePanels = [...document.querySelectorAll(".table-panel")];
-  tabButtons.forEach((button, index) => {
-    button.addEventListener("click", () => {
-      tabButtons.forEach((tab) => {
-        const isSelected = tab === button;
-        tab.classList.toggle("active", isSelected);
-        tab.setAttribute("aria-selected", String(isSelected));
-        tab.tabIndex = isSelected ? 0 : -1;
-      });
-      tablePanels.forEach((panel) => {
-        panel.hidden = panel.getAttribute("aria-labelledby") !== button.id;
-      });
-    });
-    button.addEventListener("keydown", (event) => {
-      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-      event.preventDefault();
-      const offset = event.key === "ArrowRight" ? 1 : -1;
-      tabButtons[(index + offset + tabButtons.length) % tabButtons.length].focus();
-    });
-  });
-</script>
+<script src="assets/verification.js"></script>
 </body>
 </html>
