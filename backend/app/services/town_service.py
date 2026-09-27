@@ -1,4 +1,3 @@
-import pandas as pd
 
 from app.gen_cont_tables import load_locations
 

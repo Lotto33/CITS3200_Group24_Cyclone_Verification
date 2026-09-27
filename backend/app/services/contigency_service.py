@@ -1,14 +1,13 @@
 
-from pathlib import Path
 
+from app.core.config import settings
 from app.gen_cont_tables import (
     generate_all_tables_for_disturbance,
     generate_all_tables_for_disturbances,
     list_disturbance_ids_for_season,
 )
-
 from app.schemas.contigency import ContingencyRequest
-from app.core.config import settings
+
 
 def generate_tables(request: ContingencyRequest):
     if not request.disturbance_ids and not request.season:
