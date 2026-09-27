@@ -1296,4 +1296,4 @@ if __name__ == "__main__":
     except Exception as exc:  # pragma: no cover - CLI safety path
         raise SystemExit(
             f"Failed to generate contingency tables: {type(exc).__name__}: {exc}"
-        )
+        ) from exc
