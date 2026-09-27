@@ -26,6 +26,17 @@
     <select id="cycloneSelect"></select>
   </div>
 
+  <div class="field upload-field">
+    <label>Dataset uploads</label>
+    <div class="upload-actions">
+      <button id="uploadGmlBtn" type="button">Upload GML archive</button>
+      <input id="gmlUploadInput" type="file" accept=".zip" hidden>
+      <button id="uploadBestTrackBtn" type="button">Upload best track CSV</button>
+      <input id="bestTrackUploadInput" type="file" accept=".csv" hidden>
+    </div>
+    <div id="uploadStatus" class="upload-status" aria-live="polite"></div>
+  </div>
+
   <div id="bulletinBar" class="field">
     <label for="bulletinSlider">Bulletin (issued time)</label>
     <div class="slider-row">

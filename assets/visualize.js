@@ -24,6 +24,11 @@
     play: document.getElementById("playBtn"),
     info: document.getElementById("info"),
     status: document.getElementById("status"),
+    uploadStatus: document.getElementById("uploadStatus"),
+    uploadGmlBtn: document.getElementById("uploadGmlBtn"),
+    uploadBestTrackBtn: document.getElementById("uploadBestTrackBtn"),
+    gmlUploadInput: document.getElementById("gmlUploadInput"),
+    bestTrackUploadInput: document.getElementById("bestTrackUploadInput"),
     categoryLegend: document.getElementById("categoryLegend"),
     // Towns are static, so this checkbox is deliberately kept out of
     // els.layers -- everything in there is wired to renderBulletin().
@@ -127,6 +132,35 @@
     els.status.className = isError ? "error" : "";
   }
 
+  function setUploadStatus(msg, isError) {
+    els.uploadStatus.textContent = msg || "";
+    els.uploadStatus.className = isError ? "upload-status error" : "upload-status";
+  }
+
+  async function uploadDataset(file, endpoint, label) {
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    setUploadStatus(`Uploading ${label}…`);
+    try {
+      const response = await fetch(`${API_BASE}/datasets/${endpoint}`, { method: "POST", body: formData });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Failed to upload ${label}.`);
+      }
+      setUploadStatus(`${label} uploaded successfully.`);
+      if (endpoint === "upload") {
+        await loadIndex();
+      }
+      if (endpoint === "upload-best-track") {
+        await loadCyclone();
+      }
+    } catch (err) {
+      setUploadStatus(err.message || `Could not upload ${label}.`, true);
+      throw err;
+    }
+  }
+
   function toLatLngs(coords) {
     return coords.map(([lon, lat]) => [lat, lon]);
   }
@@ -216,7 +250,8 @@
       .sort((a, b) => (a.firstIssue || "").localeCompare(b.firstIssue || ""));
     const selectedId = els.cyclone.value;
     els.cyclone.replaceChildren(...cyclones.map(c => {
-      const label = `${c.distName || c.distId} — ${c.distId} (${c.bulletinCount} bulletins, ${c.firstIssue ? c.firstIssue.slice(0,10) : "?"})${c.hasBestTrack ? " ★" : ""}`;
+      const name = c.distName ? String(c.distName).replace(/^Cyclone\s+/i, "").trim() : c.distId;
+      const label = `${name} - ${c.distId} (${c.bulletinCount} bulletins, ${c.firstIssue ? c.firstIssue.slice(0,10) : "?"})${c.hasBestTrack ? " ★" : ""}`;
       return new Option(label, c.distId);
     }));
     if (cyclones.length) {
@@ -491,6 +526,28 @@
   }
 
   els.cyclone.addEventListener("change", loadCyclone);
+  els.uploadGmlBtn.addEventListener("click", () => els.gmlUploadInput.click());
+  els.gmlUploadInput.addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      await uploadDataset(file, "upload", "GML archive");
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  els.uploadBestTrackBtn.addEventListener("click", () => els.bestTrackUploadInput.click());
+  els.bestTrackUploadInput.addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      await uploadDataset(file, "upload-best-track", "best track CSV");
+    } finally {
+      event.target.value = "";
+    }
+  });
+
   els.slider.addEventListener("input", () => {
     stopPlay(); currentIdx = Number(els.slider.value); renderBulletin(false);
   });
