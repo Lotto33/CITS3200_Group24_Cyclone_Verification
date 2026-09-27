@@ -19,6 +19,7 @@
     <input id="gmlUploadInput" type="file" accept=".zip" hidden>
     <button id="uploadBestTrackBtn" type="button">Upload best track CSV</button>
     <input id="bestTrackUploadInput" type="file" accept=".csv" hidden>
+    <button id="downloadBestTrackBtn" type="button">Download best track CSV</button>
     <button id="addTableBtn" type="button">+ Add table</button>
     <button id="resetBtn" type="button">Reset</button>
     <div id="uploadStatus" class="upload-status" aria-live="polite"></div>
@@ -296,6 +297,47 @@
       await uploadDataset(file, "upload-best-track", "best track CSV");
     } finally {
       event.target.value = "";
+    }
+  });
+
+  function csvValue(value) {
+    const text = value == null ? "" : String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  document.getElementById("downloadBestTrackBtn").addEventListener("click", async () => {
+    const distId = selects.cyclone.value || savedContext.distId || cycloneOptions[0].value;
+    const button = document.getElementById("downloadBestTrackBtn");
+    button.disabled = true;
+    setUploadStatus("Preparing best track CSV...");
+    try {
+      const response = await fetch(`${API_BASE}/cyclones/${encodeURIComponent(distId)}/best-track`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Could not download the best track.");
+      const records = Array.isArray(payload) ? payload : (payload.fixes || []);
+      const rows = records.map((fix) => ({
+        distId: payload.distId || distId,
+        fixTime: fix.fixTime,
+        longitude: Array.isArray(fix.coord) ? fix.coord[0] : "",
+        latitude: Array.isArray(fix.coord) ? fix.coord[1] : "",
+        fixType: fix.fixType,
+        symbol: fix.symbol,
+        category: fix.category,
+        timeOffset: fix.timeOffset,
+      }));
+      const columns = ["distId", "fixTime", "longitude", "latitude", "fixType", "symbol", "category", "timeOffset"];
+      const csv = [columns.join(","), ...rows.map((row) => columns.map((column) => csvValue(row[column])).join(","))].join("\r\n");
+      const downloadUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `${distId}_best_track.csv`;
+      link.click();
+      URL.revokeObjectURL(downloadUrl);
+      setUploadStatus("Best track CSV downloaded.");
+    } catch (error) {
+      setUploadStatus(error.message || "Could not download the best track.", true);
+    } finally {
+      button.disabled = false;
     }
   });
 

@@ -15,6 +15,8 @@ p, caption { color: var(--muted); }
 .upload-toolbar button:hover, .upload-toolbar button:focus-visible { background: #2a3852; }
 .upload-toolbar #addTableBtn { border-color: #3ddc84; color: #3ddc84; }
 .upload-toolbar #addTableBtn:hover, .upload-toolbar #addTableBtn:focus-visible { background: #193b32; }
+.upload-toolbar #downloadBestTrackBtn { border-color: #4fa8ff; color: #4fa8ff; }
+.upload-toolbar #downloadBestTrackBtn:hover, .upload-toolbar #downloadBestTrackBtn:focus-visible { background: #1d3550; }
 .upload-toolbar #resetBtn { border-color: #e0a458; color: #e0a458; }
 .upload-toolbar #resetBtn:hover, .upload-toolbar #resetBtn:focus-visible { background: #3b2c1b; }
 .upload-toolbar button:disabled { border-color: var(--border); color: var(--muted); cursor: not-allowed; background: transparent; }
