@@ -1,55 +1,8 @@
-/**
- * verification.html front end.
- *
- * Calls the FastAPI contingency-tables endpoint (POST /api/v1/contingency-tables/)
- * to build a real 2x2 contingency table + skill scores for the "Area
- * classification" tab. The other tabs (track accuracy, wind prediction,
- * warning lead time, summary metrics) have no backend endpoint yet, so they
- * stay as the illustrative dummy tables already in verification.html.
- *
- * The filters below are deliberately built around arrays of ids
- * (`selectedDisturbanceIds`) even though today's UI only exposes single
- * <select> elements: the backend request already accepts multiple
- * `disturbance_ids`, so swapping the typhoon/season controls for multi-select
- * later only means changing how `selectedDisturbanceIds`/`selectedSeasons`
- * are read, not the request-building or rendering code.
- *
- * File upload and download are out of scope here (tracked separately) --
- * this page only renders disabled placeholder controls for them.
- */
+// The API accepts one state and season per request; selected filters expand into request combinations.
 (function () {
   "use strict";
 
-  // ---- Types mirroring backend/app/schemas/contigency.py ----------------
-
-  interface ContingencyRequest {
-    disturbance_ids: string[];
-    season: string | null;
-    state: string | null;
-    x_hours: number;
-    y_hours: number;
-    coastal_buffer_km: number;
-    relevance_km: number;
-  }
-
-  interface ContingencyStats {
-    hit: number;
-    false_alarm: number;
-    miss: number;
-    correct_negative: number;
-    total: number;
-  }
-
-  interface ContingencyResponse {
-    status: string;
-    disturbance_ids: string[];
-    stats: ContingencyStats;
-    files: Record<string, string>;
-  }
-
-  // ---- Types mirroring backend/app/schemas/cyclone.py -------------------
-
-  interface DisturbanceSummary {
+  interface Disturbance {
     disturbance_id: string;
     name: string | null;
     region: string | null;
@@ -63,316 +16,553 @@
     offset: number;
   }
 
-  interface SavedContext {
-    distId?: string;
-    distName?: string;
-    region?: string;
-    season?: string;
-    bulletin?: string;
+  interface Stats { hit: number; false_alarm: number; miss: number; correct_negative: number; total: number }
+  interface ContingencyResponse { status: string; disturbance_ids: string[]; stats: Stats; files: Record<string, string> }
+  interface Town { state: string }
+  interface SavedContext { distId?: string; distName?: string; region?: string; season?: string; bulletin?: string }
+  interface TableRequest {
+    disturbance_ids: string[]; season: string | null; state: string | null;
+    x_hours: number; y_hours: number;
   }
 
-  const API_BASE = "api/v1";
-  const ALL_VALUE = ""; // "All states" / "All seasons" / "None selected" sentinel
+  const API_BASE = "/api/v1";
+  const ALL_VALUE = "__all__";
 
-  const els = {
-    typhoon: document.getElementById("typhoonSelect") as HTMLSelectElement,
-    state: document.getElementById("stateSelect") as HTMLSelectElement,
-    season: document.getElementById("seasonSelect") as HTMLSelectElement,
-    xHours: document.getElementById("xHoursInput") as HTMLInputElement,
-    yHours: document.getElementById("yHoursInput") as HTMLInputElement,
-    coastalBuffer: document.getElementById("coastalBufferInput") as HTMLInputElement,
-    relevance: document.getElementById("relevanceInput") as HTMLInputElement,
-    generateButton: document.getElementById("generateButton") as HTMLButtonElement,
-    uploadButton: document.getElementById("uploadButton") as HTMLButtonElement,
-    downloadList: document.getElementById("downloadList") as HTMLUListElement,
-    matchedDisturbances: document.getElementById("matchedDisturbances") as HTMLParagraphElement,
-    apiStatus: document.getElementById("apiStatus") as HTMLParagraphElement,
-    context: document.getElementById("context") as HTMLParagraphElement,
-    backToVisualizer: document.getElementById("backToVisualizer") as HTMLButtonElement,
-    cellTP: document.getElementById("cellTP") as HTMLTableCellElement,
-    cellFP: document.getElementById("cellFP") as HTMLTableCellElement,
-    cellFN: document.getElementById("cellFN") as HTMLTableCellElement,
-    cellTN: document.getElementById("cellTN") as HTMLTableCellElement,
-    cellPredYesTotal: document.getElementById("cellPredYesTotal") as HTMLTableCellElement,
-    cellPredNoTotal: document.getElementById("cellPredNoTotal") as HTMLTableCellElement,
-    cellObsYesTotal: document.getElementById("cellObsYesTotal") as HTMLTableCellElement,
-    cellObsNoTotal: document.getElementById("cellObsNoTotal") as HTMLTableCellElement,
-    cellGrandTotal: document.getElementById("cellGrandTotal") as HTMLTableCellElement,
-    metricAccuracy: document.getElementById("metricAccuracy") as HTMLElement,
-    metricPrecision: document.getElementById("metricPrecision") as HTMLElement,
-    metricRecall: document.getElementById("metricRecall") as HTMLElement,
-    metricF1: document.getElementById("metricF1") as HTMLElement,
-    metricPod: document.getElementById("metricPod") as HTMLElement,
-    metricFar: document.getElementById("metricFar") as HTMLElement,
-    metricCsi: document.getElementById("metricCsi") as HTMLElement,
-    metricBias: document.getElementById("metricBias") as HTMLElement,
-  };
+  const tableInstances = document.getElementById("tableInstances");
+  const firstInstance = tableInstances?.querySelector<HTMLElement>(".table-instance");
+  const savedContext: SavedContext = JSON.parse(localStorage.getItem("cycloneVerification") || "null") || {};
+  let disturbances: Disturbance[] = [];
+  let states: string[] = [];
+  let latestFiles: string[] = [];
+  const filesByInstance = new Map<string, string[]>();
+  const initializedInstances = new WeakSet<HTMLElement>();
 
-  const savedContext: SavedContext =
-    JSON.parse(localStorage.getItem("cycloneVerification") || "null") || {};
+  if (!tableInstances || !firstInstance) return;
 
-  let disturbances: DisturbanceSummary[] = [];
-
-  function setApiStatus(message: string, isError?: boolean): void {
-    els.apiStatus.textContent = message;
-    els.apiStatus.className = isError ? "api-status error" : "api-status";
+  function byId<T extends HTMLElement>(id: string): T {
+    const element = document.getElementById(id);
+    if (!element) throw new Error(`Missing page element: ${id}`);
+    return element as T;
   }
 
-  // ---- Filter data -------------------------------------------------------
-
-  async function fetchAllDisturbances(): Promise<DisturbanceSummary[]> {
-    const limit = 500;
-    let offset = 0;
-    const items: DisturbanceSummary[] = [];
-    for (;;) {
-      const res = await fetch(
-        `${API_BASE}/disturbances?limit=${limit}&offset=${offset}`
-      );
-      if (!res.ok) throw new Error(`GET /disturbances failed (HTTP ${res.status})`);
-      const page: Page<DisturbanceSummary> = await res.json();
-      items.push(...page.items);
-      offset += page.items.length;
-      if (offset >= page.total || page.items.length === 0) break;
-    }
-    return items;
+  function status(message: string, isError = false): void {
+    const element = byId<HTMLDivElement>("uploadStatus");
+    element.textContent = message;
+    element.classList.toggle("error", isError);
   }
 
-  function populateFilters(): void {
-    const typhoonOptions = [...disturbances].sort((a, b) =>
-      a.disturbance_id.localeCompare(b.disturbance_id)
-    );
-    els.typhoon.replaceChildren(
-      new Option("— none (use season / state filters only) —", ALL_VALUE),
-      ...typhoonOptions.map(
-        (d) => new Option(`${d.name || d.disturbance_id} — ${d.disturbance_id}`, d.disturbance_id)
-      )
-    );
-
-    const regions = Array.from(
-      new Set(disturbances.map((d) => d.region).filter((r): r is string => Boolean(r)))
-    ).sort();
-    els.state.replaceChildren(
-      new Option("All states", ALL_VALUE),
-      ...regions.map((r) => new Option(r, r))
-    );
-
-    const seasons = Array.from(
-      new Set(disturbances.map((d) => d.season).filter((s): s is string => Boolean(s)))
-    ).sort()
-      .reverse();
-    els.season.replaceChildren(
-      new Option("All seasons", ALL_VALUE),
-      ...seasons.map((s) => new Option(s, s))
-    );
-
-    els.typhoon.value = savedContext.distId || ALL_VALUE;
-    els.state.value = savedContext.region || ALL_VALUE;
-    els.season.value = savedContext.season || ALL_VALUE;
-    if (els.typhoon.value !== (savedContext.distId || ALL_VALUE)) {
-      els.typhoon.value = ALL_VALUE; // saved cyclone no longer in the list
+  function updateUploadProgress(phase: string, detail: string, percentage?: number): void {
+    const container = byId<HTMLDivElement>("uploadProgress");
+    const label = byId<HTMLElement>("uploadPhase");
+    const percentLabel = byId<HTMLSpanElement>("uploadPercent");
+    const progress = byId<HTMLProgressElement>("uploadProgressBar");
+    container.hidden = false;
+    label.textContent = phase;
+    status(detail);
+    if (percentage === undefined) {
+      progress.removeAttribute("value");
+      percentLabel.textContent = "";
+    } else {
+      progress.value = percentage;
+      percentLabel.textContent = `${percentage}%`;
     }
   }
 
-  function updateContextLine(): void {
-    const typhoonLabel =
-      els.typhoon.value === ALL_VALUE
-        ? "any cyclone"
-        : els.typhoon.options[els.typhoon.selectedIndex]?.text || els.typhoon.value;
-    const stateLabel = els.state.value === ALL_VALUE ? "all states" : els.state.value;
-    const seasonLabel = els.season.value === ALL_VALUE ? "all seasons" : els.season.value;
-    els.context.textContent = `Contingency table for ${typhoonLabel}, ${stateLabel}, ${seasonLabel}.`;
-  }
-
-  // ---- Request building ---------------------------------------------------
-
-  function selectedDisturbanceIds(): string[] {
-    // Single-select today; a future multi-select control would just return
-    // more than one value here without touching anything downstream.
-    return els.typhoon.value === ALL_VALUE ? [] : [els.typhoon.value];
-  }
-
-  function buildRequest(): ContingencyRequest {
-    return {
-      disturbance_ids: selectedDisturbanceIds(),
-      season: els.season.value === ALL_VALUE ? null : els.season.value,
-      state: els.state.value === ALL_VALUE ? null : els.state.value,
-      x_hours: Number(els.xHours.value) || 0,
-      y_hours: Number(els.yHours.value) || 24,
-      coastal_buffer_km: Number(els.coastalBuffer.value) || 20,
-      relevance_km: Number(els.relevance.value) || 300,
-    };
-  }
-
-  function validate(request: ContingencyRequest): string | null {
-    if (request.disturbance_ids.length === 0 && !request.season) {
-      return "Pick a cyclone, or a season, before generating the table.";
-    }
-    return null;
-  }
-
-  // ---- Rendering -----------------------------------------------------------
-
-  function renderMatrix(stats: ContingencyStats): void {
-    const { hit, false_alarm, miss, correct_negative, total } = stats;
-    els.cellTP.textContent = `${hit} (TP)`;
-    els.cellFP.textContent = `${false_alarm} (FP)`;
-    els.cellFN.textContent = `${miss} (FN)`;
-    els.cellTN.textContent = `${correct_negative} (TN)`;
-    els.cellPredYesTotal.textContent = String(hit + false_alarm);
-    els.cellPredNoTotal.textContent = String(miss + correct_negative);
-    els.cellObsYesTotal.textContent = String(hit + miss);
-    els.cellObsNoTotal.textContent = String(false_alarm + correct_negative);
-    els.cellGrandTotal.textContent = String(total);
-  }
-
-  function pct(numerator: number, denominator: number): string {
-    return denominator > 0 ? `${((numerator / denominator) * 100).toFixed(1)}%` : "—";
-  }
-
-  function renderMetrics(stats: ContingencyStats): void {
-    const { hit, false_alarm, miss, correct_negative, total } = stats;
-    // Standard verification metrics.
-    els.metricAccuracy.textContent = pct(hit + correct_negative, total);
-    els.metricPrecision.textContent = pct(hit, hit + false_alarm);
-    els.metricRecall.textContent = pct(hit, hit + miss);
-    const precision = hit / (hit + false_alarm);
-    const recall = hit / (hit + miss);
-    els.metricF1.textContent =
-      precision > 0 && recall > 0 && Number.isFinite(precision) && Number.isFinite(recall)
-        ? `${(((2 * precision * recall) / (precision + recall)) * 100).toFixed(1)}%`
-        : "—";
-    // Meteorological skill scores, matching app/schemas/verification.py's
-    // ContingencySummary computed_fields (pod/far/csi/bias) so this page uses
-    // the same vocabulary as the API and gen_cont_tables.py output.
-    els.metricPod.textContent = pct(hit, hit + miss);
-    els.metricFar.textContent = pct(false_alarm, hit + false_alarm);
-    els.metricCsi.textContent = pct(hit, hit + false_alarm + miss);
-    els.metricBias.textContent =
-      hit + miss > 0 ? ((hit + false_alarm) / (hit + miss)).toFixed(2) : "—";
-  }
-
-  function renderMatchedDisturbances(ids: string[]): void {
-    els.matchedDisturbances.textContent =
-      ids.length > 0
-        ? `Matched ${ids.length} disturbance${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}`
-        : "";
-  }
-
-  function renderFiles(files: Record<string, string>): void {
-    const filenames = Object.keys(files);
-    els.downloadList.replaceChildren(
-      ...(filenames.length
-        ? filenames.map((name) => {
-            const li = document.createElement("li");
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "placeholder-button";
-            button.textContent = `Download ${name}`;
-            button.disabled = true;
-            button.title = "File download is not wired up yet";
-            li.appendChild(button);
-            return li;
-          })
-        : [(() => {
-            const li = document.createElement("li");
-            li.className = "layer-note";
-            li.textContent = "No CSV files reported for this run.";
-            return li;
-          })()])
-    );
-  }
-
-  // ---- Main action ---------------------------------------------------------
-
-  async function generateContingencyTable(): Promise<void> {
-    const request = buildRequest();
-    const validationError = validate(request);
-    if (validationError) {
-      setApiStatus(validationError, true);
-      return;
-    }
-
-    els.generateButton.disabled = true;
-    setApiStatus("Generating contingency table…");
-    try {
-      const res = await fetch(`${API_BASE}/contingency-tables/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
+  function uploadFile(file: File, endpoint: string, description: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const form = new FormData();
+      form.append("file", file);
+      xhr.open("POST", `${API_BASE}/datasets/${endpoint}`);
+      xhr.responseType = "json";
+      xhr.upload.addEventListener("progress", (event) => {
+        if (!event.lengthComputable) {
+          updateUploadProgress("Uploading file", `${file.name} — ${formatBytes(event.loaded)} sent.`);
+          return;
+        }
+        const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+        updateUploadProgress("Uploading file", `${file.name} — ${formatBytes(event.loaded)} of ${formatBytes(event.total)} transferred.`, percent);
       });
-      const body = await res.json();
-      if (!res.ok) {
-        throw new Error(body?.detail || `HTTP ${res.status}`);
-      }
-      const response = body as ContingencyResponse;
-      renderMatrix(response.stats);
-      renderMetrics(response.stats);
-      renderMatchedDisturbances(response.disturbance_ids);
-      renderFiles(response.files);
-      setApiStatus(`Done — ${response.status}.`);
-    } catch (err) {
-      setApiStatus(`Could not generate contingency table — ${(err as Error).message}`, true);
-    } finally {
-      els.generateButton.disabled = false;
+      xhr.upload.addEventListener("load", () => {
+        updateUploadProgress("Processing on server", `${file.name} uploaded. The server is validating and processing the ${description}; this may take a little while.`);
+      });
+      xhr.addEventListener("load", () => {
+        const payload = xhr.response as { detail?: string } | null;
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(payload?.detail || `Upload failed (HTTP ${xhr.status}).`));
+          return;
+        }
+        resolve();
+      });
+      xhr.addEventListener("error", () => reject(new Error("Network error while uploading. Check your connection and try again.")));
+      xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled.")));
+      xhr.send(form);
+    });
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ["KB", "MB", "GB"];
+    let size = bytes / 1024;
+    let unit = units[0];
+    for (let index = 1; size >= 1024 && index < units.length; index += 1) {
+      size /= 1024;
+      unit = units[index];
+    }
+    return `${size.toFixed(1)} ${unit}`;
+  }
+
+  async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await fetch(`${API_BASE}${path}`, init);
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = typeof payload === "object" && payload !== null && "detail" in payload
+        ? String((payload as { detail: unknown }).detail)
+        : `HTTP ${response.status}`;
+      throw new Error(detail);
+    }
+    return payload as T;
+  }
+
+  async function loadDisturbances(): Promise<Disturbance[]> {
+    const result: Disturbance[] = [];
+    let offset = 0;
+    const limit = 500;
+    while (true) {
+      const page = await requestJson<Page<Disturbance>>(`/disturbances?limit=${limit}&offset=${offset}`);
+      result.push(...page.items);
+      offset += page.items.length;
+      if (offset >= page.total || page.items.length === 0) return result;
     }
   }
 
-  // ---- Tabs (unchanged behaviour, just moved out of inline <script>) ------
+  async function loadFilterOptions(): Promise<void> {
+    const [disturbanceRows, townRows] = await Promise.all([
+      loadDisturbances(),
+      requestJson<Town[]>("/towns"),
+    ]);
+    disturbances = disturbanceRows;
+    states = [...new Set(townRows.map((town) => town.state).filter(Boolean))].sort();
+    document.querySelectorAll<HTMLElement>(".table-instance").forEach(populateInstanceFilters);
+  }
 
-  function wireTabs(): void {
-    const tabButtons = [...document.querySelectorAll<HTMLButtonElement>(".tab-button")];
-    const tablePanels = [...document.querySelectorAll<HTMLElement>(".table-panel")];
-    tabButtons.forEach((button, index) => {
+  function selected(select: HTMLSelectElement): string[] {
+    return Array.from(select.selectedOptions).map((option) => option.value).filter((value) => value !== ALL_VALUE);
+  }
+
+  function populateSelect(select: HTMLSelectElement, options: Array<{ value: string; label: string }>, defaults: string[]): void {
+    select.replaceChildren(...options.map(({ value, label }) => new Option(label, value)));
+    const available = new Set(options.map((option) => option.value));
+    const chosen = defaults.filter((value) => available.has(value));
+    if (!chosen.length) chosen.push(ALL_VALUE);
+    Array.from(select.options).forEach((option) => { option.selected = chosen.includes(option.value); });
+  }
+
+  function populateInstanceFilters(instance: HTMLElement): void {
+    const cycloneSelect = instance.querySelector<HTMLSelectElement>(".cyclone-select");
+    const stateSelect = instance.querySelector<HTMLSelectElement>(".state-select");
+    const seasonSelect = instance.querySelector<HTMLSelectElement>(".season-select");
+    if (!cycloneSelect || !stateSelect || !seasonSelect) return;
+    const cycloneOptions = disturbances.slice().sort((a, b) => a.disturbance_id.localeCompare(b.disturbance_id))
+      .map((row) => ({ value: row.disturbance_id, label: `${row.name || row.disturbance_id} — ${row.disturbance_id}` }));
+    populateSelect(cycloneSelect, [{ value: ALL_VALUE, label: "Any cyclone (select a season)" }, ...cycloneOptions],
+      instance === firstInstance && savedContext.distId ? [savedContext.distId] : [ALL_VALUE]);
+    populateSelect(stateSelect, [{ value: ALL_VALUE, label: "All states" }, ...states.map((value) => ({ value, label: value }))], [ALL_VALUE]);
+    const seasons = [...new Set(disturbances.map((row) => row.season).filter((value): value is string => Boolean(value)))].sort().reverse();
+    populateSelect(seasonSelect, [{ value: ALL_VALUE, label: "All seasons" }, ...seasons.map((value) => ({ value, label: value }))],
+      instance === firstInstance && savedContext.season ? [savedContext.season] : [ALL_VALUE]);
+    updateContext();
+  }
+
+  function updateContext(): void {
+    const context = byId<HTMLParagraphElement>("context");
+    const descriptions = Array.from(tableInstances!.querySelectorAll<HTMLElement>(".table-instance")).map((instance) => {
+      const ids = selected(instance.querySelector<HTMLSelectElement>(".cyclone-select")!);
+      const stateValues = selected(instance.querySelector<HTMLSelectElement>(".state-select")!);
+      const seasons = selected(instance.querySelector<HTMLSelectElement>(".season-select")!);
+      return `${ids.length ? `${ids.length} cyclone(s)` : "season-based selection"}; ${stateValues.length ? stateValues.join(", ") : "all states"}; ${seasons.length ? seasons.join(", ") : "all seasons"}`;
+    });
+    context.textContent = `Contingency table filters: ${descriptions.join(" | ")}${savedContext.bulletin ? `; visualizer bulletin ${savedContext.bulletin}` : ""}.`;
+  }
+
+  function instanceStatus(instance: HTMLElement, message: string, isError = false): void {
+    const output = instance.querySelector<HTMLElement>(".instance-status");
+    if (output) {
+      output.textContent = message;
+      output.classList.toggle("error", isError);
+    }
+  }
+
+  function resetPanel(instance: HTMLElement, panelSelector: string, label: string): HTMLElement | null {
+    const panel = instance.querySelector<HTMLElement>(panelSelector);
+    if (!panel) return null;
+    panel.replaceChildren();
+    const heading = document.createElement("p");
+    heading.className = "layer-note";
+    heading.textContent = label;
+    panel.appendChild(heading);
+    return panel;
+  }
+
+  function restorePanelPlaceholders(instance: HTMLElement): void {
+    const number = instance.dataset.instance || "1";
+    resetPanel(instance, `#panel-area-${number}`, "Generate tables to load Table A from the API.");
+    ["track", "wind", "warning"].forEach((panel) => resetPanel(instance, `#panel-${panel}-${number}`, `Generate tables to load Table ${panel.toUpperCase()} from the API.`));
+    resetPanel(instance, `#panel-summary-${number}`, "Generate tables to load the combined contingency matrix and skill scores.");
+  }
+
+  function csvRows(text: string): string[][] {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let cell = "";
+    let quoted = false;
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i];
+      if (char === '"' && quoted && text[i + 1] === '"') { cell += '"'; i += 1; }
+      else if (char === '"') quoted = !quoted;
+      else if (char === "," && !quoted) { row.push(cell); cell = ""; }
+      else if ((char === "\n" || char === "\r") && !quoted) {
+        if (char === "\r" && text[i + 1] === "\n") i += 1;
+        row.push(cell); cell = "";
+        if (row.some((value) => value.length)) rows.push(row);
+        row = [];
+      } else cell += char;
+    }
+    if (cell.length || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+
+  function renderCsv(panel: HTMLElement, text: string): void {
+    const rows = csvRows(text);
+    if (!rows.length) return;
+    const table = document.createElement("table");
+    table.className = "contingency-table api-result-table";
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    rows[0].forEach((value) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = value; headRow.appendChild(th); });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const body = document.createElement("tbody");
+    rows.slice(1).forEach((values) => {
+      const tr = document.createElement("tr");
+      values.forEach((value, index) => {
+        const cell = document.createElement(index === 0 ? "th" : "td");
+        if (index === 0) (cell as HTMLTableCellElement).scope = "row";
+        cell.textContent = value;
+        tr.appendChild(cell);
+      });
+      body.appendChild(tr);
+    });
+    table.appendChild(body);
+    panel.appendChild(table);
+  }
+
+  function formatPercent(numerator: number, denominator: number): string {
+    return denominator ? `${(numerator / denominator * 100).toFixed(1)}%` : "—";
+  }
+
+  function renderSummary(panel: HTMLElement, stats: Stats): void {
+    const hit = stats.hit;
+    const falseAlarm = stats.false_alarm;
+    const miss = stats.miss;
+    const correctNegative = stats.correct_negative;
+    const precision = hit + falseAlarm ? hit / (hit + falseAlarm) : 0;
+    const recall = hit + miss ? hit / (hit + miss) : 0;
+    const items: Array<[string, string]> = [
+      ["Accuracy", formatPercent(hit + correctNegative, stats.total)],
+      ["Precision", formatPercent(hit, hit + falseAlarm)],
+      ["Recall", formatPercent(hit, hit + miss)],
+      ["F1 score", precision + recall ? `${(2 * precision * recall / (precision + recall) * 100).toFixed(1)}%` : "—"],
+      ["POD", formatPercent(hit, hit + miss)],
+      ["FAR", formatPercent(falseAlarm, hit + falseAlarm)],
+      ["CSI", formatPercent(hit, hit + falseAlarm + miss)],
+      ["Bias", hit + miss ? ((hit + falseAlarm) / (hit + miss)).toFixed(2) : "—"],
+    ];
+    const metrics = document.createElement("div");
+    metrics.className = "metrics";
+    items.forEach(([label, value]) => {
+      const span = document.createElement("span");
+      span.append(`${label} `);
+      const strong = document.createElement("b"); strong.textContent = value; span.appendChild(strong); metrics.appendChild(span);
+    });
+    const table = document.createElement("table");
+    table.className = "contingency-table";
+    table.innerHTML = "<caption>Combined contingency matrix</caption><thead><tr><th scope=\"col\">Forecast</th><th scope=\"col\">Observed: Yes</th><th scope=\"col\">Observed: No</th><th scope=\"col\">Total</th></tr></thead>";
+    const body = document.createElement("tbody");
+    const matrixRows = [
+      ["Yes", hit, falseAlarm, hit + falseAlarm],
+      ["No", miss, correctNegative, miss + correctNegative],
+      ["Total", hit + miss, falseAlarm + correctNegative, stats.total],
+    ];
+    matrixRows.forEach((values) => {
+      const tr = document.createElement("tr");
+      values.forEach((value, index) => {
+        const cell = document.createElement(index === 0 ? "th" : "td");
+        if (index === 0) (cell as HTMLTableCellElement).scope = "row";
+        cell.textContent = String(value);
+        tr.appendChild(cell);
+      });
+      body.appendChild(tr);
+    });
+    table.appendChild(body);
+    panel.append(table, metrics);
+  }
+
+  function isCurrentRunFile(name: string, ids: string[]): boolean {
+    return name.startsWith("combined_") || ids.some((id) => name.startsWith(`${id}_`));
+  }
+
+  async function downloadFile(filename: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/contingency-tables/files/${encodeURIComponent(filename)}`);
+    if (!response.ok) throw new Error(`Could not download ${filename} (HTTP ${response.status})`);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = filename; anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function showRunFiles(instance: HTMLElement, files: Record<string, string>, ids: string[], stats: Stats): Promise<void> {
+    const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids));
+    const dates = candidates.map((name) => name.match(/date-(\d{8})/)?.[1] || "").sort();
+    const latestDate = dates[dates.length - 1] || "";
+    latestFiles = candidates.filter((name) => !latestDate || name.includes(`date-${latestDate}`));
+    filesByInstance.set(instance.dataset.instance || "1", latestFiles);
+    const panelMap: Record<string, string> = {
+      table_a: "#panel-area-1", table_b: "#panel-track-1", table_c: "#panel-wind-1", table_d: "#panel-warning-1",
+    };
+    for (const [suffix, baseSelector] of Object.entries(panelMap)) {
+      const panel = resetPanel(instance, baseSelector.replace(/-1$/, `-${instance.dataset.instance}`), `No ${suffix.replace("table_", "Table ").toUpperCase()} CSV returned for this selection.`);
+      const file = latestFiles.find((name) => name.endsWith(`_${suffix}.csv`));
+      if (panel && file) {
+        try {
+          const response = await fetch(`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`);
+          if (!response.ok) throw new Error(`Could not load ${file} (HTTP ${response.status})`);
+          renderCsv(panel, await response.text());
+        }
+        catch (error) { instanceStatus(instance, (error as Error).message, true); }
+      }
+    }
+    const matrixPanel = resetPanel(instance, `#panel-summary-${instance.dataset.instance}`, "Summary for generated contingency tables.");
+    if (matrixPanel) renderSummary(matrixPanel, stats);
+    const downloadBox = document.createElement("div"); downloadBox.className = "results-downloads";
+    const title = document.createElement("h3"); title.textContent = "Download generated CSV files"; downloadBox.appendChild(title);
+    const list = document.createElement("ul");
+    latestFiles.forEach((name) => {
+      const li = document.createElement("li");
+      const button = document.createElement("button"); button.type = "button"; button.textContent = `Download ${name}`;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try { await downloadFile(name); } catch (error) { instanceStatus(instance, (error as Error).message, true); }
+        finally { button.disabled = false; }
+      });
+      li.appendChild(button); list.appendChild(li);
+    });
+    if (!latestFiles.length) { const li = document.createElement("li"); li.textContent = "No CSV files returned for the current date."; list.appendChild(li); }
+    downloadBox.appendChild(list);
+    const target = matrixPanel || instance;
+    target.appendChild(downloadBox);
+  }
+
+  async function generateForInstance(instance: HTMLElement): Promise<void> {
+    const cycloneSelect = instance.querySelector<HTMLSelectElement>(".cyclone-select");
+    const stateSelect = instance.querySelector<HTMLSelectElement>(".state-select");
+    const seasonSelect = instance.querySelector<HTMLSelectElement>(".season-select");
+    if (!cycloneSelect || !stateSelect || !seasonSelect) return;
+    const selectedIds = selected(cycloneSelect);
+    const selectedStates = selected(stateSelect);
+    const selectedSeasons = selected(seasonSelect);
+    if (!selectedIds.length && !selectedSeasons.length) {
+      instanceStatus(instance, "Choose one or more cyclones or seasons.", true); return;
+    }
+    const xHours = Number(instance.querySelector<HTMLInputElement>(".x-hours")?.value ?? 0);
+    const yHours = Number(instance.querySelector<HTMLInputElement>(".y-hours")?.value ?? 24);
+    if (!Number.isInteger(xHours) || xHours < 0 || !Number.isInteger(yHours) || yHours <= xHours) {
+      instanceStatus(instance, "End offset must be a whole number greater than the start offset.", true); return;
+    }
+
+    const seasonsToRun = selectedSeasons.length ? selectedSeasons : [null];
+    const statesToRun: Array<string | null> = selectedStates.length ? selectedStates : [null];
+    const jobs: TableRequest[] = [];
+    for (const season of seasonsToRun) {
+      const seasonIds = selectedIds.length
+        ? selectedIds.filter((id) => !season || disturbances.find((row) => row.disturbance_id === id)?.season === season)
+        : disturbances.filter((row) => row.season === season).map((row) => row.disturbance_id);
+      if (!seasonIds.length) continue;
+      for (const state of statesToRun) jobs.push({ disturbance_ids: seasonIds, season, state, x_hours: xHours, y_hours: yHours });
+    }
+    if (!jobs.length) { instanceStatus(instance, "No cyclones match the selected season(s).", true); return; }
+
+    const button = instance.querySelector<HTMLButtonElement>(".generate-table");
+    filesByInstance.delete(instance.dataset.instance || "1");
+    if (button) button.disabled = true;
+    instanceStatus(instance, `Generating ${jobs.length} table request(s)…`);
+    try {
+      // Multiple seasons/states are expanded to the backend's singular filters.
+      const results: ContingencyResponse[] = [];
+      for (const body of jobs) {
+        results.push(await requestJson<ContingencyResponse>("/contingency-tables/", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        }));
+      }
+      const combined: Stats = results.reduce((sum, result) => ({
+        hit: sum.hit + result.stats.hit, false_alarm: sum.false_alarm + result.stats.false_alarm,
+        miss: sum.miss + result.stats.miss, correct_negative: sum.correct_negative + result.stats.correct_negative,
+        total: sum.total + result.stats.total,
+      }), { hit: 0, false_alarm: 0, miss: 0, correct_negative: 0, total: 0 });
+      const mergedFiles = Object.assign({}, ...results.map((result) => result.files));
+      const ids = [...new Set(results.flatMap((result) => result.disturbance_ids))];
+      await showRunFiles(instance, mergedFiles, ids, combined);
+      instanceStatus(instance, `Generated ${results.length} request(s); ${ids.length} disturbance(s), ${combined.total} observations.`);
+    } catch (error) {
+      instanceStatus(instance, `Generation failed: ${(error as Error).message}`, true);
+    } finally { if (button) button.disabled = false; }
+  }
+
+  function wireTabs(instance: HTMLElement): void {
+    const tabs = [...instance.querySelectorAll<HTMLButtonElement>(".tab-button")];
+    const panels = [...instance.querySelectorAll<HTMLElement>(".table-panel")];
+    tabs.forEach((button, index) => {
       button.addEventListener("click", () => {
-        tabButtons.forEach((tab) => {
-          const isSelected = tab === button;
-          tab.classList.toggle("active", isSelected);
-          tab.setAttribute("aria-selected", String(isSelected));
-          tab.tabIndex = isSelected ? 0 : -1;
+        tabs.forEach((tab) => {
+          const active = tab === button;
+          tab.classList.toggle("active", active); tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1;
         });
-        tablePanels.forEach((panel) => {
-          panel.hidden = panel.getAttribute("aria-labelledby") !== button.id;
-        });
+        panels.forEach((panel) => { panel.hidden = panel.getAttribute("aria-labelledby") !== button.id; });
       });
       button.addEventListener("keydown", (event) => {
         if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-        event.preventDefault();
-        const offset = event.key === "ArrowRight" ? 1 : -1;
-        tabButtons[(index + offset + tabButtons.length) % tabButtons.length]?.focus();
+        event.preventDefault(); tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length]?.focus();
       });
     });
   }
 
-  // ---- Init -----------------------------------------------------------------
-
-  async function init(): Promise<void> {
-    wireTabs();
-    els.backToVisualizer.addEventListener("click", () => {
-      window.location.href = "visualize.html";
-    });
-    els.uploadButton.addEventListener("click", () => {
-      setApiStatus("File upload is not implemented yet.", true);
-    });
-    [els.typhoon, els.state, els.season].forEach((select) =>
-      select.addEventListener("change", updateContextLine)
-    );
-    els.generateButton.addEventListener("click", () => {
-      void generateContingencyTable();
-    });
-
-    setApiStatus("Loading cyclones…");
-    try {
-      disturbances = await fetchAllDisturbances();
-      populateFilters();
-      updateContextLine();
-      setApiStatus("");
-      if (selectedDisturbanceIds().length > 0 || els.season.value !== ALL_VALUE) {
-        await generateContingencyTable();
-      }
-    } catch (err) {
-      setApiStatus(`Could not load cyclone list — ${(err as Error).message}`, true);
-    }
+  function initializeInstance(instance: HTMLElement): void {
+    populateInstanceFilters(instance);
+    if (initializedInstances.has(instance)) return;
+    initializedInstances.add(instance);
+    wireTabs(instance);
+    instance.querySelectorAll<HTMLSelectElement>("select").forEach((select) => select.addEventListener("change", updateContext));
+    instance.querySelector<HTMLButtonElement>(".generate-table")?.addEventListener("click", () => { void generateForInstance(instance); });
   }
 
-  void init();
+  function updateTableControls(): void {
+    const addButton = byId<HTMLButtonElement>("addTableBtn");
+    const maxed = tableInstances!.children.length >= 5;
+    addButton.disabled = maxed;
+    tableInstances!.querySelectorAll<HTMLButtonElement>(".remove-instance").forEach((button) => {
+      button.disabled = button.closest<HTMLElement>(".table-instance")?.dataset.instance === "1";
+    });
+  }
+
+  byId<HTMLButtonElement>("addTableBtn").addEventListener("click", () => {
+    if (tableInstances.children.length >= 5) return;
+    const numbers = [...tableInstances.children].map((child) => Number((child as HTMLElement).dataset.instance));
+    const number = Math.max(...numbers) + 1;
+    const clone = firstInstance.cloneNode(true) as HTMLElement;
+    clone.dataset.instance = String(number);
+    const heading = clone.querySelector("h2"); if (heading) heading.textContent = `Verification table ${number}`;
+    clone.querySelectorAll<HTMLElement>("[id], [for], [aria-controls], [aria-labelledby]").forEach((element) => {
+      ["id", "for", "aria-controls", "aria-labelledby"].forEach((attribute) => {
+        const value = element.getAttribute(attribute); if (value) element.setAttribute(attribute, value.replace(/-1\b/g, `-${number}`));
+      });
+    });
+    clone.querySelectorAll<HTMLElement>(".table-panel").forEach((panel, index) => {
+      panel.hidden = index !== 0;
+      panel.classList.toggle("active", index === 0);
+    });
+    clone.querySelectorAll<HTMLButtonElement>(".tab-button").forEach((tab, index) => {
+      tab.classList.toggle("active", index === 0);
+      tab.setAttribute("aria-selected", String(index === 0));
+      tab.tabIndex = index === 0 ? 0 : -1;
+    });
+    clone.querySelectorAll<HTMLElement>(".instance-status").forEach((output) => { output.textContent = ""; output.classList.remove("error"); });
+    clone.querySelectorAll(".results-downloads").forEach((output) => output.remove());
+    clone.querySelectorAll(".api-result-table").forEach((output) => output.remove());
+    clone.querySelectorAll(".metrics").forEach((output) => output.remove());
+    filesByInstance.delete(String(number));
+    tableInstances.appendChild(clone); initializeInstance(clone); updateTableControls(); updateContext();
+  });
+
+  tableInstances.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const button = target.closest<HTMLButtonElement>(".remove-instance");
+    if (button && !button.disabled) {
+      const instance = button.closest<HTMLElement>(".table-instance");
+      if (instance?.dataset.instance) filesByInstance.delete(instance.dataset.instance);
+      instance?.remove(); updateTableControls(); updateContext();
+    }
+  });
+
+  async function upload(file: File, endpoint: string, description: string): Promise<void> {
+    updateUploadProgress("Preparing upload", `${file.name} · ${formatBytes(file.size)} · ${description}` , 0);
+    await uploadFile(file, endpoint, description);
+    updateUploadProgress("Refreshing cyclone and state filters", `${description} processed. Updating available filter options…`);
+    await loadFilterOptions();
+    updateUploadProgress("Complete", `${file.name} uploaded, processed, and filter options refreshed.`, 100);
+  }
+
+  function wireUpload(inputId: string, buttonId: string, endpoint: string, description: string): void {
+    const input = byId<HTMLInputElement>(inputId);
+    const button = byId<HTMLButtonElement>(buttonId);
+    button.addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0]; if (!file) return;
+      const otherButtonId = buttonId === "uploadGmlBtn" ? "uploadBestTrackBtn" : "uploadGmlBtn";
+      const otherButton = byId<HTMLButtonElement>(otherButtonId);
+      button.disabled = true;
+      otherButton.disabled = true;
+      try { await upload(file, endpoint, description); }
+      catch (error) {
+        const message = `${description} upload failed: ${(error as Error).message}`;
+        updateUploadProgress("Upload failed", message, 0);
+        byId<HTMLDivElement>("uploadStatus").classList.add("error");
+      }
+      finally { input.value = ""; button.disabled = false; otherButton.disabled = false; }
+    });
+  }
+
+  byId<HTMLButtonElement>("downloadContingencyBtn").addEventListener("click", async () => {
+    const filenames = [...new Set([...filesByInstance.values()].flat())];
+    if (!filenames.length) { status("Generate a contingency table before downloading its CSV files.", true); return; }
+    const button = byId<HTMLButtonElement>("downloadContingencyBtn"); button.disabled = true;
+    status(`Downloading ${filenames.length} contingency CSV file(s)…`);
+    try {
+      for (const filename of filenames) await downloadFile(filename);
+      status(`Downloaded ${filenames.length} contingency CSV file(s).`);
+    } catch (error) { status(`Contingency-table download failed: ${(error as Error).message}`, true); }
+    finally { button.disabled = false; }
+  });
+
+  byId<HTMLButtonElement>("resetBtn").addEventListener("click", () => {
+    while (tableInstances.children.length > 1) tableInstances.lastElementChild?.remove();
+    for (const key of filesByInstance.keys()) if (key !== "1") filesByInstance.delete(key);
+    populateInstanceFilters(firstInstance);
+    filesByInstance.delete("1");
+    restorePanelPlaceholders(firstInstance);
+    firstInstance.querySelectorAll<HTMLElement>(".table-panel").forEach((panel, index) => { panel.hidden = index !== 0; });
+    firstInstance.querySelectorAll<HTMLButtonElement>(".tab-button").forEach((tab, index) => {
+      tab.classList.toggle("active", index === 0); tab.setAttribute("aria-selected", String(index === 0)); tab.tabIndex = index === 0 ? 0 : -1;
+    });
+    firstInstance.querySelectorAll<HTMLElement>(".instance-status").forEach((el) => { el.textContent = ""; el.classList.remove("error"); });
+    firstInstance.querySelector<HTMLInputElement>(".x-hours")!.value = "0";
+    firstInstance.querySelector<HTMLInputElement>(".y-hours")!.value = "24";
+    byId<HTMLInputElement>("gmlUploadInput").value = ""; byId<HTMLInputElement>("bestTrackUploadInput").value = "";
+    byId<HTMLDivElement>("uploadProgress").hidden = true;
+    status(""); updateTableControls(); updateContext();
+  });
+
+  byId<HTMLButtonElement>("backToVisualizer").addEventListener("click", () => { window.location.href = "visualize.html"; });
+  wireUpload("gmlUploadInput", "uploadGmlBtn", "upload", "GML archive");
+  wireUpload("bestTrackUploadInput", "uploadBestTrackBtn", "upload-best-track", "best-track CSV");
+  initializeInstance(firstInstance);
+  updateTableControls();
+  updateContext();
+  status("Loading cyclone and state filters…");
+  void loadFilterOptions().then(() => {
+    status("");
+    const cyclone = firstInstance.querySelector<HTMLSelectElement>(".cyclone-select");
+    if (savedContext.distId && cyclone && selected(cyclone).length) void generateForInstance(firstInstance);
+  }).catch((error: unknown) => status(`Could not load filter options: ${(error as Error).message}`, true));
 })();

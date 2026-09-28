@@ -19,10 +19,17 @@
     <input id="gmlUploadInput" type="file" accept=".zip" hidden>
     <button id="uploadBestTrackBtn" type="button">Upload Best Track CSV</button>
     <input id="bestTrackUploadInput" type="file" accept=".csv" hidden>
-    <button id="downloadBestTrackBtn" type="button">Download contingency tables</button>
+    <button id="downloadContingencyBtn" type="button">Download contingency tables</button>
     <button id="addTableBtn" type="button">+ Add table</button>
     <button id="resetBtn" type="button">Reset</button>
-    <div id="uploadStatus" class="upload-status" aria-live="polite"></div>
+    <div id="uploadProgress" class="upload-progress" aria-live="polite" hidden>
+      <div class="upload-progress-heading">
+        <strong id="uploadPhase">Ready</strong>
+        <span id="uploadPercent"></span>
+      </div>
+      <progress id="uploadProgressBar" max="100" value="0" aria-label="File upload progress"></progress>
+      <p id="uploadStatus" class="upload-status"></p>
+    </div>
   </div>
 
   <div id="tableInstances" aria-live="polite">
@@ -34,16 +41,24 @@
       <div class="filter-grid" aria-label="Verification filters">
         <div class="filter-field">
           <label for="cycloneSelect-1">Cyclone</label>
-          <select id="cycloneSelect-1" class="cyclone-select"></select>
+          <select id="cycloneSelect-1" class="cyclone-select" multiple size="5"></select>
         </div>
         <div class="filter-field">
           <label for="stateSelect-1">State / region</label>
-          <select id="stateSelect-1" class="state-select"></select>
+          <select id="stateSelect-1" class="state-select" multiple size="5"></select>
         </div>
         <div class="filter-field">
           <label for="seasonSelect-1">Season</label>
-          <select id="seasonSelect-1" class="season-select"></select>
+          <select id="seasonSelect-1" class="season-select" multiple size="5"></select>
         </div>
+      </div>
+      <div class="filter-grid filter-grid-params" aria-label="Generation parameters">
+        <div class="filter-field"><label for="xHours-1">Start offset (hours)</label><input id="xHours-1" class="x-hours" type="number" min="0" step="1" value="0"></div>
+        <div class="filter-field"><label for="yHours-1">End offset (hours)</label><input id="yHours-1" class="y-hours" type="number" min="1" step="1" value="24"></div>
+      </div>
+      <div class="instance-actions">
+        <button class="generate-table" type="button">Generate / refresh tables</button>
+        <span class="instance-status" role="status" aria-live="polite"></span>
       </div>
 
       <div class="table-tabs" role="tablist" aria-label="Verification tables">
@@ -55,29 +70,23 @@
       </div>
 
       <section class="table-panel active" id="panel-area-1" role="tabpanel" aria-labelledby="tab-area-1">
-        <table class="contingency-table">
-          <caption>Table A — Forecast watch/warning area classification</caption>
-          <thead><tr><th scope="col">Forecast</th><th scope="col">Observed: Yes</th><th scope="col">Observed: No</th><th scope="col">Total</th></tr></thead>
-          <tbody><tr><th scope="row">Yes</th><td class="highlight">42 (TP)</td><td>6 (FP)</td><td>48</td></tr><tr><th scope="row">No</th><td>4 (FN)</td><td class="highlight">58 (TN)</td><td>62</td></tr><tr><th scope="row">Total</th><td>46</td><td>64</td><td>110</td></tr></tbody>
-        </table>
-        <div class="metrics"><span>Accuracy <b>90.9%</b></span><span>Precision <b>87.5%</b></span><span>Recall <b>91.3%</b></span><span>F1 score <b>89.4%</b></span></div>
+        <p class="layer-note">Generate tables to load Table A from the API.</p>
       </section>
 
       <section class="table-panel" id="panel-track-1" role="tabpanel" aria-labelledby="tab-track-1" hidden>
-        <table class="contingency-table"><caption>Table B — Observed wind-distance and event rows</caption><thead><tr><th scope="col">Horizon</th><th scope="col">Within 50 km</th><th scope="col">Outside 50 km</th><th scope="col">Total</th></tr></thead><tbody><tr><th scope="row">0-12 hours</th><td class="highlight">34</td><td>3</td><td>37</td></tr><tr><th scope="row">12-24 hours</th><td class="highlight">28</td><td>9</td><td>37</td></tr><tr><th scope="row">24-48 hours</th><td>21</td><td>16</td><td>37</td></tr></tbody></table>
+        <p class="layer-note">Generate tables to load Table B from the API.</p>
       </section>
 
       <section class="table-panel" id="panel-wind-1" role="tabpanel" aria-labelledby="tab-wind-1" hidden>
-        <table class="contingency-table"><caption>Table C — Filtered observed gale impacts</caption><thead><tr><th scope="col">Forecast</th><th scope="col">Observed: Yes</th><th scope="col">Observed: No</th><th scope="col">Total</th></tr></thead><tbody><tr><th scope="row">Yes</th><td class="highlight">31 (TP)</td><td>5 (FP)</td><td>36</td></tr><tr><th scope="row">No</th><td>7 (FN)</td><td class="highlight">44 (TN)</td><td>51</td></tr><tr><th scope="row">Total</th><td>38</td><td>49</td><td>87</td></tr></tbody></table>
+        <p class="layer-note">Generate tables to load Table C from the API.</p>
       </section>
 
       <section class="table-panel" id="panel-warning-1" role="tabpanel" aria-labelledby="tab-warning-1" hidden>
-        <table class="contingency-table"><caption>Table D — Final forecast versus observations</caption><thead><tr><th scope="col">Forecast</th><th scope="col">Observed: Yes</th><th scope="col">Observed: No</th><th scope="col">Total</th></tr></thead><tbody><tr><th scope="row">Yes</th><td class="highlight">18</td><td>6</td><td>24</td></tr><tr><th scope="row">No</th><td>10</td><td class="highlight">32</td><td>42</td></tr><tr><th scope="row">Total</th><td>28</td><td>38</td><td>66</td></tr></tbody></table>
+        <p class="layer-note">Generate tables to load Table D from the API.</p>
       </section>
 
       <section class="table-panel" id="panel-summary-1" role="tabpanel" aria-labelledby="tab-summary-1" hidden>
-        <table class="contingency-table"><caption>Final contingency matrix</caption><thead><tr><th scope="col">Forecast</th><th scope="col">Observed: Yes</th><th scope="col">Observed: No</th><th scope="col">Total</th></tr></thead><tbody><tr><th scope="row">Yes</th><td class="highlight">42</td><td>6</td><td>48</td></tr><tr><th scope="row">No</th><td>4</td><td class="highlight">58</td><td>62</td></tr><tr><th scope="row">Total</th><td>46</td><td>64</td><td>110</td></tr></tbody></table>
-        <div class="metrics"><span>Accuracy <b>90.9%</b></span><span>Precision <b>87.5%</b></span><span>Recall <b>91.3%</b></span><span>F1 score <b>89.4%</b></span></div>
+        <p class="layer-note">Generate tables to load the combined contingency matrix and skill scores.</p>
       </section>
     </section>
   </div>
