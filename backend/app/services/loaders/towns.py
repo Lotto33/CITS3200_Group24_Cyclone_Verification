@@ -131,7 +131,10 @@ def load_towns(
                 row[_col("Coastal Order")], field="Coastal Order"
             )
 
+    # One read, one flush, one read: per-town flushes and membership queries
+    # cost two round trips per town, which dominates on a remote server.
     existing = {(t.name, t.state): t for t in session.execute(select(Town)).scalars()}
+    towns: dict[tuple[str, str], Town] = {}
     for (name, state), record in records.items():
         town = existing.get((name, state))
         if town is None:
@@ -141,19 +144,18 @@ def load_towns(
         town.lon = record["lon"]
         town.is_major = record["is_major"]
         town.is_island = record["is_island"]
-        session.flush()
+        towns[(name, state)] = town
         counts["towns"] += 1
+    session.flush()
 
-        current = {
-            m.town_group: m
-            for m in session.execute(
-                select(TownGroupMembership).where(
-                    TownGroupMembership.town_id == town.id
-                )
-            ).scalars()
-        }
+    current = {
+        (m.town_id, m.town_group): m
+        for m in session.execute(select(TownGroupMembership)).scalars()
+    }
+    for key, record in records.items():
+        town = towns[key]
         for group, order in record["groups"].items():
-            membership = current.get(group)
+            membership = current.get((town.id, group))
             if membership is None:
                 membership = TownGroupMembership(town_id=town.id, town_group=group)
                 session.add(membership)

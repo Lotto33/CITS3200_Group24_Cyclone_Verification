@@ -108,6 +108,15 @@ button.icon:disabled { opacity: 0.4; cursor: default; }
 #info b { color: var(--text); }
 #status { font-size: 12px; color: var(--muted); min-height: 16px; }
 #status.error { color: #ff7a7a; }
+.upload-field { display: flex; flex-direction: column; gap: 8px; }
+.upload-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.upload-actions button {
+  border: 1px solid var(--panel-border); border-radius: 6px; background: #1f2a3f;
+  color: var(--text); padding: 8px 12px; cursor: pointer; font: inherit; font-size: 12px;
+}
+.upload-actions button:hover, .upload-actions button:focus-visible { background: #2a3852; }
+.upload-status { min-height: 18px; font-size: 11px; color: var(--muted); }
+.upload-status.error { color: #ff7a7a; }
 .legend-scale { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--muted); }
 .legend-chip { display: flex; align-items: center; gap: 4px; }
 a, a:visited { color: var(--accent); }

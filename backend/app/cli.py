@@ -140,7 +140,7 @@ def cmd_otcr(args: argparse.Namespace) -> int:
 
 
 def cmd_gml(args: argparse.Namespace) -> int:
-    from app.services.loaders.gml import load_bulletins
+    from app.services.loaders.gml import DEFAULT_BATCH_FILES, load_bulletins
 
     with _session() as session:
         stats = Stats()
@@ -153,6 +153,7 @@ def cmd_gml(args: argparse.Namespace) -> int:
                 force=args.force,
                 ingest_run_id=run.id,
                 stats=stats,
+                batch_size=args.batch_size or DEFAULT_BATCH_FILES,
             )
             run.rows_read = counts["rows_read"]
             run.rows_written = counts["rows_written"]
@@ -236,7 +237,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         (
             "GML bulletins",
             cmd_gml,
-            argparse.Namespace(region=None, limit=None, force=False),
+            argparse.Namespace(region=None, limit=None, force=False, batch_size=None),
         ),
         (
             "interpolation",
@@ -390,6 +391,11 @@ def build_parser() -> argparse.ArgumentParser:
     gml.add_argument("--limit", type=int)
     gml.add_argument(
         "--force", action="store_true", help="re-parse even if the hash matches"
+    )
+    gml.add_argument(
+        "--batch-size",
+        type=int,
+        help="files written per transaction (default: 200)",
     )
     gml.set_defaults(handler=cmd_gml)
 
