@@ -30,18 +30,28 @@ The deliverables are:
 `backend/` holds a FastAPI service over a relational database of everything in
 `data/`: the BoM best track, the code lookup tables from
 `data/TC_Database_Structure_Oct2011.pdf`, the GML bulletins, the towns layer,
-the interpolated 15-minute track, and the contingency tables.
+the interpolated 15-minute track, and the verification (contingency) results
+computed from them.
 
 ```bash
 cd backend
 pip install -e ".[dev]"
 alembic upgrade head        # create the schema (SQLite by default, no setup)
-python -m app.cli all       # seed and ingest everything (~2.5 min)
+python -m app.cli all       # seed, ingest and score everything (~12 min)
 python -m app.cli verify    # assert the expected row counts
 uvicorn app.main:app --reload
 ```
 
 Then browse http://127.0.0.1:8000/docs.
+
+**Sharing one database.** If `DATABASE_URL` points at the team's server, you
+can run `cli all` without worrying about overwriting anyone else's data:
+what you load is merged into what the server already holds, and nothing is
+deleted because it is missing from your copy of `data/`. The interpolation and
+the verification are then recomputed from the merged server data, so the
+result is the same whoever runs it. See
+[Re-running against a shared database](backend/README.md#re-running-against-a-shared-database)
+for exactly what each step does.
 
 See [backend/README.md](backend/README.md) for the CLI, the endpoints, and --
 worth reading before using the data -- the **Data caveats** section, which
@@ -86,13 +96,13 @@ automatically.
 is pre-built JSON under `data/`, which the build scripts below produce from
 the raw files:
 
-| Fetched by the page | Built by | Raw source |
-| --- | --- | --- |
-| `data/index.json` (cyclone list) | `backend/app/build_gml_dataset.py` | `data/NT_GMLs/`, `data/QLD_GMLs/`, `data/WA_GMLs/` (`productfile.*.gml`) |
-| `data/<REGION>/<distId>.json` (bulletins: tracks, fixes, areas) | `backend/app/build_gml_dataset.py` | same GML folders; only cyclones with at least one watch/warning area |
-| `data/best_track/<distId>.json` (best-track overlay, fallback only) | `backend/app/build_gml_dataset.py` | `data/best_track.csv` (BoM IDCKMSTM0S), matched on `DISTURBANCE_ID` |
-| `data/towns.json` (Towns layer) | `backend/app/build_towns_dataset.py` | `TC Locations` sheet of `data/towns.xlsx` |
-| `data/map_config.json` (basemap tile URL) | `backend/app/build_map_config.py` | `CARTO_API_KEY` in `.env` |
+| Fetched by the page                                                 | Built by                             | Raw source                                                               |
+| ------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| `data/index.json` (cyclone list)                                    | `backend/app/build_gml_dataset.py`   | `data/NT_GMLs/`, `data/QLD_GMLs/`, `data/WA_GMLs/` (`productfile.*.gml`) |
+| `data/<REGION>/<distId>.json` (bulletins: tracks, fixes, areas)     | `backend/app/build_gml_dataset.py`   | same GML folders; only cyclones with at least one watch/warning area     |
+| `data/best_track/<distId>.json` (best-track overlay, fallback only) | `backend/app/build_gml_dataset.py`   | `data/best_track.csv` (BoM IDCKMSTM0S), matched on `DISTURBANCE_ID`      |
+| `data/towns.json` (Towns layer)                                     | `backend/app/build_towns_dataset.py` | `TC Locations` sheet of `data/towns.xlsx`                                |
+| `data/map_config.json` (basemap tile URL)                           | `backend/app/build_map_config.py`    | `CARTO_API_KEY` in `.env`                                                |
 
 The one exception is the best-track overlay. The verification is scored on
 the interpolated 15-minute grid, so the page asks
@@ -266,8 +276,7 @@ python backend/app/gen_cont_tables.py --season 2025-26
 
 The season is derived from each forecast base time (`fcastTime`): July to
 December starts the named season, while January to June belongs to the
-previous year's season. For example, `2025-26` covers July 2025 through June
-2026.
+previous year's season. For example, `2025-26` covers July 2025 through June 2026.
 
 The filters can be combined. This generates all disturbances in the season,
 then reports the final contingency statistics for one state:
@@ -324,7 +333,7 @@ If you only need one of Tables A–D rather than the full run, the individual
 also accepts an already-computed Table B via its `table_b=` parameter to
 avoid rebuilding it (Table B is the most expensive of the four to compute).
 
-#### NOTE THAT RUNNING IT STRAIGHT FROM THE TERMINAL IS FOR TESTING ONLY. TODO: IMPLEMENT FRONTEND TO REQUEST THIS CODE BE RUN. 
+#### NOTE THAT RUNNING IT STRAIGHT FROM THE TERMINAL IS FOR TESTING ONLY. TODO: IMPLEMENT FRONTEND TO REQUEST THIS CODE BE RUN.
 
 ### Notes
 

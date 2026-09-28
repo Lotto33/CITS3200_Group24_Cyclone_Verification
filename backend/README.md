@@ -130,15 +130,58 @@ python -m app.cli best-track                 # data/best_track.csv
 python -m app.cli otcr                       # OTCR reanalysis (reference only)
 python -m app.cli gml [--region NT] [--force] # data/{NT,QLD,WA}_GMLs
 python -m app.cli interpolate                # 15-minute grid
-python -m app.cli verification               # data/contingency_tables
+python -m app.cli verification               # score the forecasts from the database
 ```
 
-Every step is idempotent: re-running over unchanged input leaves the row
-counts alone and updates in place. The GML loader additionally skips any file
-whose sha256 already matches, so a second pass over the 3,448-file corpus
-costs seconds rather than two minutes.
+A full `all` run takes roughly 12 minutes locally: about 2.5 for the ingest and
+the rest for the verification, which is computed on your machine. Against a
+remote server, add the network time.
 
-A full `all` run takes roughly 2.5 minutes and produces a ~500 MB SQLite file.
+### Verification
+
+`verification` runs the contingency generator (`app/gen_cont_tables.py`) on
+what the database holds -- the towns, the bulletins' watch/warning areas and
+the latest interpolation run -- so the scores reflect the server's data, not
+the files on whoever's machine runs it.
+
+```bash
+python -m app.cli verification --label "my run" --replace  # replace an earlier "my run"
+python -m app.cli verification --interpolation-run 3       # score a specific interpolation
+python -m app.cli verification --keep-table-b              # also store Table B (see below)
+python -m app.cli verification --dir ../data/contingency_tables  # import CSVs instead
+```
+
+Tables A, C and D and the summaries are stored. Table B -- every relevant
+town's distance to the wind radii at every 15-minute step -- is computed but
+not stored unless `--keep-table-b` is given: it is ~93% of the rows (3.3M of
+3.5M), nothing reads it, and it can always be regenerated.
+
+### Re-running against a shared database
+
+`cli all` is safe to run against a database that already holds data, including
+one the whole team shares. Your data is **merged** into the server's rather
+than replacing it, so there is no need to worry about overwriting what someone
+else loaded:
+
+| step | on a re-run |
+|---|---|
+| code tables, towns, best track, OTCR | upserted on their natural keys: new rows added, existing rows updated, **nothing deleted** |
+| GML bulletins | files whose sha256 already matches are skipped; a changed file replaces only that one bulletin |
+| interpolation | the previous `"cli all"` run is replaced by one recomputed from the server's best track |
+| verification | the previous `"cli all"` run is replaced by one recomputed from the server's data |
+
+Only runs labelled `"cli all"` are replaced; runs made separately under
+another label are kept. A replacement happens in the same transaction as the
+recompute, so a failed run leaves the old results in place.
+
+Two consequences of merging to be aware of:
+
+- **The last run wins for the same record.** If two people load different
+  versions of the same town, observation or GML file, the later values stay.
+  Keeping `data/` in sync through git (`git pull` before `cli all`) avoids
+  this.
+- **Removing a row from a data file does not remove it from the server.**
+  Deleting data has to be done in the database directly.
 
 ### What gets loaded
 
@@ -150,7 +193,7 @@ A full `all` run takes roughly 2.5 minutes and produces a ~500 MB SQLite file.
 | `best_track_observation` | 31,706 + 13,743 | `best_track.csv` + the OTCR reanalysis |
 | `bulletin` / `_track` / `_fix` / `_area` | 3,448 / 6,807 / 63,126 / 30,196 | `{NT,QLD,WA}_GMLs` |
 | `interpolated_point` | 60,644 | computed from the best track |
-| `verification_*` | 81,720 | `contingency_tables/` |
+| `verification_*` | 256,964 + 79 summaries | computed from the database (68 disturbances; Table B not stored) |
 
 ## Run
 

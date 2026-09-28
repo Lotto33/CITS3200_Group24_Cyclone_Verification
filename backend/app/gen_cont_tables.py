@@ -10,6 +10,7 @@ from pyproj import Geod
 from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import nearest_points, unary_union
+from shapely.validation import make_valid
 
 geod = Geod(ellps="WGS84")
 
@@ -316,6 +317,21 @@ def signed_distance_to_polygon_km(point, polygon_union) -> float:
     return -dist_km if polygon_union.contains(point) else dist_km
 
 
+def _valid_polygonal(geom):
+    """Repair a self-intersecting polygon, keeping only its areal parts.
+
+    ~2% of the BoM watch/warning polygons self-intersect, which makes
+    unary_union raise a TopologyException. make_valid can return a
+    GeometryCollection with stray lines, whose .boundary is None, so those
+    parts are dropped.
+    """
+    if geom.is_valid:
+        return geom
+    fixed = make_valid(geom)
+    parts = getattr(fixed, "geoms", [fixed])
+    return unary_union([p for p in parts if p.geom_type in ("Polygon", "MultiPolygon")])
+
+
 def _geojson_index() -> dict:
     """(distId, fcastTime) -> filepath, built once by scanning what gml_to_geojson.py already wrote.
     
@@ -546,6 +562,7 @@ def generate_table_a(
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
+    forecasts: dict[str, dict] | None = None,
 ) -> pd.DataFrame:
     """
     create a table from the forecast polygons for each forecast base time including relevant locations
@@ -580,15 +597,24 @@ def generate_table_a(
     the coastal buffer rule below, which decides whether a coastal town is
     treated as covered when the nearest watch/warning edge is within
     coastal_buffer_km (default 20 km).
+
+    forecasts: {fcastTime: FeatureCollection} to use instead of scanning
+    data/geojson -- the database-backed verification loader passes these in.
     """
     print(f"\n=== Table A: forecast watch/warning areas for {disturbance_id} ===")
     if locations is None:
         locations = load_locations()
     rows = []
-    fcast_times = get_reference_times(disturbance_id)
+    if forecasts is not None:
+        fcast_times = sorted(forecasts)
+    else:
+        fcast_times = get_reference_times(disturbance_id)
     for i, fcast_time in enumerate(fcast_times, start=1):
         print(f"[table_a] ({i}/{len(fcast_times)}) base time {fcast_time}")
-        geo = load_forecast_geojson(disturbance_id, fcast_time)
+        if forecasts is not None:
+            geo = forecasts[fcast_time]
+        else:
+            geo = load_forecast_geojson(disturbance_id, fcast_time)
         if geo is None:
             print("[table_a]   -> no geojson found, skipping this base time")
             continue
@@ -617,7 +643,7 @@ def generate_table_a(
                 else None
             )
             if target is not None:
-                target.append(shapely_shape(f["geometry"]))
+                target.append(_valid_polygonal(shapely_shape(f["geometry"])))
 
         if watch_geoms:
             watch_union = unary_union(watch_geoms)
@@ -702,7 +728,10 @@ def generate_table_a(
 
 
 def generate_table_b(
-    disturbance_id: str, locations: gpd.GeoDataFrame | None, step_minutes: int = 15
+    disturbance_id: str,
+    locations: gpd.GeoDataFrame | None,
+    step_minutes: int = 15,
+    track: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     for every system create the following table at the agreed time interval for all relevant locations.
@@ -713,6 +742,9 @@ def generate_table_b(
     every town in towns.xlsx. generate_all_tables_for_disturbance() does
     this filtering before calling in; pass a pre-filtered GeoDataFrame here
     if calling this directly.
+
+    track: an already-interpolated best track for this disturbance (the
+    database-backed verification loader passes one in); None reads the CSVs.
     """
     print(
         f"\n=== Table B: distance-to-wind-radii for {disturbance_id} (step={step_minutes}min) ==="
@@ -722,8 +754,8 @@ def generate_table_b(
         locations = load_locations()
 
     rows = []
-    df = load_best_track(disturbance_id)
-    if _best_track_is_preprocessed():
+    df = track if track is not None else load_best_track(disturbance_id)
+    if track is not None or _best_track_is_preprocessed():
         print(
             "[table_b] Using pre-interpolated best-track data (skipping interpolation)"
         )
@@ -800,6 +832,7 @@ def generate_table_c(
     y_hours: int = 24,
     step_minutes: int = 15,
     table_b: pd.DataFrame | None = None,
+    fcast_times: list[str] | None = None,
 ) -> pd.DataFrame:
     """processed for gales within X to Y hours of the base time
 
@@ -839,7 +872,8 @@ def generate_table_c(
     table_b = table_b.copy()
     table_b["Time"] = pd.to_datetime(table_b["Time"]).dt.tz_localize(None)
 
-    fcast_times = get_reference_times(disturbance_id)
+    if fcast_times is None:
+        fcast_times = get_reference_times(disturbance_id)
 
     rows = []
     for i, fcast_time in enumerate(fcast_times, start=1):
@@ -1005,15 +1039,23 @@ def generate_all_tables_for_disturbance(
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
     state: str | None = None,
     season: str | None = None,
+    locations: gpd.GeoDataFrame | None = None,
+    forecasts: dict[str, dict] | None = None,
+    track: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame | dict]:
     """Generate Tables A-D for one disturbance, optionally limited by state.
 
     State filtering is applied to the TC Locations workbook before Table A is
     built, so Tables A-D all contain only locations from the requested state.
+
+    locations / forecasts / track replace the file inputs (towns.xlsx,
+    data/geojson, the best-track CSVs) when given; the database-backed
+    verification loader supplies all three.
     """
     print(f"##### Generating contingency tables for {disturbance_id} #####")
-    announce_best_track_source()
-    all_locations = load_locations()
+    if track is None:
+        announce_best_track_source()
+    all_locations = locations if locations is not None else load_locations()
     if state is not None:
         available_states = sorted(all_locations["state"].dropna().unique().tolist())
         locations_for_table_a = all_locations[
@@ -1035,6 +1077,7 @@ def generate_all_tables_for_disturbance(
         coastal_buffer_km=coastal_buffer_km,
         relevance_km=relevance_km,
         coastal_buffer_cutoff=coastal_buffer_cutoff,
+        forecasts=forecasts,
     )
 
     # Table B/C only need the locations that actually appear in Table A for
@@ -1047,10 +1090,15 @@ def generate_all_tables_for_disturbance(
         f"[relevant_locations] {len(locations)}/{len(locations_for_table_a)} location(s) appear in Table A for {disturbance_id}"
     )
 
-    table_b = generate_table_b(disturbance_id, locations)
+    table_b = generate_table_b(disturbance_id, locations, track=track)
     # Pass the Table B we just built straight in, rather than letting generate_table_c() rebuild it from scratch a second time.
     table_c = generate_table_c(
-        disturbance_id, locations, x_hours=x_hours, y_hours=y_hours, table_b=table_b
+        disturbance_id,
+        locations,
+        x_hours=x_hours,
+        y_hours=y_hours,
+        table_b=table_b,
+        fcast_times=sorted(forecasts) if forecasts is not None else None,
     )
     table_d = generate_table_d(table_a, table_c)
     stats = generate_contingency_dict(table_d)
