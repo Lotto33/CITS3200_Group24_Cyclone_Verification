@@ -209,6 +209,10 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         label=args.label,
         force_gml=args.force_gml,
         include_verification=args.with_verification,
+        forecast_level=args.forecast_level,
+        wind_level=args.wind_level,
+        x_hours=args.x_hours,
+        y_hours=args.y_hours,
     )
 
     print("\npipeline completed")
@@ -512,6 +516,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--with-verification",
         action="store_true",
         help="generate verification tables after interpolation",
+    )
+
+    pipeline.add_argument(
+        "--forecast-level",
+        choices=["watch", "warning"],
+        default="warning",
+        help="forecast level to verify",
+    )
+
+    pipeline.add_argument(
+        "--wind-level",
+        choices=["gale", "storm", "hurricane"],
+        default="gale",
+        help="observed wind level to verify",
+    )
+
+    pipeline.add_argument(
+        "--x-hours",
+        type=int,
+        default=0,
+        help="start of the observation window in hours",
+    )
+
+    pipeline.add_argument(
+        "--y-hours",
+        type=int,
+        default=24,
+        help="end of the observation window in hours",
     )
 
     pipeline.set_defaults(handler=cmd_pipeline)

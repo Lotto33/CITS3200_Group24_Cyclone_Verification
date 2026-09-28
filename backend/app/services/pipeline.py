@@ -306,6 +306,10 @@ def _validate_pipeline(
 def _run_verification(
     interpolation_run_id: int,
     label: str,
+    forecast_level: str,
+    wind_level: str,
+    x_hours: int,
+    y_hours: int,
 ) -> dict[str, int]:
     """Generate verification tables from the processed data."""
     with SessionLocal() as session:
@@ -322,6 +326,10 @@ def _run_verification(
                 label=f"{label}:verification",
                 replace=True,
                 keep_table_b=False,
+                forecast_level=forecast_level,
+                wind_level=wind_level,
+                x_hours=x_hours,
+                y_hours=y_hours,
                 stats=stats,
             )
 
@@ -341,6 +349,10 @@ def run_data_pipeline(
     force_gml: bool = False,
     gml_batch_size: int = DEFAULT_BATCH_FILES,
     include_verification: bool = False,
+    forecast_level: str = "warning",
+    wind_level: str = "gale",
+    x_hours: int = 0,
+    y_hours: int = 24,
 ) -> dict[str, Any]:
     """Run all pipeline stages in dependency order."""
     results: dict[str, Any] = {}
@@ -373,6 +385,10 @@ def run_data_pipeline(
         results["verification"] = _run_verification(
             interpolation_run_id=results["interpolation"]["run_id"],
             label=label,
-    )
+            forecast_level=forecast_level,
+            wind_level=wind_level,
+            x_hours=x_hours,
+            y_hours=y_hours,
+        )
 
     return results
