@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import func, select
+
 from app.db.session import SessionLocal
+from app.models.best_track import BestTrackObservation
+from app.models.disturbance import Disturbance
+from app.models.interpolation import InterpolatedPoint, InterpolationRun
 from app.models.enums import IngestKind
 from app.services.loaders.best_track import (
     load_best_track,
@@ -168,6 +173,134 @@ def _run_interpolation(
 
     return counts
 
+def _validate_pipeline(
+    interpolation_run_id: int,
+) -> dict[str, int | list[str]]:
+    """Check the interpolation output."""
+    with SessionLocal() as session:
+        run = session.get(InterpolationRun, interpolation_run_id)
+
+        if run is None:
+            raise RuntimeError(
+                f"Interpolation run {interpolation_run_id} was not found"
+            )
+
+        relevant_condition = (
+            Disturbance.has_watch | Disturbance.has_warning
+        )
+
+        relevant_count = session.execute(
+            select(func.count())
+            .select_from(Disturbance)
+            .where(relevant_condition)
+        ).scalar_one()
+
+        input_conditions = [
+            BestTrackObservation.dataset == run.source_dataset,
+        ]
+
+        if run.project_start is not None:
+            input_conditions.append(
+                BestTrackObservation.tm >= run.project_start
+            )
+
+        if run.restricted_to_watch_warning:
+            input_conditions.append(relevant_condition)
+
+        input_row_count = session.execute(
+            select(func.count())
+            .select_from(BestTrackObservation)
+            .join(
+                Disturbance,
+                BestTrackObservation.disturbance_pk == Disturbance.id,
+            )
+            .where(*input_conditions)
+        ).scalar_one()
+
+        eligible_count = session.execute(
+            select(
+                func.count(
+                    func.distinct(BestTrackObservation.disturbance_pk)
+                )
+            )
+            .select_from(BestTrackObservation)
+            .join(
+                Disturbance,
+                BestTrackObservation.disturbance_pk == Disturbance.id,
+            )
+            .where(*input_conditions)
+        ).scalar_one()
+
+        eligible_pks = (
+            select(BestTrackObservation.disturbance_pk)
+            .join(
+                Disturbance,
+                BestTrackObservation.disturbance_pk == Disturbance.id,
+            )
+            .where(*input_conditions)
+            .distinct()
+        )
+
+        missing_best_track = list(
+            session.execute(
+                select(Disturbance.disturbance_id)
+                .where(
+                    relevant_condition,
+                    Disturbance.id.not_in(eligible_pks),
+                )
+                .order_by(Disturbance.disturbance_id)
+            ).scalars()
+        )
+
+        point_count = session.execute(
+            select(func.count())
+            .select_from(InterpolatedPoint)
+            .where(
+                InterpolatedPoint.run_id == interpolation_run_id
+            )
+        ).scalar_one()
+
+        interpolated_system_count = session.execute(
+            select(
+                func.count(
+                    func.distinct(InterpolatedPoint.disturbance_pk)
+                )
+            )
+            .where(
+                InterpolatedPoint.run_id == interpolation_run_id
+            )
+        ).scalar_one()
+
+        if run.input_row_count != input_row_count:
+            raise RuntimeError(
+                "Interpolation input row count does not match the database"
+            )
+
+        if run.disturbance_count != eligible_count:
+            raise RuntimeError(
+                "Interpolation disturbance count does not match "
+                "the eligible system count"
+            )
+
+        if run.output_row_count != point_count:
+            raise RuntimeError(
+                "Interpolation output row count does not match "
+                "the stored point count"
+            )
+
+        if interpolated_system_count != eligible_count:
+            raise RuntimeError(
+                "Not all eligible systems were interpolated"
+            )
+
+        return {
+            "watch_warning_systems": relevant_count,
+            "eligible_systems": eligible_count,
+            "missing_best_track": missing_best_track,
+            "input_observations": input_row_count,
+            "interpolated_systems": interpolated_system_count,
+            "interpolated_points": point_count,
+        }
 
 def run_data_pipeline(
     *,
@@ -199,6 +332,10 @@ def run_data_pipeline(
     results["interpolation"] = _run_interpolation(
         step_minutes=step_minutes,
         label=label,
+    )
+
+    results["validation"] = _validate_pipeline(
+        results["interpolation"]["run_id"],
     )
 
     return results
