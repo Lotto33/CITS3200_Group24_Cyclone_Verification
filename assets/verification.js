@@ -66,7 +66,11 @@
                     reject(new Error((payload === null || payload === void 0 ? void 0 : payload.detail) || `Upload failed (HTTP ${xhr.status}).`));
                     return;
                 }
-                resolve();
+                if (!(payload === null || payload === void 0 ? void 0 : payload.job_id)) {
+                    reject(new Error("The backend accepted the file but did not return a processing job ID."));
+                    return;
+                }
+                void waitForUploadJob(payload.job_id, file.name, description).then(resolve, reject);
             });
             xhr.addEventListener("error", () => reject(new Error("Network error while uploading. Check your connection and try again.")));
             xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled.")));
@@ -84,6 +88,31 @@
             unit = units[index];
         }
         return `${size.toFixed(1)} ${unit}`;
+    }
+    function appendBackendMessages(messages) {
+        const log = byId("uploadBackendMessages");
+        messages.forEach((message) => {
+            const line = document.createElement("li");
+            line.textContent = message || " ";
+            log.appendChild(line);
+        });
+        log.scrollTop = log.scrollHeight;
+    }
+    async function waitForUploadJob(jobId, filename, description) {
+        let offset = 0;
+        while (true) {
+            const job = await requestJson(`/datasets/jobs/${encodeURIComponent(jobId)}?since=${offset}`);
+            appendBackendMessages(job.messages);
+            offset = job.next;
+            if (job.status === "completed") {
+                updateUploadProgress("Backend processing complete", `${filename}: ${description} processing completed successfully.`);
+                return;
+            }
+            if (job.status === "failed")
+                throw new Error(job.error || `${description} processing failed.`);
+            updateUploadProgress(job.status === "queued" ? "Waiting for backend" : "Backend processing", job.messages[job.messages.length - 1] || `${filename}: waiting for backend pipeline messages.`);
+            await new Promise((resolve) => window.setTimeout(resolve, 650));
+        }
     }
     async function requestJson(path, init) {
         const response = await fetch(`${API_BASE}${path}`, init);
@@ -526,6 +555,7 @@
         }
     });
     async function upload(file, endpoint, description) {
+        byId("uploadBackendMessages").replaceChildren();
         updateUploadProgress("Preparing upload", `${file.name} · ${formatBytes(file.size)} · ${description}`, 0);
         await uploadFile(file, endpoint, description);
         updateUploadProgress("Refreshing cyclone and state filters", `${description} processed. Updating available filter options…`);

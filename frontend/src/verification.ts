@@ -19,6 +19,10 @@
   interface Stats { hit: number; false_alarm: number; miss: number; correct_negative: number; total: number }
   interface ContingencyResponse { status: string; disturbance_ids: string[]; stats: Stats; files: Record<string, string> }
   interface Town { state: string }
+  interface UploadJobStatus {
+    job_id: string; description: string; status: "queued" | "running" | "completed" | "failed";
+    messages: string[]; next: number; error: string | null;
+  }
   interface SavedContext { distId?: string; distName?: string; region?: string; season?: string; bulletin?: string }
   interface TableRequest {
     disturbance_ids: string[]; season: string | null; state: string | null;
@@ -87,12 +91,16 @@
         updateUploadProgress("Processing on server", `${file.name} uploaded. The server is validating and processing the ${description}; this may take a little while.`);
       });
       xhr.addEventListener("load", () => {
-        const payload = xhr.response as { detail?: string } | null;
+        const payload = xhr.response as { detail?: string; job_id?: string } | null;
         if (xhr.status < 200 || xhr.status >= 300) {
           reject(new Error(payload?.detail || `Upload failed (HTTP ${xhr.status}).`));
           return;
         }
-        resolve();
+        if (!payload?.job_id) {
+          reject(new Error("The backend accepted the file but did not return a processing job ID."));
+          return;
+        }
+        void waitForUploadJob(payload.job_id, file.name, description).then(resolve, reject);
       });
       xhr.addEventListener("error", () => reject(new Error("Network error while uploading. Check your connection and try again.")));
       xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled.")));
@@ -110,6 +118,35 @@
       unit = units[index];
     }
     return `${size.toFixed(1)} ${unit}`;
+  }
+
+  function appendBackendMessages(messages: string[]): void {
+    const log = byId<HTMLOListElement>("uploadBackendMessages");
+    messages.forEach((message) => {
+      const line = document.createElement("li");
+      line.textContent = message || " ";
+      log.appendChild(line);
+    });
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function waitForUploadJob(jobId: string, filename: string, description: string): Promise<void> {
+    let offset = 0;
+    while (true) {
+      const job = await requestJson<UploadJobStatus>(`/datasets/jobs/${encodeURIComponent(jobId)}?since=${offset}`);
+      appendBackendMessages(job.messages);
+      offset = job.next;
+      if (job.status === "completed") {
+        updateUploadProgress("Backend processing complete", `${filename}: ${description} processing completed successfully.`);
+        return;
+      }
+      if (job.status === "failed") throw new Error(job.error || `${description} processing failed.`);
+      updateUploadProgress(
+        job.status === "queued" ? "Waiting for backend" : "Backend processing",
+        job.messages[job.messages.length - 1] || `${filename}: waiting for backend pipeline messages.`,
+      );
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
+    }
   }
 
   async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -496,6 +533,7 @@
   });
 
   async function upload(file: File, endpoint: string, description: string): Promise<void> {
+    byId<HTMLOListElement>("uploadBackendMessages").replaceChildren();
     updateUploadProgress("Preparing upload", `${file.name} · ${formatBytes(file.size)} · ${description}` , 0);
     await uploadFile(file, endpoint, description);
     updateUploadProgress("Refreshing cyclone and state filters", `${description} processed. Updating available filter options…`);

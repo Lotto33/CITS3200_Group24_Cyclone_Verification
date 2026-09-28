@@ -29,6 +29,10 @@
       </div>
       <progress id="uploadProgressBar" max="100" value="0" aria-label="File upload progress"></progress>
       <p id="uploadStatus" class="upload-status"></p>
+      <details class="upload-log-details" open>
+        <summary>Backend processing messages</summary>
+        <ol id="uploadBackendMessages" class="upload-backend-messages" role="log" aria-live="polite"></ol>
+      </details>
     </div>
   </div>
 
