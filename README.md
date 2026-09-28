@@ -2,14 +2,28 @@
 
 ## Group Members
 
-| Name            | Student ID | GitHub Username |
-| --------------- | ---------- | --------------- |
-| Elliott Naidoo  | 24313893   | Lotto33         |
-| Eliza Hutchens  | 24230437   | arcococoa       |
-| Scout Wu        | 24729742   | Exusiai101      |
-| Siyu Zhu        | 24439408   | LZhuSY          |
-| Kahlea Aslanis  | 23788447   | kahleaa         |
-| Michael Kartika | 24239793   | mrdudman        |
+|  Name | Student ID | GitHub Username |
+| ------------ | ---------- | --------------- |
+| Elliott Naidoo  | 24313893   | Lotto33     |
+| Eliza Hutchens | 24230437   | arcococoa |
+| Scout Wu | 24729742 | Exusiai101 |
+| Siyu Zhu | 24439408 | LZhuSY  |
+| Kahlea Aslanis | 23788447 | kahleaa |
+| Michael Kartika | 24239793 | mrdudman |
+
+## Scope and deliverables
+This prototype verifies the BOM's tropical cyclone watch/warning areas against what actually happened for the 2016/17-2025/26 seasons, using GML data, CSV best-track data, and a list of affected towns.
+
+The prototype will produce data that will help answer the following questions:
+1. Did gales occur at the provided locations within the watch/warning areas?
+2. Did gales occur at the provided locations that fall outside of the watch/warning areas?
+3. How long after a watch/warning was declared did we get gales?
+4. What is the probability of experiencing gales if a warning is declared over a location?
+
+The deliverables are:
+1. A web app to view the data on a map.
+2. A Python codebase that ingests the provided data and outputs verification statistics.
+3. A web app for post processing, applies filtering, create verification contingency tables and metric, and output the data tables as a CSV.
 
 ## The backend database and API
 
