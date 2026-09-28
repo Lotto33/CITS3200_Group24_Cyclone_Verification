@@ -2,12 +2,12 @@
 
 Run from ``backend/``::
 
+    python -m app.cli pipeline         # run the data processing pipeline
     python -m app.cli all              # seed + ingest everything
     python -m app.cli verify           # assert the expected row counts
     python -m app.cli --help
 
-Plain argparse rather than a CLI framework: eight subcommands do not justify
-another dependency.
+Plain argparse is used rather than adding another CLI dependency.
 
 Schema truth lives in ``alembic/versions/``. ``init-db`` is a dev convenience
 that calls ``create_all`` and is deliberately not the production path.
@@ -199,6 +199,22 @@ def cmd_interpolate(args: argparse.Namespace) -> int:
         print(f"  replaced {stats.notes['replaced_runs']} earlier run(s)")
     return 0
 
+def cmd_pipeline(args: argparse.Namespace) -> int:
+    from app.services.pipeline import run_data_pipeline
+
+    results = run_data_pipeline(
+        towns_path=Path(args.towns) if args.towns else None,
+        best_track_path=Path(args.best_track) if args.best_track else None,
+        step_minutes=args.step_minutes,
+        label=args.label,
+        force_gml=args.force_gml,
+    )
+
+    print("\npipeline completed")
+    for stage, counts in results.items():
+        print(f"  {stage}: {counts}")
+
+    return 0
 
 def cmd_verification(args: argparse.Namespace) -> int:
     from app.services.loaders.interpolation import latest_run_id
@@ -458,6 +474,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="delete earlier runs with the same --label first",
     )
     interp.set_defaults(handler=cmd_interpolate)
+
+    pipeline = sub.add_parser(
+        "pipeline",
+        help="run the data processing pipeline",
+    )
+
+    pipeline.add_argument(
+        "--towns",
+        help="path to the towns workbook",
+    )
+
+    pipeline.add_argument(
+        "--best-track",
+        help="path to the best-track CSV",
+    )
+
+    pipeline.add_argument(
+        "--step-minutes",
+        type=int,
+        default=15,
+    )
+
+    pipeline.add_argument(
+        "--label",
+        default="data pipeline",
+    )
+
+    pipeline.add_argument(
+        "--force-gml",
+        action="store_true",
+        help="re-parse GML files even if unchanged",
+    )
+
+    pipeline.set_defaults(handler=cmd_pipeline)
 
     verif = sub.add_parser(
         "verification", help="score the forecasts from the database contents"
