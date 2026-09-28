@@ -242,6 +242,10 @@ def cmd_verification(args: argparse.Namespace) -> int:
                     label=args.label,
                     replace=args.replace,
                     keep_table_b=args.keep_table_b,
+                    forecast_level=args.forecast_level,
+                    wind_level=args.wind_level,
+                    x_hours=args.x_hours,
+                    y_hours=args.y_hours,
                     stats=stats,
                 )
             else:
@@ -566,12 +570,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="also store Table B, the per-timestep wind-radii distances "
         "(~93%% of the rows; not needed for the scores)",
     )
+
+    verif.add_argument(
+        "--forecast-level",
+        choices=["watch", "warning"],
+        default="warning",
+        help="forecast level to verify",
+    )
+
+    verif.add_argument(
+        "--wind-level",
+        choices=["gale", "storm", "hurricane"],
+        default="gale",
+        help="observed wind level to verify",
+    )
+
+    verif.add_argument(
+        "--x-hours",
+        type=int,
+        default=0,
+        help="start of the observation window in hours",
+    )
+
+    verif.add_argument(
+        "--y-hours",
+        type=int,
+        default=24,
+        help="end of the observation window in hours",
+    )
+
     verif.add_argument("--label")
     verif.add_argument(
         "--replace",
         action="store_true",
         help="delete earlier runs with the same label first",
     )
+
     verif.set_defaults(handler=cmd_verification)
 
     everything = sub.add_parser("all", help="seed and ingest everything, in order")
