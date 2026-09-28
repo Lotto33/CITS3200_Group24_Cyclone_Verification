@@ -208,6 +208,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         step_minutes=args.step_minutes,
         label=args.label,
         force_gml=args.force_gml,
+        include_verification=args.with_verification,
     )
 
     print("\npipeline completed")
@@ -505,6 +506,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--force-gml",
         action="store_true",
         help="re-parse GML files even if unchanged",
+    )
+
+    pipeline.add_argument(
+        "--with-verification",
+        action="store_true",
+        help="generate verification tables after interpolation",
     )
 
     pipeline.set_defaults(handler=cmd_pipeline)

@@ -28,6 +28,7 @@ from app.services.loaders.towns import (
     read_towns_sheet,
 )
 
+from app.services.loaders.verification import compute_verification
 
 def _load_codes() -> dict[str, int]:
     """Load BoM code lookup tables."""
@@ -302,6 +303,35 @@ def _validate_pipeline(
             "interpolated_points": point_count,
         }
 
+def _run_verification(
+    interpolation_run_id: int,
+    label: str,
+) -> dict[str, int]:
+    """Generate verification tables from the processed data."""
+    with SessionLocal() as session:
+        stats = Stats()
+
+        with ingest_run(
+            session,
+            IngestKind.VERIFICATION,
+            source="database",
+        ) as run:
+            counts = compute_verification(
+                session,
+                interpolation_run_id=interpolation_run_id,
+                label=f"{label}:verification",
+                replace=True,
+                keep_table_b=False,
+                stats=stats,
+            )
+
+            run.rows_written = counts["rows_written"]
+            run.stats = stats.as_dict()
+
+        session.commit()
+
+    return counts
+
 def run_data_pipeline(
     *,
     towns_path: Path | None = None,
@@ -310,6 +340,7 @@ def run_data_pipeline(
     label: str = "data pipeline",
     force_gml: bool = False,
     gml_batch_size: int = DEFAULT_BATCH_FILES,
+    include_verification: bool = False,
 ) -> dict[str, Any]:
     """Run all pipeline stages in dependency order."""
     results: dict[str, Any] = {}
@@ -336,6 +367,12 @@ def run_data_pipeline(
 
     results["validation"] = _validate_pipeline(
         results["interpolation"]["run_id"],
+    )
+
+    if include_verification:
+        results["verification"] = _run_verification(
+            interpolation_run_id=results["interpolation"]["run_id"],
+            label=label,
     )
 
     return results
