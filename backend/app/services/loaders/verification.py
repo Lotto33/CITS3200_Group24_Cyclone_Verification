@@ -33,13 +33,17 @@ from app.core.config import settings
 from app.db.column_maps import (
     CONTINGENCY_SUMMARY_COLUMNS,
     CONTINGENCY_TM_FORMAT,
+    INTERPOLATED_COLUMNS,
     TABLE_A_COLUMNS,
     TABLE_B_COLUMNS,
     TABLE_C_COLUMNS,
     TABLE_D_COLUMNS,
 )
 from app.models.disturbance import Disturbance
-from app.models.enums import Outcome, SummaryScope
+from app.models.enums import AreaKind, Outcome, SummaryScope
+from app.models.gml import DEFAULT_SRS, Bulletin, BulletinArea
+from app.models.interpolation import InterpolatedPoint
+from app.models.town import Town, TownGroupMembership
 from app.models.verification import (
     ForecastAdviceDistance,
     ObservedTownImpact,
@@ -108,14 +112,23 @@ def load_verification(
     directory: Path | None = None,
     interpolation_run_id: int | None = None,
     label: str | None = None,
+    replace: bool = False,
     stats: Stats | None = None,
 ) -> dict[str, int]:
-    """Load every discovered disturbance into a single new verification run."""
+    """Load every discovered disturbance into a single new verification run.
+
+    With ``replace``, earlier runs carrying the same label are deleted first,
+    so a repeated load leaves one run rather than duplicating every pair.
+    """
     stats = stats if stats is not None else Stats()
     directory = directory or default_contingency_dir()
     per_disturbance = discover(directory)
     if not per_disturbance:
         raise ValueError(f"no contingency CSVs found under {directory}")
+    label = label or f"loaded from {directory.name}"
+
+    if replace:
+        stats.notes["replaced_runs"] = delete_runs_by_label(session, label)
 
     town_ids = resolve_town_ids(session)
     dist_pks = {
@@ -124,7 +137,7 @@ def load_verification(
 
     run = VerificationRun(
         created_at=datetime.now(UTC),
-        label=label or f"loaded from {directory.name}",
+        label=label,
         interpolation_run_id=interpolation_run_id,
         forecast_source="gml_bulletins",
         town_count=len(town_ids),
@@ -152,23 +165,12 @@ def load_verification(
             continue
 
         base = {"run_id": run.id, "disturbance_pk": dist_pk}
-
-        if "table_a" in files:
-            counts["table_a"] += _load_table_a(
-                session, files["table_a"], base, town_ids, missing_towns
-            )
-        if "table_b" in files:
-            counts["table_b"] += _load_table_b(
-                session, files["table_b"], base, town_ids, missing_towns
-            )
-        if "table_c" in files:
-            counts["table_c"] += _load_table_c(
-                session, files["table_c"], base, town_ids, missing_towns
-            )
-        if "table_d" in files:
-            counts["table_d"] += _load_table_d(
-                session, files["table_d"], base, town_ids, missing_towns, ident, stats
-            )
+        frames = {
+            kind: _read(files[kind], columns)
+            for kind, columns in _TABLE_COLUMNS.items()
+            if kind in files
+        }
+        _write_tables(session, frames, base, town_ids, missing_towns, ident, counts)
         if "contingency_summary" in files:
             _load_summary(session, files["contingency_summary"], run.id, ident, stats)
             counts["summaries"] += 1
@@ -192,6 +194,201 @@ def load_verification(
     }
 
 
+def compute_verification(
+    session: Session,
+    *,
+    interpolation_run_id: int | None = None,
+    label: str | None = None,
+    replace: bool = False,
+    keep_table_b: bool = False,
+    stats: Stats | None = None,
+) -> dict[str, int]:
+    """Score every watch/warning disturbance from what the database holds.
+
+    Runs the contingency generator (``app.gen_cont_tables``) unchanged, but
+    feeds it from the database instead of local files: towns from ``town``,
+    watch/warning polygons from ``bulletin_area``, and the track from
+    ``interpolated_point`` under ``interpolation_run_id`` (default: the latest
+    run). The result therefore reflects the server's data, whoever runs it.
+
+    Several bulletins can share a (disturbance, fcastTime) when more than one
+    regional office issues for a system; their areas are pooled, since a town
+    inside any issued area was forecast. Disturbances with no track points in
+    the interpolation run are skipped rather than scored as all-unobserved.
+
+    Table B (``verification_observed_distance``) is not stored unless
+    ``keep_table_b``: it is the per-15-minute distance of every relevant town
+    to the wind radii, ~93% of the rows a run writes, and only an input to
+    Table C. Nothing serves it, and it can be regenerated from the database.
+    """
+    import contextlib
+    import io
+
+    from app.gen_cont_tables import generate_all_tables_for_disturbance
+    from app.services.loaders.interpolation import latest_run_id
+
+    stats = stats if stats is not None else Stats()
+    run_id = interpolation_run_id or latest_run_id(session)
+    if run_id is None:
+        raise ValueError("no interpolation run to verify against: run interpolate")
+    label = label or "computed from database"
+    if replace:
+        stats.notes["replaced_runs"] = delete_runs_by_label(session, label)
+
+    locations = _db_locations(session)
+    forecasts = _db_forecasts(session)
+    tracks = _db_tracks(session, run_id)
+    idents = {
+        d.id: d.disturbance_id
+        for d in session.execute(select(Disturbance)).scalars()
+        if d.id in forecasts
+    }
+    town_ids = resolve_town_ids(session)
+
+    run = VerificationRun(
+        created_at=datetime.now(UTC),
+        label=label,
+        interpolation_run_id=run_id,
+        forecast_source="gml_bulletins",
+        town_count=len(locations),
+        disturbance_count=len(forecasts),
+        code_version=code_version(),
+        notes=(
+            "Computed from the database by app.gen_cont_tables. "
+            + ("Table B stored." if keep_table_b else "Table B not stored.")
+        ),
+    )
+    session.add(run)
+    session.flush()
+
+    counts: Counter[str] = Counter()
+    missing_towns: Counter[str] = Counter()
+    scored: set[str] = set()
+    for index, (dist_pk, ident) in enumerate(
+        sorted(idents.items(), key=lambda i: i[1]), 1
+    ):
+        track = tracks.get(dist_pk)
+        if track is None:
+            stats.conflicts.append(
+                f"{ident}: no points in interpolation run {run_id}; not scored"
+            )
+            counts["skipped_disturbances"] += 1
+            continue
+        log.info("verification: %d/%d %s", index, len(idents), ident)
+        # The generator narrates every step on stdout; keep the CLI readable.
+        with contextlib.redirect_stdout(io.StringIO()):
+            outputs = generate_all_tables_for_disturbance(
+                ident, locations=locations, forecasts=forecasts[dist_pk], track=track
+            )
+        base = {"run_id": run.id, "disturbance_pk": dist_pk}
+        if not keep_table_b:
+            outputs.pop("table_b")
+        _write_tables(session, outputs, base, town_ids, missing_towns, ident, counts)
+        scored.add(ident)
+
+    if missing_towns:
+        stats.conflicts.append(
+            f"{len(missing_towns)} generated location names are not in town: "
+            f"{dict(missing_towns.most_common(10))}"
+        )
+
+    rebuild_summaries(session, run.id, scored_disturbances=scored)
+    session.flush()
+
+    stats.notes.update({"run_id": run.id, **counts})
+    return {
+        "run_id": run.id,
+        "rows_written": sum(v for k, v in counts.items() if k.startswith("table_")),
+        **counts,
+    }
+
+
+def _db_locations(session: Session):
+    """``town`` as the GeoDataFrame the generator reads from towns.xlsx."""
+    import geopandas as gpd
+
+    coastal = {
+        town_id
+        for (town_id,) in session.execute(
+            select(TownGroupMembership.town_id).where(
+                TownGroupMembership.coastal_order.is_not(None)
+            )
+        )
+    }
+    towns = session.execute(select(Town).order_by(Town.id)).scalars().all()
+    return gpd.GeoDataFrame(
+        {
+            "name": [t.name for t in towns],
+            "state": [t.state for t in towns],
+            "is_coastal": [t.id in coastal for t in towns],
+        },
+        geometry=gpd.points_from_xy([t.lon for t in towns], [t.lat for t in towns]),
+        crs=DEFAULT_SRS,
+    )
+
+
+def _db_forecasts(session: Session) -> dict[int, dict[str, dict]]:
+    """``{disturbance_pk: {fcastTime: FeatureCollection}}`` of watch/warning areas.
+
+    Shaped like the files ``gml_to_geojson`` writes, carrying only the
+    properties Table A reads.
+    """
+    statement = (
+        select(
+            Bulletin.disturbance_pk,
+            Bulletin.fcast_time,
+            BulletinArea.kind,
+            BulletinArea.area_type,
+            BulletinArea.geometry,
+        )
+        .join(BulletinArea, BulletinArea.bulletin_id == Bulletin.id)
+        .where(
+            Bulletin.fcast_time.is_not(None),
+            BulletinArea.kind.in_([AreaKind.WATCH.value, AreaKind.WARNING.value]),
+        )
+    )
+    forecasts: dict[int, dict[str, dict]] = {}
+    for dist_pk, fcast_time, kind, area_type, geometry in session.execute(statement):
+        if fcast_time.tzinfo is None:
+            fcast_time = fcast_time.replace(tzinfo=UTC)
+        key = fcast_time.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        collection = forecasts.setdefault(dist_pk, {}).setdefault(
+            key, {"type": "FeatureCollection", "features": []}
+        )
+        collection["features"].append(
+            {
+                "type": "Feature",
+                "properties": {"featureType": kind, "areaType": area_type},
+                "geometry": geometry,
+            }
+        )
+    return forecasts
+
+
+def _db_tracks(session: Session, run_id: int) -> dict[int, pd.DataFrame]:
+    """``{disturbance_pk: interpolated track}`` in the best-track CSV spelling."""
+    columns = {
+        csv_name: getattr(InterpolatedPoint, attribute)
+        for csv_name, attribute in INTERPOLATED_COLUMNS.items()
+    }
+    statement = (
+        select(InterpolatedPoint.disturbance_pk, *columns.values())
+        .where(InterpolatedPoint.run_id == run_id)
+        .order_by(InterpolatedPoint.disturbance_pk, InterpolatedPoint.tm)
+    )
+    frame = pd.DataFrame(
+        session.execute(statement).all(), columns=["_pk", *columns.keys()]
+    )
+    if frame.empty:
+        return {}
+    # UTC wall time, naive, as the generator compares against naive base times.
+    frame["TM"] = pd.to_datetime(frame["TM"], utc=True).dt.tz_localize(None)
+    return {
+        int(pk): group.drop(columns="_pk").reset_index(drop=True)
+        for pk, group in frame.groupby("_pk")
+    }
+
+
 def _town_pk(
     name: str | None, town_ids: dict[str, int], missing: Counter[str]
 ) -> int | None:
@@ -204,8 +401,42 @@ def _town_pk(
     return pk
 
 
-def _load_table_a(session, path, base, town_ids, missing) -> int:
-    frame = _read(path, TABLE_A_COLUMNS)
+#: The generator's tables, in load order, with the columns each must carry.
+_TABLE_COLUMNS = {
+    "table_a": TABLE_A_COLUMNS,
+    "table_b": TABLE_B_COLUMNS,
+    "table_c": TABLE_C_COLUMNS,
+    "table_d": TABLE_D_COLUMNS,
+}
+
+
+def _write_tables(
+    session, frames, base, town_ids, missing, ident, counts: Counter[str]
+) -> None:
+    """Write whichever of Tables A-D are in ``frames`` for one disturbance.
+
+    The frames may be CSV text or the generator's own typed output; the
+    ``to_*`` converters accept either.
+    """
+    if "table_a" in frames:
+        counts["table_a"] += _load_table_a(
+            session, frames["table_a"], base, town_ids, missing
+        )
+    if "table_b" in frames:
+        counts["table_b"] += _load_table_b(
+            session, frames["table_b"], base, town_ids, missing
+        )
+    if "table_c" in frames:
+        counts["table_c"] += _load_table_c(
+            session, frames["table_c"], base, town_ids, missing
+        )
+    if "table_d" in frames:
+        counts["table_d"] += _load_table_d(
+            session, frames["table_d"], base, town_ids, missing, ident
+        )
+
+
+def _load_table_a(session, frame, base, town_ids, missing) -> int:
     rows = []
     for raw in frame.to_dict("records"):
         town_id = _town_pk(raw["Location"], town_ids, missing)
@@ -233,8 +464,7 @@ def _load_table_a(session, path, base, town_ids, missing) -> int:
     return _insert(session, ForecastAdviceDistance, rows)
 
 
-def _load_table_b(session, path, base, town_ids, missing) -> int:
-    frame = _read(path, TABLE_B_COLUMNS)
+def _load_table_b(session, frame, base, town_ids, missing) -> int:
     rows = []
     for raw in frame.to_dict("records"):
         town_id = _town_pk(raw["Location"], town_ids, missing)
@@ -262,8 +492,7 @@ def _load_table_b(session, path, base, town_ids, missing) -> int:
     return _insert(session, ObservedWindDistance, rows)
 
 
-def _load_table_c(session, path, base, town_ids, missing) -> int:
-    frame = _read(path, TABLE_C_COLUMNS)
+def _load_table_c(session, frame, base, town_ids, missing) -> int:
     rows = []
     for raw in frame.to_dict("records"):
         town_id = _town_pk(raw["Location"], town_ids, missing)
@@ -282,8 +511,7 @@ def _load_table_c(session, path, base, town_ids, missing) -> int:
     return _insert(session, ObservedTownImpact, rows)
 
 
-def _load_table_d(session, path, base, town_ids, missing, ident, stats: Stats) -> int:
-    frame = _read(path, TABLE_D_COLUMNS)
+def _load_table_d(session, frame, base, town_ids, missing, ident) -> int:
     rows = []
     for raw in frame.to_dict("records"):
         town_id = _town_pk(raw["Location"], town_ids, missing)
@@ -429,3 +657,12 @@ def delete_run(session: Session, run_id: int) -> None:
     """Remove a verification run and everything under it."""
     session.execute(delete(VerificationRun).where(VerificationRun.id == run_id))
     session.flush()
+
+
+def delete_runs_by_label(session: Session, label: str) -> int:
+    """Remove every verification run with ``label`` and everything under it."""
+    deleted = session.execute(
+        delete(VerificationRun).where(VerificationRun.label == label)
+    ).rowcount
+    session.flush()
+    return deleted or 0
