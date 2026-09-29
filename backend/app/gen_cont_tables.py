@@ -930,21 +930,8 @@ def generate_table_c(
     return result
 
 
-def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame, forecast_level: str = "warning",) -> pd.DataFrame:
+def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame, forecast_level: str = "watch_warning",) -> pd.DataFrame:
     """this is the base to build the contingency table for the given options."""
-
-    forecast_columns = {
-        "watch": "Watch",
-        "warning": "Warning",
-    }
-
-    if forecast_level not in forecast_columns:
-        raise ValueError(
-            f"Invalid forecast level {forecast_level!r}. "
-            f"Expected one of {list(forecast_columns)}"
-        )
-
-    forecast_column = forecast_columns[forecast_level]
 
     print(
         f"\n=== Table D: merging Table A ({len(table_a)} rows) with Table C ({len(table_c)} rows) ==="
@@ -952,7 +939,19 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame, forecast_leve
     merged_table = table_a.merge(
         table_c, on=["Disturbance ID", "Base time", "Location"], how="left"
     )
-    merged_table["Forecast"] = merged_table[forecast_column]
+
+    if forecast_level == "watch_warning":
+        merged_table["Forecast"] = merged_table["Watch"] | merged_table["Warning"]
+    elif forecast_level == "watch":
+        merged_table["Forecast"] = merged_table["Watch"]
+    elif forecast_level == "warning":
+        merged_table["Forecast"] = merged_table["Warning"]
+    else:
+        raise ValueError(
+            f"Invalid forecast level {forecast_level!r}. "
+            "Expected one of ['watch_warning', 'watch', 'warning']"
+        )
+    
     merged_table["Observed"] = merged_table["Observed"].fillna(False)
     # Derived purely from Base time -- lets contingency stats be filtered by
     # cyclone season (e.g. Season="2025-26") without needing a separate
@@ -1063,7 +1062,7 @@ def generate_all_tables_for_disturbance(
     output_dir: str | Path | None = None,
     x_hours: int = 0,
     y_hours: int = 24,
-    forecast_level: str = "warning",
+    forecast_level: str = "watch_warning",
     wind_level: str = "gale",
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
@@ -1176,7 +1175,7 @@ def generate_all_tables_for_disturbances(
     output_dir: str | Path | None = None,
     x_hours: int = 0,
     y_hours: int = 24,
-    forecast_level: str = "warning",
+    forecast_level: str = "watch_warning",
     wind_level: str = "gale",
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
@@ -1288,8 +1287,8 @@ def _parse_args() -> argparse.Namespace:
 
     parser.add_argument(
     "--forecast-level",
-    choices=["watch", "warning"],
-    default="warning",
+    choices=["watch", "warning", "watch_warning"],
+    default="watch_warning",
 )
 
     parser.add_argument(

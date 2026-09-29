@@ -315,7 +315,7 @@ def cmd_all(args: argparse.Namespace) -> int:
                 label="cli all",
                 replace=True,
                 keep_table_b=False,
-                forecast_level="warning",
+                forecast_level="watch_warning",
                 wind_level="gale",
                 x_hours=0,
                 y_hours=24,
@@ -528,8 +528,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     pipeline.add_argument(
         "--forecast-level",
-        choices=["watch", "warning"],
-        default="warning",
+        choices=["watch", "warning", "watch_warning"],
+        default="watch_warning",
         help="forecast level to verify",
     )
 
@@ -577,8 +577,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     verif.add_argument(
         "--forecast-level",
-        choices=["watch", "warning"],
-        default="warning",
+        choices=["watch", "warning", "watch_warning"],
+        default="watch_warning",
         help="forecast level to verify",
     )
 
