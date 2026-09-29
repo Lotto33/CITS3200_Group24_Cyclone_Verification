@@ -315,6 +315,10 @@ def cmd_all(args: argparse.Namespace) -> int:
                 label="cli all",
                 replace=True,
                 keep_table_b=False,
+                forecast_level="warning",
+                wind_level="gale",
+                x_hours=0,
+                y_hours=24,
             ),
         ),
     ]
