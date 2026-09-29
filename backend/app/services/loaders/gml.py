@@ -72,20 +72,21 @@ _PRODUCT_ID_RE = re.compile(r"^productfile\.\d+\.\d+\.\d+\.([A-Z0-9]+)\.gml$")
 _AREA_KINDS = {k.value for k in AreaKind}
 
 
-def region_dirs() -> dict[str, Path]:
+def region_dirs(data_dir: Path | None = None) -> dict[str, Path]:
     """``{region: directory}`` for the regional GML folders that exist.
 
     Note the layout is ``data/<REGION>_GMLs/``. The interpolation pipeline's
     ``relevant_system_extraction`` looks in ``data/gml/`` instead, which does
     not exist -- see :func:`iter_gml_files`.
     """
+    root = Path(data_dir or settings.DATA_DIR)
     found = {}
     for region in Region:
-        directory = settings.DATA_DIR / f"{region.value}_GMLs"
+        directory = root / f"{region.value}_GMLs"
         if directory.is_dir():
             found[region.value] = directory
     # Tolerate the layout the other scripts expect, if someone creates it.
-    nested = settings.DATA_DIR / "gml"
+    nested = root / "gml"
     if nested.is_dir():
         for region in Region:
             directory = nested / f"{region.value}_GMLs"
@@ -94,9 +95,11 @@ def region_dirs() -> dict[str, Path]:
     return found
 
 
-def iter_gml_files(region: str | None = None) -> Iterator[tuple[str, Path]]:
+def iter_gml_files(
+    region: str | None = None, data_dir: Path | None = None
+) -> Iterator[tuple[str, Path]]:
     """Yield ``(region, path)`` for every bulletin, sorted for determinism."""
-    for name, directory in sorted(region_dirs().items()):
+    for name, directory in sorted(region_dirs(data_dir).items()):
         if region and name != region:
             continue
         for path in sorted(directory.rglob("*.gml")):
@@ -109,14 +112,15 @@ def product_id_of(path: Path) -> str | None:
     return match.group(1) if match else None
 
 
-def relative_source(path: Path) -> str:
+def relative_source(path: Path, data_dir: Path | None = None) -> str:
     """Path relative to ``DATA_DIR``, with forward slashes.
 
     Stored rather than the absolute path so the same database is usable from a
     different checkout, and so it is stable across Windows and POSIX.
     """
+    root = Path(data_dir or settings.DATA_DIR)
     try:
-        return path.relative_to(settings.DATA_DIR).as_posix()
+        return path.relative_to(root).as_posix()
     except ValueError:
         return path.as_posix()
 
@@ -385,12 +389,13 @@ def _prepare(
     known_hash: str | None,
     force: bool,
     stats: Stats,
+    data_dir: Path | None = None,
 ) -> tuple[str, _Prepared | None]:
     """Hash and parse one file without touching the database.
 
     Returns ``('skipped' | 'no-key', None)`` or ``('written', prepared)``.
     """
-    source = relative_source(path)
+    source = relative_source(path, data_dir)
     digest = sha256_of(path)
     if known_hash == digest and not force:
         return "skipped", None
@@ -528,12 +533,13 @@ def load_bulletin_file(
     ingest_run_id: int | None = None,
     force: bool = False,
     stats: Stats | None = None,
+    data_dir: Path | None = None,
 ) -> str:
     """Ingest one bulletin. Returns 'written', 'skipped' or 'no-key'."""
     stats = stats if stats is not None else Stats()
     known_hash = session.execute(
         select(Bulletin.content_hash).where(
-            Bulletin.source_file == relative_source(path)
+            Bulletin.source_file == relative_source(path, data_dir)
         )
     ).scalar_one_or_none()
     outcome, prepared = _prepare(
@@ -554,6 +560,7 @@ def load_bulletins(
     stats: Stats | None = None,
     batch_size: int = DEFAULT_BATCH_FILES,
     progress_every: int = 200,
+    data_dir: Path | None = None,
 ) -> dict[str, int]:
     """Ingest every bulletin, committing every ``batch_size`` changed files.
 
@@ -578,7 +585,9 @@ def load_bulletins(
         counts["rows_written"] += len(pending)
         pending.clear()
 
-    for index, (name, path) in enumerate(iter_gml_files(region), start=1):
+    for index, (name, path) in enumerate(
+        iter_gml_files(region, data_dir), start=1
+    ):
         if limit is not None and counts["rows_read"] >= limit:
             break
         counts["rows_read"] += 1
@@ -586,12 +595,15 @@ def load_bulletins(
             outcome, prepared = _prepare(
                 name,
                 path,
-                known_hash=known.get(relative_source(path)),
+                known_hash=known.get(relative_source(path, data_dir)),
                 force=force,
                 stats=stats,
+                data_dir=data_dir,
             )
         except ET.ParseError as exc:
-            stats.conflicts.append(f"{relative_source(path)}: unparseable XML ({exc})")
+            stats.conflicts.append(
+                f"{relative_source(path, data_dir)}: unparseable XML ({exc})"
+            )
             counts["no_key"] += 1
             continue
 
