@@ -2,12 +2,12 @@
 
 Run from ``backend/``::
 
+    python -m app.cli pipeline         # run the data processing pipeline
     python -m app.cli all              # seed + ingest everything
     python -m app.cli verify           # assert the expected row counts
     python -m app.cli --help
 
-Plain argparse rather than a CLI framework: eight subcommands do not justify
-another dependency.
+Plain argparse is used rather than adding another CLI dependency.
 
 Schema truth lives in ``alembic/versions/``. ``init-db`` is a dev convenience
 that calls ``create_all`` and is deliberately not the production path.
@@ -199,6 +199,27 @@ def cmd_interpolate(args: argparse.Namespace) -> int:
         print(f"  replaced {stats.notes['replaced_runs']} earlier run(s)")
     return 0
 
+def cmd_pipeline(args: argparse.Namespace) -> int:
+    from app.services.pipeline import run_data_pipeline
+
+    results = run_data_pipeline(
+        towns_path=Path(args.towns) if args.towns else None,
+        best_track_path=Path(args.best_track) if args.best_track else None,
+        step_minutes=args.step_minutes,
+        label=args.label,
+        force_gml=args.force_gml,
+        include_verification=args.with_verification,
+        forecast_level=args.forecast_level,
+        wind_level=args.wind_level,
+        x_hours=args.x_hours,
+        y_hours=args.y_hours,
+    )
+
+    print("\npipeline completed")
+    for stage, counts in results.items():
+        print(f"  {stage}: {counts}")
+
+    return 0
 
 def cmd_verification(args: argparse.Namespace) -> int:
     from app.services.loaders.interpolation import latest_run_id
@@ -221,6 +242,10 @@ def cmd_verification(args: argparse.Namespace) -> int:
                     label=args.label,
                     replace=args.replace,
                     keep_table_b=args.keep_table_b,
+                    forecast_level=args.forecast_level,
+                    wind_level=args.wind_level,
+                    x_hours=args.x_hours,
+                    y_hours=args.y_hours,
                     stats=stats,
                 )
             else:
@@ -290,6 +315,10 @@ def cmd_all(args: argparse.Namespace) -> int:
                 label="cli all",
                 replace=True,
                 keep_table_b=False,
+                forecast_level="watch_warning",
+                wind_level="gale",
+                x_hours=0,
+                y_hours=24,
             ),
         ),
     ]
@@ -459,6 +488,74 @@ def build_parser() -> argparse.ArgumentParser:
     )
     interp.set_defaults(handler=cmd_interpolate)
 
+    pipeline = sub.add_parser(
+        "pipeline",
+        help="run the data processing pipeline",
+    )
+
+    pipeline.add_argument(
+        "--towns",
+        help="path to the towns workbook",
+    )
+
+    pipeline.add_argument(
+        "--best-track",
+        help="path to the best-track CSV",
+    )
+
+    pipeline.add_argument(
+        "--step-minutes",
+        type=int,
+        default=15,
+    )
+
+    pipeline.add_argument(
+        "--label",
+        default="data pipeline",
+    )
+
+    pipeline.add_argument(
+        "--force-gml",
+        action="store_true",
+        help="re-parse GML files even if unchanged",
+    )
+
+    pipeline.add_argument(
+        "--with-verification",
+        action="store_true",
+        help="generate verification tables after interpolation",
+    )
+
+    pipeline.add_argument(
+        "--forecast-level",
+        choices=["watch", "warning", "watch_warning"],
+        default="watch_warning",
+        help="forecast level to verify",
+    )
+
+    pipeline.add_argument(
+        "--wind-level",
+        choices=["gale", "storm", "hurricane"],
+        default="gale",
+        help="observed wind level to verify",
+    )
+
+    pipeline.add_argument(
+        "--x-hours",
+        type=int,
+        default=0,
+        help="start of the observation window in hours",
+    )
+
+    pipeline.add_argument(
+        "--y-hours",
+        type=int,
+        default=24,
+        help="end of the observation window in hours",
+    )
+
+    pipeline.set_defaults(handler=cmd_pipeline)
+
     verif = sub.add_parser(
         "verification", help="score the forecasts from the database contents"
     )
@@ -477,12 +574,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="also store Table B, the per-timestep wind-radii distances "
         "(~93%% of the rows; not needed for the scores)",
     )
+
+    verif.add_argument(
+        "--forecast-level",
+        choices=["watch", "warning", "watch_warning"],
+        default="watch_warning",
+        help="forecast level to verify",
+    )
+
+    verif.add_argument(
+        "--wind-level",
+        choices=["gale", "storm", "hurricane"],
+        default="gale",
+        help="observed wind level to verify",
+    )
+
+    verif.add_argument(
+        "--x-hours",
+        type=int,
+        default=0,
+        help="start of the observation window in hours",
+    )
+
+    verif.add_argument(
+        "--y-hours",
+        type=int,
+        default=24,
+        help="end of the observation window in hours",
+    )
+
     verif.add_argument("--label")
     verif.add_argument(
         "--replace",
         action="store_true",
         help="delete earlier runs with the same label first",
     )
+
     verif.set_defaults(handler=cmd_verification)
 
     everything = sub.add_parser("all", help="seed and ingest everything, in order")

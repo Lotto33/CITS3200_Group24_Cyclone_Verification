@@ -201,6 +201,10 @@ def compute_verification(
     label: str | None = None,
     replace: bool = False,
     keep_table_b: bool = False,
+    forecast_level: str = "warning",
+    wind_level: str = "gale",
+    x_hours: int = 0,
+    y_hours: int = 24,
     stats: Stats | None = None,
 ) -> dict[str, int]:
     """Score every watch/warning disturbance from what the database holds.
@@ -226,6 +230,11 @@ def compute_verification(
 
     from app.gen_cont_tables import generate_all_tables_for_disturbance
     from app.services.loaders.interpolation import latest_run_id
+
+    if x_hours < 0 or y_hours < x_hours:
+        raise ValueError(
+            "Observation time range must satisfy 0 <= x_hours <= y_hours"
+        )
 
     stats = stats if stats is not None else Stats()
     run_id = interpolation_run_id or latest_run_id(session)
@@ -253,6 +262,12 @@ def compute_verification(
         town_count=len(locations),
         disturbance_count=len(forecasts),
         code_version=code_version(),
+        params={
+            "forecast_level": forecast_level,
+            "wind_level": wind_level,
+            "x_hours": x_hours,
+            "y_hours": y_hours,
+        },
         notes=(
             "Computed from the database by app.gen_cont_tables. "
             + ("Table B stored." if keep_table_b else "Table B not stored.")
@@ -278,7 +293,11 @@ def compute_verification(
         # The generator narrates every step on stdout; keep the CLI readable.
         with contextlib.redirect_stdout(io.StringIO()):
             outputs = generate_all_tables_for_disturbance(
-                ident, locations=locations, forecasts=forecasts[dist_pk], track=track
+                ident, locations=locations, forecasts=forecasts[dist_pk], track=track,
+                forecast_level=forecast_level,
+                wind_level=wind_level,
+                x_hours=x_hours,
+                y_hours=y_hours,
             )
         base = {"run_id": run.id, "disturbance_pk": dist_pk}
         if not keep_table_b:

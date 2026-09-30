@@ -830,6 +830,7 @@ def generate_table_c(
     locations: gpd.GeoDataFrame | None,
     x_hours: int = 0,
     y_hours: int = 24,
+    wind_level: str = "gale",
     step_minutes: int = 15,
     table_b: pd.DataFrame | None = None,
     fcast_times: list[str] | None = None,
@@ -850,8 +851,22 @@ def generate_table_c(
     assumption that turned out to be wrong. Other windows (e.g. 0-30h, 0-42h)
     can be explored by passing different x_hours/y_hours values.
     """
+    distance_columns = {
+        "gale": "Distance to gale",
+        "storm": "Distance to storm",
+        "hurricane": "Distance to hurricane",
+    }
+
+    if wind_level not in distance_columns:
+        raise ValueError(
+            f"Invalid wind level {wind_level!r}. "
+            f"Expected one of {list(distance_columns)}"
+        )
+
+    distance_column = distance_columns[wind_level]
+
     print(
-        f"\n=== Table C: observed gales within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} ==="
+        f"\n=== Table C: observed {wind_level} winds within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} ==="
     )
     if locations is None:
         locations = load_locations()
@@ -894,7 +909,7 @@ def generate_table_c(
             loc_name = loc["name"]
             loc_subset = window_df[window_df["Location"] == loc_name]
             observed = (
-                bool((loc_subset["Distance to gale"] <= 0).any())
+                bool((loc_subset[distance_column] <= 0).any())
                 if not loc_subset.empty
                 else False
             )
@@ -915,15 +930,28 @@ def generate_table_c(
     return result
 
 
-def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFrame:
+def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame, forecast_level: str = "watch_warning",) -> pd.DataFrame:
     """this is the base to build the contingency table for the given options."""
+
     print(
         f"\n=== Table D: merging Table A ({len(table_a)} rows) with Table C ({len(table_c)} rows) ==="
     )
     merged_table = table_a.merge(
         table_c, on=["Disturbance ID", "Base time", "Location"], how="left"
     )
-    merged_table["Forecast"] = merged_table["Watch"] | merged_table["Warning"]
+
+    if forecast_level == "watch_warning":
+        merged_table["Forecast"] = merged_table["Watch"] | merged_table["Warning"]
+    elif forecast_level == "watch":
+        merged_table["Forecast"] = merged_table["Watch"]
+    elif forecast_level == "warning":
+        merged_table["Forecast"] = merged_table["Warning"]
+    else:
+        raise ValueError(
+            f"Invalid forecast level {forecast_level!r}. "
+            "Expected one of ['watch_warning', 'watch', 'warning']"
+        )
+    
     merged_table["Observed"] = merged_table["Observed"].fillna(False)
     # Derived purely from Base time -- lets contingency stats be filtered by
     # cyclone season (e.g. Season="2025-26") without needing a separate
@@ -1034,6 +1062,8 @@ def generate_all_tables_for_disturbance(
     output_dir: str | Path | None = None,
     x_hours: int = 0,
     y_hours: int = 24,
+    forecast_level: str = "watch_warning",
+    wind_level: str = "gale",
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
@@ -1097,10 +1127,11 @@ def generate_all_tables_for_disturbance(
         locations,
         x_hours=x_hours,
         y_hours=y_hours,
+        wind_level=wind_level,
         table_b=table_b,
         fcast_times=sorted(forecasts) if forecasts is not None else None,
     )
-    table_d = generate_table_d(table_a, table_c)
+    table_d = generate_table_d(table_a, table_c, forecast_level=forecast_level,)
     stats = generate_contingency_dict(table_d)
     matrix = get_contingency_matrix_df(stats)
 
@@ -1144,6 +1175,8 @@ def generate_all_tables_for_disturbances(
     output_dir: str | Path | None = None,
     x_hours: int = 0,
     y_hours: int = 24,
+    forecast_level: str = "watch_warning",
+    wind_level: str = "gale",
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
@@ -1167,6 +1200,8 @@ def generate_all_tables_for_disturbances(
             output_dir=output_dir,
             x_hours=x_hours,
             y_hours=y_hours,
+            forecast_level=forecast_level,
+            wind_level=wind_level,
             coastal_buffer_km=coastal_buffer_km,
             relevance_km=relevance_km,
             coastal_buffer_cutoff=coastal_buffer_cutoff,
@@ -1249,6 +1284,19 @@ def _parse_args() -> argparse.Namespace:
         default=24,
         help="Upper bound for observed-gale window in hours from base time (default 24: this is the Warning window's end; use 48 for the Watch window). Other windows (e.g. 30, 42) can also be explored.",
     )
+
+    parser.add_argument(
+    "--forecast-level",
+    choices=["watch", "warning", "watch_warning"],
+    default="watch_warning",
+)
+
+    parser.add_argument(
+        "--wind-level",
+        choices=["gale", "storm", "hurricane"],
+        default="gale",
+    )
+
     parser.add_argument(
         "--coastal-buffer-km",
         type=float,
@@ -1315,6 +1363,8 @@ if __name__ == "__main__":
                 output_dir=args.output_dir,
                 x_hours=args.x_hours,
                 y_hours=args.y_hours,
+                forecast_level=args.forecast_level,
+                wind_level=args.wind_level,
                 coastal_buffer_km=args.coastal_buffer_km,
                 relevance_km=args.relevance_km,
                 coastal_buffer_cutoff=coastal_buffer_cutoff,
@@ -1328,6 +1378,8 @@ if __name__ == "__main__":
                 output_dir=args.output_dir,
                 x_hours=args.x_hours,
                 y_hours=args.y_hours,
+                forecast_level=args.forecast_level,
+                wind_level=args.wind_level,
                 coastal_buffer_km=args.coastal_buffer_km,
                 relevance_km=args.relevance_km,
                 coastal_buffer_cutoff=coastal_buffer_cutoff,
