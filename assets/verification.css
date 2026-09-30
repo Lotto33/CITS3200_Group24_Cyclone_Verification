@@ -7,7 +7,28 @@ p, caption { color: var(--muted); }
 .verification-page header { position: relative; }
 #backToVisualizer { margin-top: 12px; border: 1px solid var(--border); border-radius: 6px; background: #1f2a3f; color: var(--text); padding: 9px 14px; cursor: pointer; font: inherit; font-size: 13px; }
 #backToVisualizer:hover, #backToVisualizer:focus-visible { background: #2a3852; }
-.filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
+.upload-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
+.upload-toolbar button {
+  border: 1px solid var(--border); border-radius: 6px; background: #1f2a3f; color: var(--text);
+  padding: 9px 12px; cursor: pointer; font: inherit; font-size: 13px;
+}
+.upload-toolbar button:hover, .upload-toolbar button:focus-visible { background: #2a3852; }
+.upload-toolbar #addTableBtn { border-color: #3ddc84; color: #3ddc84; }
+.upload-toolbar #addTableBtn:hover, .upload-toolbar #addTableBtn:focus-visible { background: #193b32; }
+.upload-toolbar #downloadBestTrackBtn { border-color: #4fa8ff; color: #4fa8ff; }
+.upload-toolbar #downloadBestTrackBtn:hover, .upload-toolbar #downloadBestTrackBtn:focus-visible { background: #1d3550; }
+.upload-toolbar #resetBtn { border-color: #e0a458; color: #e0a458; }
+.upload-toolbar #resetBtn:hover, .upload-toolbar #resetBtn:focus-visible { background: #3b2c1b; }
+.upload-toolbar button:disabled { border-color: var(--border); color: var(--muted); cursor: not-allowed; background: transparent; }
+.upload-status { min-height: 18px; font-size: 11px; color: var(--muted); }
+.upload-status.error { color: #ff7a7a; }
+.table-instance { margin-top: 24px; }
+.instance-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.instance-heading h2 { margin: 0; font-size: 17px; }
+.remove-instance { border: 1px solid #ff7a7a; border-radius: 6px; background: transparent; color: #ff7a7a; padding: 8px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+.remove-instance:hover, .remove-instance:focus-visible { background: #3b2228; }
+.remove-instance:disabled { border-color: var(--border); color: var(--muted); cursor: not-allowed; background: transparent; }
+.filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
 .filter-field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .filter-field select { width: 100%; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
 .filter-field select:focus-visible { outline: 2px solid #4fa8ff; outline-offset: 2px; }
@@ -26,4 +47,4 @@ td { background: var(--panel); }
 .highlight { color: #3ddc84; font-weight: 700; }
 .metrics { display: flex; flex-wrap: wrap; gap: 12px 28px; color: var(--muted); margin-top: 16px; }
 .metrics b { color: var(--text); }
-@media (max-width: 640px) { .verification-page { padding: 20px 12px; overflow-x: auto; } .filter-grid { grid-template-columns: 1fr; } .contingency-table { min-width: 620px; } }
+@media (max-width: 640px) { .verification-page { padding: 20px 12px; overflow-x: auto; } .instance-heading { align-items: flex-start; flex-direction: column; } .filter-grid { grid-template-columns: 1fr; } .contingency-table { min-width: 620px; } }

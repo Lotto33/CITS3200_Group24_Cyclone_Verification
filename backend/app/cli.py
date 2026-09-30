@@ -2,12 +2,12 @@
 
 Run from ``backend/``::
 
+    python -m app.cli pipeline         # run the data processing pipeline
     python -m app.cli all              # seed + ingest everything
     python -m app.cli verify           # assert the expected row counts
     python -m app.cli --help
 
-Plain argparse rather than a CLI framework: eight subcommands do not justify
-another dependency.
+Plain argparse is used rather than adding another CLI dependency.
 
 Schema truth lives in ``alembic/versions/``. ``init-db`` is a dev convenience
 that calls ``create_all`` and is deliberately not the production path.
@@ -184,6 +184,7 @@ def cmd_interpolate(args: argparse.Namespace) -> int:
                 step_minutes=args.step_minutes,
                 watch_warning_only=not args.all_disturbances,
                 label=args.label,
+                replace=args.replace,
                 stats=stats,
             )
             run.rows_read = counts["rows_read"]
@@ -194,32 +195,83 @@ def cmd_interpolate(args: argparse.Namespace) -> int:
         f"run {counts['run_id']}: {counts['rows_read']} observations -> "
         f"{counts['rows_written']} points at {args.step_minutes}-minute spacing"
     )
+    if stats.notes.get("replaced_runs"):
+        print(f"  replaced {stats.notes['replaced_runs']} earlier run(s)")
     return 0
 
+def cmd_pipeline(args: argparse.Namespace) -> int:
+    from app.services.pipeline import run_data_pipeline
+
+    results = run_data_pipeline(
+        towns_path=Path(args.towns) if args.towns else None,
+        best_track_path=Path(args.best_track) if args.best_track else None,
+        step_minutes=args.step_minutes,
+        label=args.label,
+        force_gml=args.force_gml,
+        include_verification=args.with_verification,
+        forecast_level=args.forecast_level,
+        wind_level=args.wind_level,
+        x_hours=args.x_hours,
+        y_hours=args.y_hours,
+    )
+
+    print("\npipeline completed")
+    for stage, counts in results.items():
+        print(f"  {stage}: {counts}")
+
+    return 0
 
 def cmd_verification(args: argparse.Namespace) -> int:
     from app.services.loaders.interpolation import latest_run_id
-    from app.services.loaders.verification import load_verification
+    from app.services.loaders.verification import (
+        compute_verification,
+        load_verification,
+    )
 
     directory = Path(args.dir) if args.dir else None
     with _session() as session:
         stats = Stats()
-        with ingest_run(
-            session,
-            IngestKind.VERIFICATION,
-            source=str(directory or "contingency_tables"),
-        ) as run:
-            counts = load_verification(
-                session,
-                directory=directory,
-                interpolation_run_id=latest_run_id(session),
-                stats=stats,
-            )
+        source = str(directory) if directory else "database"
+        with ingest_run(session, IngestKind.VERIFICATION, source=source) as run:
+            if directory is None:
+                # Scored from the server's own towns, bulletins and track, so
+                # the result does not depend on who runs it.
+                counts = compute_verification(
+                    session,
+                    interpolation_run_id=args.interpolation_run,
+                    label=args.label,
+                    replace=args.replace,
+                    keep_table_b=args.keep_table_b,
+                    forecast_level=args.forecast_level,
+                    wind_level=args.wind_level,
+                    x_hours=args.x_hours,
+                    y_hours=args.y_hours,
+                    stats=stats,
+                )
+            else:
+                counts = load_verification(
+                    session,
+                    directory=directory,
+                    interpolation_run_id=latest_run_id(session),
+                    label=args.label,
+                    replace=args.replace,
+                    stats=stats,
+                )
             run.rows_written = counts["rows_written"]
             run.stats = stats.as_dict()
         session.commit()
     print(f"run {counts['run_id']}: {counts['rows_written']} rows")
-    for key in ("table_a", "table_b", "table_c", "table_d", "summaries"):
+    if stats.notes.get("replaced_runs"):
+        print(f"  replaced {stats.notes['replaced_runs']} earlier run(s)")
+    keys = (
+        "table_a",
+        "table_b",
+        "table_c",
+        "table_d",
+        "summaries",
+        "skipped_disturbances",
+    )
+    for key in keys:
         if key in counts:
             print(f"  {key}: {counts[key]}")
     for conflict in stats.conflicts:
@@ -228,7 +280,12 @@ def cmd_verification(args: argparse.Namespace) -> int:
 
 
 def cmd_all(args: argparse.Namespace) -> int:
-    """Everything, in dependency order."""
+    """Everything, in dependency order.
+
+    Safe to re-run against a populated database: the reference loaders upsert,
+    the GML loader skips unchanged files, and the interpolation and
+    verification steps replace their previous "cli all" run.
+    """
     steps = [
         ("code tables", cmd_seed_codes, argparse.Namespace()),
         ("towns", cmd_towns, argparse.Namespace(xlsx=None)),
@@ -243,10 +300,27 @@ def cmd_all(args: argparse.Namespace) -> int:
             "interpolation",
             cmd_interpolate,
             argparse.Namespace(
-                step_minutes=15, all_disturbances=False, label="cli all"
+                step_minutes=15,
+                all_disturbances=False,
+                label="cli all",
+                replace=True,
             ),
         ),
-        ("verification", cmd_verification, argparse.Namespace(dir=None)),
+        (
+            "verification",
+            cmd_verification,
+            argparse.Namespace(
+                dir=None,
+                interpolation_run=None,
+                label="cli all",
+                replace=True,
+                keep_table_b=False,
+                forecast_level="watch_warning",
+                wind_level="gale",
+                x_hours=0,
+                y_hours=24,
+            ),
+        ),
     ]
     for name, handler, namespace in steps:
         print(f"\n=== {name} ===")
@@ -407,10 +481,135 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="do not restrict to watch/warning systems",
     )
+    interp.add_argument(
+        "--replace",
+        action="store_true",
+        help="delete earlier runs with the same --label first",
+    )
     interp.set_defaults(handler=cmd_interpolate)
 
-    verif = sub.add_parser("verification", help="load data/contingency_tables")
-    verif.add_argument("--dir")
+    pipeline = sub.add_parser(
+        "pipeline",
+        help="run the data processing pipeline",
+    )
+
+    pipeline.add_argument(
+        "--towns",
+        help="path to the towns workbook",
+    )
+
+    pipeline.add_argument(
+        "--best-track",
+        help="path to the best-track CSV",
+    )
+
+    pipeline.add_argument(
+        "--step-minutes",
+        type=int,
+        default=15,
+    )
+
+    pipeline.add_argument(
+        "--label",
+        default="data pipeline",
+    )
+
+    pipeline.add_argument(
+        "--force-gml",
+        action="store_true",
+        help="re-parse GML files even if unchanged",
+    )
+
+    pipeline.add_argument(
+        "--with-verification",
+        action="store_true",
+        help="generate verification tables after interpolation",
+    )
+
+    pipeline.add_argument(
+        "--forecast-level",
+        choices=["watch", "warning", "watch_warning"],
+        default="watch_warning",
+        help="forecast level to verify",
+    )
+
+    pipeline.add_argument(
+        "--wind-level",
+        choices=["gale", "storm", "hurricane"],
+        default="gale",
+        help="observed wind level to verify",
+    )
+
+    pipeline.add_argument(
+        "--x-hours",
+        type=int,
+        default=0,
+        help="start of the observation window in hours",
+    )
+
+    pipeline.add_argument(
+        "--y-hours",
+        type=int,
+        default=24,
+        help="end of the observation window in hours",
+    )
+
+    pipeline.set_defaults(handler=cmd_pipeline)
+
+    verif = sub.add_parser(
+        "verification", help="score the forecasts from the database contents"
+    )
+    verif.add_argument(
+        "--dir",
+        help="import precomputed contingency CSVs from here instead of computing",
+    )
+    verif.add_argument(
+        "--interpolation-run",
+        type=int,
+        help="interpolation run to score against (default: the latest)",
+    )
+    verif.add_argument(
+        "--keep-table-b",
+        action="store_true",
+        help="also store Table B, the per-timestep wind-radii distances "
+        "(~93%% of the rows; not needed for the scores)",
+    )
+
+    verif.add_argument(
+        "--forecast-level",
+        choices=["watch", "warning", "watch_warning"],
+        default="watch_warning",
+        help="forecast level to verify",
+    )
+
+    verif.add_argument(
+        "--wind-level",
+        choices=["gale", "storm", "hurricane"],
+        default="gale",
+        help="observed wind level to verify",
+    )
+
+    verif.add_argument(
+        "--x-hours",
+        type=int,
+        default=0,
+        help="start of the observation window in hours",
+    )
+
+    verif.add_argument(
+        "--y-hours",
+        type=int,
+        default=24,
+        help="end of the observation window in hours",
+    )
+
+    verif.add_argument("--label")
+    verif.add_argument(
+        "--replace",
+        action="store_true",
+        help="delete earlier runs with the same label first",
+    )
+
     verif.set_defaults(handler=cmd_verification)
 
     everything = sub.add_parser("all", help="seed and ingest everything, in order")

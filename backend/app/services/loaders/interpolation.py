@@ -116,9 +116,15 @@ def load_interpolation(
     project_start: datetime | None = DEFAULT_PROJECT_START,
     watch_warning_only: bool = True,
     label: str | None = None,
+    replace: bool = False,
     stats: Stats | None = None,
 ) -> dict[str, int]:
-    """Interpolate and store a new run. Returns row counts."""
+    """Interpolate and store a new run. Returns row counts.
+
+    With ``replace``, earlier runs carrying the same ``label`` are deleted
+    first, so a repeated ``cli all`` leaves one run rather than a pile of
+    identical ones.
+    """
     stats = stats if stats is not None else Stats()
 
     if dataset is not TrackDataset.BOM_BEST_TRACK:
@@ -146,6 +152,9 @@ def load_interpolation(
     interpolated = interpolate_best_track(
         frame.drop(columns=["_disturbance_pk"]), step_minutes=step_minutes
     )
+
+    if replace and label is not None:
+        stats.notes["replaced_runs"] = delete_runs_by_label(session, label)
 
     run = InterpolationRun(
         created_at=datetime.now(UTC),
@@ -208,6 +217,15 @@ def delete_run(session: Session, run_id: int) -> int:
     """Remove one interpolation run and its points."""
     deleted = session.execute(
         delete(InterpolationRun).where(InterpolationRun.id == run_id)
+    ).rowcount
+    session.flush()
+    return deleted or 0
+
+
+def delete_runs_by_label(session: Session, label: str) -> int:
+    """Remove every interpolation run with ``label``; points go by cascade."""
+    deleted = session.execute(
+        delete(InterpolationRun).where(InterpolationRun.label == label)
     ).rowcount
     session.flush()
     return deleted or 0

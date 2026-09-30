@@ -21,9 +21,36 @@
     <p class="subtitle">Browse historical BOM tropical cyclone GML bulletins on a map.</p>
   </div>
 
+  <button id="compareToggle" type="button">Compare best tracks</button>
+
+  <div id="comparePanel" class="compare-panel" hidden>
+    <div class="compare-heading">
+      <div>
+        <h2>Best track comparison</h2>
+        <p class="subtitle">Compare up to five cyclones on the map.</p>
+      </div>
+      <button id="compareClose" class="icon" type="button" title="Return to visualizer">×</button>
+    </div>
+    <div id="compareSelectors"></div>
+    <button id="addCompareCyclone" class="secondary-button" type="button">+ Add cyclone</button>
+    <div id="compareStatus" class="layer-note"></div>
+  </div>
+
+  <div id="standardControls">
   <div class="field">
     <label for="cycloneSelect">Cyclone / event (distId) — ★ has best track</label>
     <select id="cycloneSelect"></select>
+  </div>
+
+  <div class="field upload-field">
+    <label>Dataset uploads</label>
+    <div class="upload-actions">
+      <button id="uploadGmlBtn" type="button">Upload GML archive</button>
+      <input id="gmlUploadInput" type="file" accept=".zip" hidden>
+      <button id="uploadBestTrackBtn" type="button">Upload best track CSV</button>
+      <input id="bestTrackUploadInput" type="file" accept=".csv" hidden>
+    </div>
+    <div id="uploadStatus" class="upload-status" aria-live="polite"></div>
   </div>
 
   <div id="bulletinBar" class="field">
@@ -75,6 +102,7 @@
   </fieldset>
 
   <div id="status"></div>
+  </div>
 </div>
 
 <div id="map"></div>

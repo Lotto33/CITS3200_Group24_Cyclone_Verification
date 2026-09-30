@@ -10,6 +10,7 @@ from pyproj import Geod
 from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import nearest_points, unary_union
+from shapely.validation import make_valid
 
 geod = Geod(ellps="WGS84")
 
@@ -316,6 +317,21 @@ def signed_distance_to_polygon_km(point, polygon_union) -> float:
     return -dist_km if polygon_union.contains(point) else dist_km
 
 
+def _valid_polygonal(geom):
+    """Repair a self-intersecting polygon, keeping only its areal parts.
+
+    ~2% of the BoM watch/warning polygons self-intersect, which makes
+    unary_union raise a TopologyException. make_valid can return a
+    GeometryCollection with stray lines, whose .boundary is None, so those
+    parts are dropped.
+    """
+    if geom.is_valid:
+        return geom
+    fixed = make_valid(geom)
+    parts = getattr(fixed, "geoms", [fixed])
+    return unary_union([p for p in parts if p.geom_type in ("Polygon", "MultiPolygon")])
+
+
 def _geojson_index() -> dict:
     """(distId, fcastTime) -> filepath, built once by scanning what gml_to_geojson.py already wrote.
     
@@ -546,6 +562,7 @@ def generate_table_a(
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
+    forecasts: dict[str, dict] | None = None,
 ) -> pd.DataFrame:
     """
     create a table from the forecast polygons for each forecast base time including relevant locations
@@ -580,15 +597,24 @@ def generate_table_a(
     the coastal buffer rule below, which decides whether a coastal town is
     treated as covered when the nearest watch/warning edge is within
     coastal_buffer_km (default 20 km).
+
+    forecasts: {fcastTime: FeatureCollection} to use instead of scanning
+    data/geojson -- the database-backed verification loader passes these in.
     """
     print(f"\n=== Table A: forecast watch/warning areas for {disturbance_id} ===")
     if locations is None:
         locations = load_locations()
     rows = []
-    fcast_times = get_reference_times(disturbance_id)
+    if forecasts is not None:
+        fcast_times = sorted(forecasts)
+    else:
+        fcast_times = get_reference_times(disturbance_id)
     for i, fcast_time in enumerate(fcast_times, start=1):
         print(f"[table_a] ({i}/{len(fcast_times)}) base time {fcast_time}")
-        geo = load_forecast_geojson(disturbance_id, fcast_time)
+        if forecasts is not None:
+            geo = forecasts[fcast_time]
+        else:
+            geo = load_forecast_geojson(disturbance_id, fcast_time)
         if geo is None:
             print("[table_a]   -> no geojson found, skipping this base time")
             continue
@@ -617,7 +643,7 @@ def generate_table_a(
                 else None
             )
             if target is not None:
-                target.append(shapely_shape(f["geometry"]))
+                target.append(_valid_polygonal(shapely_shape(f["geometry"])))
 
         if watch_geoms:
             watch_union = unary_union(watch_geoms)
@@ -702,7 +728,10 @@ def generate_table_a(
 
 
 def generate_table_b(
-    disturbance_id: str, locations: gpd.GeoDataFrame | None, step_minutes: int = 15
+    disturbance_id: str,
+    locations: gpd.GeoDataFrame | None,
+    step_minutes: int = 15,
+    track: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     for every system create the following table at the agreed time interval for all relevant locations.
@@ -713,6 +742,9 @@ def generate_table_b(
     every town in towns.xlsx. generate_all_tables_for_disturbance() does
     this filtering before calling in; pass a pre-filtered GeoDataFrame here
     if calling this directly.
+
+    track: an already-interpolated best track for this disturbance (the
+    database-backed verification loader passes one in); None reads the CSVs.
     """
     print(
         f"\n=== Table B: distance-to-wind-radii for {disturbance_id} (step={step_minutes}min) ==="
@@ -722,8 +754,8 @@ def generate_table_b(
         locations = load_locations()
 
     rows = []
-    df = load_best_track(disturbance_id)
-    if _best_track_is_preprocessed():
+    df = track if track is not None else load_best_track(disturbance_id)
+    if track is not None or _best_track_is_preprocessed():
         print(
             "[table_b] Using pre-interpolated best-track data (skipping interpolation)"
         )
@@ -798,8 +830,10 @@ def generate_table_c(
     locations: gpd.GeoDataFrame | None,
     x_hours: int = 0,
     y_hours: int = 24,
+    wind_level: str = "gale",
     step_minutes: int = 15,
     table_b: pd.DataFrame | None = None,
+    fcast_times: list[str] | None = None,
 ) -> pd.DataFrame:
     """processed for gales within X to Y hours of the base time
 
@@ -817,8 +851,22 @@ def generate_table_c(
     assumption that turned out to be wrong. Other windows (e.g. 0-30h, 0-42h)
     can be explored by passing different x_hours/y_hours values.
     """
+    distance_columns = {
+        "gale": "Distance to gale",
+        "storm": "Distance to storm",
+        "hurricane": "Distance to hurricane",
+    }
+
+    if wind_level not in distance_columns:
+        raise ValueError(
+            f"Invalid wind level {wind_level!r}. "
+            f"Expected one of {list(distance_columns)}"
+        )
+
+    distance_column = distance_columns[wind_level]
+
     print(
-        f"\n=== Table C: observed gales within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} ==="
+        f"\n=== Table C: observed {wind_level} winds within [{x_hours}h, {y_hours}h] of base time for {disturbance_id} ==="
     )
     if locations is None:
         locations = load_locations()
@@ -839,7 +887,8 @@ def generate_table_c(
     table_b = table_b.copy()
     table_b["Time"] = pd.to_datetime(table_b["Time"]).dt.tz_localize(None)
 
-    fcast_times = get_reference_times(disturbance_id)
+    if fcast_times is None:
+        fcast_times = get_reference_times(disturbance_id)
 
     rows = []
     for i, fcast_time in enumerate(fcast_times, start=1):
@@ -860,7 +909,7 @@ def generate_table_c(
             loc_name = loc["name"]
             loc_subset = window_df[window_df["Location"] == loc_name]
             observed = (
-                bool((loc_subset["Distance to gale"] <= 0).any())
+                bool((loc_subset[distance_column] <= 0).any())
                 if not loc_subset.empty
                 else False
             )
@@ -881,15 +930,28 @@ def generate_table_c(
     return result
 
 
-def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame) -> pd.DataFrame:
+def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame, forecast_level: str = "watch_warning",) -> pd.DataFrame:
     """this is the base to build the contingency table for the given options."""
+
     print(
         f"\n=== Table D: merging Table A ({len(table_a)} rows) with Table C ({len(table_c)} rows) ==="
     )
     merged_table = table_a.merge(
         table_c, on=["Disturbance ID", "Base time", "Location"], how="left"
     )
-    merged_table["Forecast"] = merged_table["Watch"] | merged_table["Warning"]
+
+    if forecast_level == "watch_warning":
+        merged_table["Forecast"] = merged_table["Watch"] | merged_table["Warning"]
+    elif forecast_level == "watch":
+        merged_table["Forecast"] = merged_table["Watch"]
+    elif forecast_level == "warning":
+        merged_table["Forecast"] = merged_table["Warning"]
+    else:
+        raise ValueError(
+            f"Invalid forecast level {forecast_level!r}. "
+            "Expected one of ['watch_warning', 'watch', 'warning']"
+        )
+    
     merged_table["Observed"] = merged_table["Observed"].fillna(False)
     # Derived purely from Base time -- lets contingency stats be filtered by
     # cyclone season (e.g. Season="2025-26") without needing a separate
@@ -1000,20 +1062,30 @@ def generate_all_tables_for_disturbance(
     output_dir: str | Path | None = None,
     x_hours: int = 0,
     y_hours: int = 24,
+    forecast_level: str = "watch_warning",
+    wind_level: str = "gale",
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
     state: str | None = None,
     season: str | None = None,
+    locations: gpd.GeoDataFrame | None = None,
+    forecasts: dict[str, dict] | None = None,
+    track: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame | dict]:
     """Generate Tables A-D for one disturbance, optionally limited by state.
 
     State filtering is applied to the TC Locations workbook before Table A is
     built, so Tables A-D all contain only locations from the requested state.
+
+    locations / forecasts / track replace the file inputs (towns.xlsx,
+    data/geojson, the best-track CSVs) when given; the database-backed
+    verification loader supplies all three.
     """
     print(f"##### Generating contingency tables for {disturbance_id} #####")
-    announce_best_track_source()
-    all_locations = load_locations()
+    if track is None:
+        announce_best_track_source()
+    all_locations = locations if locations is not None else load_locations()
     if state is not None:
         available_states = sorted(all_locations["state"].dropna().unique().tolist())
         locations_for_table_a = all_locations[
@@ -1035,6 +1107,7 @@ def generate_all_tables_for_disturbance(
         coastal_buffer_km=coastal_buffer_km,
         relevance_km=relevance_km,
         coastal_buffer_cutoff=coastal_buffer_cutoff,
+        forecasts=forecasts,
     )
 
     # Table B/C only need the locations that actually appear in Table A for
@@ -1047,12 +1120,18 @@ def generate_all_tables_for_disturbance(
         f"[relevant_locations] {len(locations)}/{len(locations_for_table_a)} location(s) appear in Table A for {disturbance_id}"
     )
 
-    table_b = generate_table_b(disturbance_id, locations)
+    table_b = generate_table_b(disturbance_id, locations, track=track)
     # Pass the Table B we just built straight in, rather than letting generate_table_c() rebuild it from scratch a second time.
     table_c = generate_table_c(
-        disturbance_id, locations, x_hours=x_hours, y_hours=y_hours, table_b=table_b
+        disturbance_id,
+        locations,
+        x_hours=x_hours,
+        y_hours=y_hours,
+        wind_level=wind_level,
+        table_b=table_b,
+        fcast_times=sorted(forecasts) if forecasts is not None else None,
     )
-    table_d = generate_table_d(table_a, table_c)
+    table_d = generate_table_d(table_a, table_c, forecast_level=forecast_level,)
     stats = generate_contingency_dict(table_d)
     matrix = get_contingency_matrix_df(stats)
 
@@ -1096,6 +1175,8 @@ def generate_all_tables_for_disturbances(
     output_dir: str | Path | None = None,
     x_hours: int = 0,
     y_hours: int = 24,
+    forecast_level: str = "watch_warning",
+    wind_level: str = "gale",
     coastal_buffer_km: float = DEFAULT_COASTAL_BUFFER_KM,
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
@@ -1119,6 +1200,8 @@ def generate_all_tables_for_disturbances(
             output_dir=output_dir,
             x_hours=x_hours,
             y_hours=y_hours,
+            forecast_level=forecast_level,
+            wind_level=wind_level,
             coastal_buffer_km=coastal_buffer_km,
             relevance_km=relevance_km,
             coastal_buffer_cutoff=coastal_buffer_cutoff,
@@ -1201,6 +1284,19 @@ def _parse_args() -> argparse.Namespace:
         default=24,
         help="Upper bound for observed-gale window in hours from base time (default 24: this is the Warning window's end; use 48 for the Watch window). Other windows (e.g. 30, 42) can also be explored.",
     )
+
+    parser.add_argument(
+    "--forecast-level",
+    choices=["watch", "warning", "watch_warning"],
+    default="watch_warning",
+)
+
+    parser.add_argument(
+        "--wind-level",
+        choices=["gale", "storm", "hurricane"],
+        default="gale",
+    )
+
     parser.add_argument(
         "--coastal-buffer-km",
         type=float,
@@ -1267,6 +1363,8 @@ if __name__ == "__main__":
                 output_dir=args.output_dir,
                 x_hours=args.x_hours,
                 y_hours=args.y_hours,
+                forecast_level=args.forecast_level,
+                wind_level=args.wind_level,
                 coastal_buffer_km=args.coastal_buffer_km,
                 relevance_km=args.relevance_km,
                 coastal_buffer_cutoff=coastal_buffer_cutoff,
@@ -1280,6 +1378,8 @@ if __name__ == "__main__":
                 output_dir=args.output_dir,
                 x_hours=args.x_hours,
                 y_hours=args.y_hours,
+                forecast_level=args.forecast_level,
+                wind_level=args.wind_level,
                 coastal_buffer_km=args.coastal_buffer_km,
                 relevance_km=args.relevance_km,
                 coastal_buffer_cutoff=coastal_buffer_cutoff,

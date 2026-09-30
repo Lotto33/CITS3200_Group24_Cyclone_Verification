@@ -24,6 +24,11 @@
     play: document.getElementById("playBtn"),
     info: document.getElementById("info"),
     status: document.getElementById("status"),
+    uploadStatus: document.getElementById("uploadStatus"),
+    uploadGmlBtn: document.getElementById("uploadGmlBtn"),
+    uploadBestTrackBtn: document.getElementById("uploadBestTrackBtn"),
+    gmlUploadInput: document.getElementById("gmlUploadInput"),
+    bestTrackUploadInput: document.getElementById("bestTrackUploadInput"),
     categoryLegend: document.getElementById("categoryLegend"),
     // Towns are static, so this checkbox is deliberately kept out of
     // els.layers -- everything in there is wired to renderBulletin().
@@ -39,6 +44,12 @@
       allBulletins: document.getElementById("layer-allBulletins"),
       bestTrack: document.getElementById("layer-bestTrack"),
     },
+    compareToggle: document.getElementById("compareToggle"),
+    comparePanel: document.getElementById("comparePanel"),
+    compareClose: document.getElementById("compareClose"),
+    compareSelectors: document.getElementById("compareSelectors"),
+    addCompareCyclone: document.getElementById("addCompareCyclone"),
+    compareStatus: document.getElementById("compareStatus"),
   };
 
   Object.entries(CATEGORY_COLORS).forEach(([cat, color]) => {
@@ -85,6 +96,7 @@
   const bulletinLayer = L.layerGroup().addTo(map);
   const ghostLayer = L.layerGroup().addTo(map);
   const bestTrackLayer = L.layerGroup().addTo(map);
+  const comparisonLayer = L.layerGroup().addTo(map);
   const townsLayer = L.layerGroup().addTo(map);
 
   let index = null;
@@ -94,6 +106,9 @@
   let currentIdx = 0;
   let playTimer = null;
   let towns = [];
+  let comparisonMode = false;
+  let compareSelections = [];
+  const COMPARE_COLORS = ["#2fd4d9", "#ff9f43", "#b06bff", "#3ddc84", "#ff5d5d"];
 
   const sidebar = document.getElementById("sidebar");
   const optionsToggle = document.getElementById("optionsToggle");
@@ -120,11 +135,51 @@
 
   optionsToggle.addEventListener("click", () => setSidebarOpen(sidebar.hidden));
   verificationTab.addEventListener("click", openVerificationTab);
+  els.compareToggle.addEventListener("click", () => {
+    if (comparisonMode) closeComparison();
+    else openComparison();
+  });
+  els.compareClose.addEventListener("click", closeComparison);
+  els.addCompareCyclone.addEventListener("click", () => {
+    if (compareSelections.length < 5) {
+      compareSelections.push("");
+      renderCompareSelectors();
+    }
+  });
   setSidebarOpen(true);
 
   function setStatus(msg, isError) {
     els.status.textContent = msg || "";
     els.status.className = isError ? "error" : "";
+  }
+
+  function setUploadStatus(msg, isError) {
+    els.uploadStatus.textContent = msg || "";
+    els.uploadStatus.className = isError ? "upload-status error" : "upload-status";
+  }
+
+  async function uploadDataset(file, endpoint, label) {
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    setUploadStatus(`Uploading ${label}…`);
+    try {
+      const response = await fetch(`${API_BASE}/datasets/${endpoint}`, { method: "POST", body: formData });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Failed to upload ${label}.`);
+      }
+      setUploadStatus(`${label} uploaded successfully.`);
+      if (endpoint === "upload") {
+        await loadIndex();
+      }
+      if (endpoint === "upload-best-track") {
+        await loadCyclone();
+      }
+    } catch (err) {
+      setUploadStatus(err.message || `Could not upload ${label}.`, true);
+      throw err;
+    }
   }
 
   function toLatLngs(coords) {
@@ -216,17 +271,100 @@
       .sort((a, b) => (a.firstIssue || "").localeCompare(b.firstIssue || ""));
     const selectedId = els.cyclone.value;
     els.cyclone.replaceChildren(...cyclones.map(c => {
-      const label = `${c.distName || c.distId} — ${c.distId} (${c.bulletinCount} bulletins, ${c.firstIssue ? c.firstIssue.slice(0,10) : "?"})${c.hasBestTrack ? " ★" : ""}`;
+      const name = c.distName ? String(c.distName).replace(/^Cyclone\s+/i, "").trim() : c.distId;
+      const label = `${name} - ${c.distId} (${c.bulletinCount} bulletins, ${c.firstIssue ? c.firstIssue.slice(0,10) : "?"})${c.hasBestTrack ? " ★" : ""}`;
       return new Option(label, c.distId);
     }));
     if (cyclones.length) {
       els.cyclone.value = cyclones.some(c => c.distId === selectedId) ? selectedId : cyclones[0].distId;
       loadCyclone();
+      renderCompareSelectors();
     } else {
       els.cyclone.replaceChildren(new Option("No cyclones available", ""));
       currentBulletins = [];
       renderBulletin();
     }
+  }
+
+  function cycloneOptions(selectedId) {
+    return [new Option("Select a cyclone", ""), ...Array.from(cyclonesById.values())
+      .sort((a, b) => (a.firstIssue || "").localeCompare(b.firstIssue || ""))
+      .map(c => new Option(
+        `${c.distName || c.distId} — ${c.distId}${c.hasBestTrack ? " ★" : ""}`,
+        c.distId, false, c.distId === selectedId
+      ))];
+  }
+
+  function renderCompareSelectors() {
+    if (!els.compareSelectors) return;
+    els.compareSelectors.replaceChildren(...compareSelections.map((selectedId, index) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "compare-selector";
+      const label = document.createElement("label");
+      label.textContent = `Cyclone ${index + 1}`;
+      const select = document.createElement("select");
+      select.append(...cycloneOptions(selectedId));
+      select.addEventListener("change", () => {
+        compareSelections[index] = select.value;
+        drawComparison();
+      });
+      wrapper.append(label, select);
+      return wrapper;
+    }));
+    els.addCompareCyclone.disabled = compareSelections.length >= 5;
+  }
+
+  function openComparison() {
+    comparisonMode = true;
+    if (!compareSelections.length) compareSelections = [els.cyclone.value || "", ""];
+    els.comparePanel.hidden = false;
+    els.compareToggle.textContent = "Back to visualizer options";
+    els.compareToggle.setAttribute("aria-expanded", "true");
+    document.getElementById("standardControls").hidden = true;
+    bulletinLayer.clearLayers();
+    ghostLayer.clearLayers();
+    bestTrackLayer.clearLayers();
+    townsLayer.clearLayers();
+    renderCompareSelectors();
+    drawComparison();
+  }
+
+  function closeComparison() {
+    comparisonMode = false;
+    els.comparePanel.hidden = true;
+    els.compareToggle.textContent = "Compare best tracks";
+    els.compareToggle.setAttribute("aria-expanded", "false");
+    document.getElementById("standardControls").hidden = false;
+    comparisonLayer.clearLayers();
+    renderBulletin(true);
+  }
+
+  async function drawComparison() {
+    if (!comparisonMode) return;
+    comparisonLayer.clearLayers();
+    const selected = [...new Set(compareSelections.filter(Boolean))];
+    if (!selected.length) {
+      els.compareStatus.textContent = "Choose at least one cyclone.";
+      return;
+    }
+    els.compareStatus.textContent = "Loading best tracks…";
+    const tracks = await Promise.all(selected.map(loadBestTrack));
+    if (!comparisonMode) return;
+    const bounds = [];
+    tracks.forEach((track, index) => {
+      if (!track || track.points.length < 2) return;
+      const color = COMPARE_COLORS[index];
+      const latlngs = track.points.map(point => [point.coord[1], point.coord[0]]);
+      L.polyline(latlngs, { color, weight: 4, opacity: 0.9 })
+        .bindPopup(`<b>${track.name || track.distId}</b><br>${bestTrackSummaryFor(track)}`)
+        .addTo(comparisonLayer);
+      bounds.push(...latlngs);
+    });
+    const available = tracks.filter(Boolean).length;
+    els.compareStatus.textContent = available
+      ? `${available} best track${available === 1 ? "" : "s"} shown.`
+      : "No best-track data is available for the selected cyclones.";
+    if (bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 9 });
   }
 
   // --- Best track -------------------------------------------------------
@@ -307,10 +445,14 @@
   }
 
   function bestTrackSummary() {
-    if (!currentBestTrack) return "not available";
-    const n = currentBestTrack.points.length;
-    if (currentBestTrack.source !== "interpolated") return `${n} points (raw 6-hourly BoM fixes)`;
-    const step = trackStepMinutes(currentBestTrack.points);
+    return bestTrackSummaryFor(currentBestTrack);
+  }
+
+  function bestTrackSummaryFor(track) {
+    if (!track) return "not available";
+    const n = track.points.length;
+    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BoM fixes)`;
+    const step = trackStepMinutes(track.points);
     return `${n} points (interpolated${step ? ` ${step}-minute` : ""} grid, as verified)`;
   }
 
@@ -491,6 +633,28 @@
   }
 
   els.cyclone.addEventListener("change", loadCyclone);
+  els.uploadGmlBtn.addEventListener("click", () => els.gmlUploadInput.click());
+  els.gmlUploadInput.addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      await uploadDataset(file, "upload", "GML archive");
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  els.uploadBestTrackBtn.addEventListener("click", () => els.bestTrackUploadInput.click());
+  els.bestTrackUploadInput.addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      await uploadDataset(file, "upload-best-track", "best track CSV");
+    } finally {
+      event.target.value = "";
+    }
+  });
+
   els.slider.addEventListener("input", () => {
     stopPlay(); currentIdx = Number(els.slider.value); renderBulletin(false);
   });

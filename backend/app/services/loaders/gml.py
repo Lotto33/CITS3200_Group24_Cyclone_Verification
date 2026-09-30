@@ -100,8 +100,13 @@ def iter_gml_files(region: str | None = None) -> Iterator[tuple[str, Path]]:
         if region and name != region:
             continue
         for path in sorted(directory.rglob("*.gml")):
-            if path.is_file():
-                yield name, path
+            if not path.is_file():
+                continue
+
+            if ".ipynb_checkpoints" in path.parts:
+                continue
+
+            yield name, path
 
 
 def product_id_of(path: Path) -> str | None:
