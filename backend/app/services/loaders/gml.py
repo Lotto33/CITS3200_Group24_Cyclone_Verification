@@ -543,7 +543,12 @@ def load_bulletin_file(
         )
     ).scalar_one_or_none()
     outcome, prepared = _prepare(
-        region, path, known_hash=known_hash, force=force, stats=stats
+        region,
+        path,
+        known_hash=known_hash,
+        force=force,
+        stats=stats,
+        data_dir=data_dir,
     )
     if prepared is not None:
         _write_batch(session, [prepared], ingest_run_id=ingest_run_id, stats=stats)

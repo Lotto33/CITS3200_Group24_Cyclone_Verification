@@ -99,13 +99,28 @@
         log.scrollTop = log.scrollHeight;
     }
     async function waitForUploadJob(jobId, filename, description) {
+        var _a;
         let offset = 0;
-        while (true) {
-            const job = await requestJson(`/datasets/jobs/${encodeURIComponent(jobId)}?since=${offset}`);
+        const deadline = Date.now() + 30 * 60 * 1000;
+        while (Date.now() < deadline) {
+            let job;
+            try {
+                job = await requestJson(`/datasets/jobs/${encodeURIComponent(jobId)}?since=${offset}`);
+            }
+            catch (error) {
+                const requestError = error;
+                if (requestError.status === 404) {
+                    throw new Error("The upload job is no longer available. The server may have restarted; please upload the file again.");
+                }
+                throw error;
+            }
             appendBackendMessages(job.messages);
             offset = job.next;
             if (job.status === "completed") {
-                updateUploadProgress("Backend processing complete", `${filename}: ${description} processing completed successfully.`);
+                const interpolationError = (_a = job.result) === null || _a === void 0 ? void 0 : _a.interpolation_error;
+                updateUploadProgress(interpolationError ? "Upload complete with warning" : "Backend processing complete", interpolationError
+                    ? `${filename}: uploaded successfully, but interpolation was skipped: ${interpolationError}`
+                    : `${filename}: ${description} processing completed successfully.`, 100);
                 return;
             }
             if (job.status === "failed")
@@ -113,6 +128,7 @@
             updateUploadProgress(job.status === "queued" ? "Waiting for backend" : "Backend processing", job.messages[job.messages.length - 1] || `${filename}: waiting for backend pipeline messages.`);
             await new Promise((resolve) => window.setTimeout(resolve, 650));
         }
+        throw new Error("The upload job exceeded the 30-minute polling limit. Check the backend logs and try again.");
     }
     async function requestJson(path, init) {
         const response = await fetch(`${API_BASE}${path}`, init);
@@ -121,7 +137,9 @@
             const detail = typeof payload === "object" && payload !== null && "detail" in payload
                 ? String(payload.detail)
                 : `HTTP ${response.status}`;
-            throw new Error(detail);
+            const error = new Error(detail);
+            error.status = response.status;
+            throw error;
         }
         return payload;
     }

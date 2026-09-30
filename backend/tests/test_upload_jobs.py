@@ -1,4 +1,9 @@
+from contextlib import contextmanager
+from pathlib import Path
 from time import monotonic, sleep
+from zipfile import ZipFile
+
+import pandas as pd
 
 from app.api.v1.endpoints import datasets
 from app.services import upload_jobs
@@ -51,9 +56,14 @@ def test_upload_route_exposes_backend_messages(client, monkeypatch):
     monkeypatch.setattr(
         datasets.dataset_service, "process_uploaded_gml_archive", fake_process
     )
+    import io
+
+    archive = io.BytesIO()
+    with ZipFile(archive, "w") as zip_file:
+        zip_file.writestr("NT_GMLs/example.gml", "<gml />")
     response = client.post(
         "/api/v1/datasets/upload",
-        files={"file": ("dataset.zip", b"zip contents", "application/zip")},
+        files={"file": ("dataset.zip", archive.getvalue(), "application/zip")},
     )
     assert response.status_code == 200
     job_id = response.json()["job_id"]
@@ -69,3 +79,121 @@ def test_upload_route_exposes_backend_messages(client, monkeypatch):
 
     assert job["status"] == "completed"
     assert "Total GML files: 3448" in job["messages"]
+
+
+def test_best_track_upload_route_returns_job(client, monkeypatch):
+    monkeypatch.setattr(datasets, "read_best_track_csv", lambda path: pd.DataFrame())
+    monkeypatch.setattr(
+        datasets.dataset_service,
+        "process_uploaded_best_track",
+        lambda path, data_dir: {"status": "success"},
+    )
+    response = client.post(
+        "/api/v1/datasets/upload-best-track",
+        files={"file": ("track.csv", b"valid enough", "text/csv")},
+    )
+    assert response.status_code == 200
+    assert response.json()["job_id"]
+
+
+def test_failed_job_reports_error_and_removes_temp_file(client, monkeypatch):
+    captured: list[Path] = []
+
+    def fail(path, data_dir):
+        captured.append(path)
+        raise ValueError("pipeline failed")
+
+    monkeypatch.setattr(datasets.dataset_service, "process_uploaded_best_track", fail)
+    monkeypatch.setattr(datasets, "read_best_track_csv", lambda path: pd.DataFrame())
+    response = client.post(
+        "/api/v1/datasets/upload-best-track",
+        files={"file": ("track.csv", b"valid enough", "text/csv")},
+    )
+    job = wait_for_job(response.json()["job_id"])
+    assert job["status"] == "failed"
+    assert job["error"] == "pipeline failed"
+    assert captured and not captured[0].exists()
+
+
+class _FakeSession:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def commit(self):
+        pass
+
+
+def test_gml_upload_processing_calls_database_loader(tmp_path, monkeypatch):
+    from app.services import dataset_service
+
+    archive = tmp_path / "gml.zip"
+    with ZipFile(archive, "w") as zip_file:
+        zip_file.writestr("NT_GMLs/example.gml", "<gml />")
+    calls = {}
+
+    monkeypatch.setattr(
+        dataset_service,
+        "process_gml_dataset",
+        lambda input_dir, data_dir: {"status": "static"},
+    )
+    monkeypatch.setattr(dataset_service, "SessionLocal", lambda: _FakeSession())
+    monkeypatch.setattr(
+        dataset_service,
+        "load_bulletins",
+        lambda session, **kwargs: calls.update(kwargs)
+        or {
+            "rows_read": 1,
+            "rows_written": 1,
+            "rows_skipped": 0,
+            "no_key": 0,
+        },
+    )
+    monkeypatch.setattr(dataset_service, "ingest_run", fake_ingest_run)
+    result = dataset_service.process_uploaded_gml_archive(archive, tmp_path / "data")
+    assert result["database_gml_rows_written"] == 1
+    assert calls["data_dir"].name == "NT_GMLs"
+
+
+def test_best_track_processing_calls_database_loaders(tmp_path, monkeypatch):
+    from app.services import dataset_service
+
+    source = tmp_path / "track.csv"
+    source.write_bytes(b"track")
+    calls = []
+    monkeypatch.setattr(
+        dataset_service,
+        "read_best_track_csv",
+        lambda path: pd.DataFrame({"id": [1]}),
+    )
+    monkeypatch.setattr(dataset_service, "SessionLocal", lambda: _FakeSession())
+    monkeypatch.setattr(
+        dataset_service,
+        "load_best_track",
+        lambda *args, **kwargs: calls.append("best")
+        or {"rows_read": 1, "rows_written": 1},
+    )
+    monkeypatch.setattr(
+        dataset_service,
+        "load_interpolation",
+        lambda *args, **kwargs: calls.append("interpolation")
+        or {"rows_read": 1, "rows_written": 2},
+    )
+    monkeypatch.setattr(dataset_service, "ingest_run", fake_ingest_run)
+    result = dataset_service.process_uploaded_best_track(source, tmp_path / "data")
+    assert calls == ["best", "interpolation"]
+    assert result["interpolation"]["rows_written"] == 2
+
+
+@contextmanager
+def fake_ingest_run(session, kind, **kwargs):
+    class Run:
+        id = 1
+        rows_read = 0
+        rows_written = 0
+        rows_skipped = 0
+        stats = {}
+
+    yield Run()

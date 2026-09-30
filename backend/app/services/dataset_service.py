@@ -1,6 +1,6 @@
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from app.build_gml_dataset import build
 from app.db.session import SessionLocal
@@ -119,7 +119,13 @@ def get_status(data_dir: Path) -> dict:
 
 
 def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
-    """Extract a GML ZIP and immediately run the existing parser."""
+    """Build static artifacts before committing the uploaded GML database ingest.
+
+    The filesystem build and database transaction cannot be truly atomic; this
+    ordering avoids committing database rows when static viewer generation
+    fails. A database failure after the build leaves valid static artifacts but
+    no successful ingest run, which the job result reports.
+    """
     archive_path = Path(archive_path).resolve()
     if not archive_path.is_file() or archive_path.suffix.lower() != ".zip":
         raise ValueError("Expected a .zip archive containing *_GMLs directories")
@@ -128,8 +134,8 @@ def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
         staging_dir = Path(temp_dir)
         with zipfile.ZipFile(archive_path) as archive:
             for member in archive.infolist():
-                target = (staging_dir / member.filename).resolve()
-                if target != staging_dir and staging_dir not in target.parents:
+                member_path = PurePosixPath(member.filename)
+                if member_path.is_absolute() or ".." in member_path.parts:
                     raise ValueError("ZIP contains an unsafe path")
             archive.extractall(staging_dir)
 
@@ -138,6 +144,8 @@ def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
         children = list(staging_dir.iterdir())
         if len(children) == 1 and children[0].is_dir():
             input_dir = children[0]
+        print("=== Static viewer dataset generation ===")
+        static_result = process_gml_dataset(input_dir, data_dir)
         print("=== Database ingest: GML bulletins ===")
         with SessionLocal() as session:
             stats = Stats()
@@ -161,8 +169,9 @@ def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
             f"Database GML ingest: {counts['rows_read']} files read, "
             f"{counts['rows_written']} written, {counts['rows_skipped']} unchanged"
         )
-        print("=== Static viewer dataset generation ===")
-        return process_gml_dataset(input_dir, data_dir)
+        static_result["database_gml_rows_written"] = counts["rows_written"]
+        static_result["database_gml_rows_read"] = counts["rows_read"]
+        return static_result
 
 
 def interpolate_and_process_dataset(data_dir: Path) -> dict:

@@ -169,7 +169,27 @@
       if (!response.ok) {
         throw new Error(payload.detail || `Failed to upload ${label}.`);
       }
-      setUploadStatus(`${label} uploaded successfully.`);
+      if (!payload.job_id) throw new Error("The server did not return an upload job ID.");
+      let offset = 0;
+      const deadline = Date.now() + 30 * 60 * 1000;
+      while (Date.now() < deadline) {
+        const jobResponse = await fetch(`${API_BASE}/datasets/jobs/${encodeURIComponent(payload.job_id)}?since=${offset}`);
+        if (jobResponse.status === 404) throw new Error("The upload job is no longer available; the server may have restarted.");
+        const job = await jobResponse.json().catch(() => ({}));
+        if (!jobResponse.ok) throw new Error(job.detail || `Could not read ${label} processing status.`);
+        offset = job.next || offset;
+        const lastMessage = job.messages && job.messages.length ? job.messages[job.messages.length - 1] : `Processing ${label}…`;
+        setUploadStatus(lastMessage);
+        if (job.status === "completed") {
+          setUploadStatus(job.result?.interpolation_error
+            ? `${label} uploaded; interpolation warning: ${job.result.interpolation_error}`
+            : `${label} uploaded and processed successfully.`);
+          break;
+        }
+        if (job.status === "failed") throw new Error(job.error || `${label} processing failed.`);
+        await new Promise(resolve => setTimeout(resolve, 650));
+      }
+      if (Date.now() >= deadline) throw new Error(`${label} processing exceeded the 30-minute limit.`);
       if (endpoint === "upload") {
         await loadIndex();
       }

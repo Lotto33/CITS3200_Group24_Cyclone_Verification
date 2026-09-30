@@ -22,7 +22,9 @@
   interface UploadJobStatus {
     job_id: string; description: string; status: "queued" | "running" | "completed" | "failed";
     messages: string[]; next: number; error: string | null;
+    result: { interpolation_error?: string | null } | null;
   }
+  interface RequestError extends Error { status?: number }
   interface SavedContext { distId?: string; distName?: string; region?: string; season?: string; bulletin?: string }
   interface TableRequest {
     disturbance_ids: string[]; season: string | null; state: string | null;
@@ -132,12 +134,29 @@
 
   async function waitForUploadJob(jobId: string, filename: string, description: string): Promise<void> {
     let offset = 0;
-    while (true) {
-      const job = await requestJson<UploadJobStatus>(`/datasets/jobs/${encodeURIComponent(jobId)}?since=${offset}`);
+    const deadline = Date.now() + 30 * 60 * 1000;
+    while (Date.now() < deadline) {
+      let job: UploadJobStatus;
+      try {
+        job = await requestJson<UploadJobStatus>(`/datasets/jobs/${encodeURIComponent(jobId)}?since=${offset}`);
+      } catch (error) {
+        const requestError = error as RequestError;
+        if (requestError.status === 404) {
+          throw new Error("The upload job is no longer available. The server may have restarted; please upload the file again.");
+        }
+        throw error;
+      }
       appendBackendMessages(job.messages);
       offset = job.next;
       if (job.status === "completed") {
-        updateUploadProgress("Backend processing complete", `${filename}: ${description} processing completed successfully.`);
+        const interpolationError = job.result?.interpolation_error;
+        updateUploadProgress(
+          interpolationError ? "Upload complete with warning" : "Backend processing complete",
+          interpolationError
+            ? `${filename}: uploaded successfully, but interpolation was skipped: ${interpolationError}`
+            : `${filename}: ${description} processing completed successfully.`,
+          100,
+        );
         return;
       }
       if (job.status === "failed") throw new Error(job.error || `${description} processing failed.`);
@@ -147,6 +166,7 @@
       );
       await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
     }
+    throw new Error("The upload job exceeded the 30-minute polling limit. Check the backend logs and try again.");
   }
 
   async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -156,7 +176,9 @@
       const detail = typeof payload === "object" && payload !== null && "detail" in payload
         ? String((payload as { detail: unknown }).detail)
         : `HTTP ${response.status}`;
-      throw new Error(detail);
+      const error = new Error(detail) as RequestError;
+      error.status = response.status;
+      throw error;
     }
     return payload as T;
   }

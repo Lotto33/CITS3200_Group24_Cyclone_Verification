@@ -1,4 +1,6 @@
-from pathlib import Path
+import shutil
+import zipfile
+from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile
 from typing import Annotated
 
@@ -6,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.core.config import settings
 from app.services import dataset_service, upload_jobs
+from app.services.loaders.best_track import read_best_track_csv
 
 router = APIRouter()
 
@@ -27,7 +30,14 @@ def dataset_status():
     return dataset_service.get_status(settings.DATA_DIR)
 
 
-@router.post("/upload")
+@router.post(
+    "/upload",
+    summary="Upload and ingest a GML archive asynchronously",
+    description=(
+        "Validates the ZIP synchronously, then returns a job ID. Poll "
+        "`/datasets/jobs/{job_id}` for processing messages and the result."
+    ),
+)
 def upload_gml_archive(file: Annotated[UploadFile, File()]):
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(
@@ -39,7 +49,13 @@ def upload_gml_archive(file: Annotated[UploadFile, File()]):
         suffix=".zip", dir=settings.UPLOAD_DIR, delete=False
     ) as output:
         archive_path = Path(output.name)
-        output.write(file.file.read())
+        shutil.copyfileobj(file.file, output)
+
+    try:
+        _validate_gml_archive(archive_path)
+    except (ValueError, zipfile.BadZipFile) as exc:
+        archive_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def process() -> dict:
         try:
@@ -67,7 +83,14 @@ def interpolate_best_track():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/upload-best-track")
+@router.post(
+    "/upload-best-track",
+    summary="Upload and ingest a best-track CSV asynchronously",
+    description=(
+        "Validates the CSV synchronously, then returns a job ID. Poll "
+        "`/datasets/jobs/{job_id}` for processing messages and the result."
+    ),
+)
 def upload_best_track(file: Annotated[UploadFile, File()]):
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Upload a best-track .csv file")
@@ -76,7 +99,13 @@ def upload_best_track(file: Annotated[UploadFile, File()]):
         suffix=".csv", dir=settings.UPLOAD_DIR, delete=False
     ) as output:
         upload_path = Path(output.name)
-        output.write(file.file.read())
+        shutil.copyfileobj(file.file, output)
+
+    try:
+        read_best_track_csv(upload_path)
+    except (OSError, ValueError) as exc:
+        upload_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def process() -> dict:
         try:
@@ -92,6 +121,26 @@ def upload_best_track(file: Annotated[UploadFile, File()]):
     except Exception:
         upload_path.unlink(missing_ok=True)
         raise
+
+
+def _validate_gml_archive(path: Path) -> None:
+    """Reject valid ZIPs that do not contain a supported GML region folder."""
+    with zipfile.ZipFile(path) as archive:
+        has_region = False
+        has_gml = False
+        for member in archive.infolist():
+            member_path = PurePosixPath(member.filename)
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise ValueError("ZIP contains an unsafe path")
+            parts = Path(member.filename).parts
+            if any(part.endswith("_GMLs") for part in parts):
+                has_region = True
+            if Path(member.filename).suffix.lower() == ".gml":
+                has_gml = True
+        if not has_region or not has_gml:
+            raise ValueError(
+                "ZIP must contain at least one *_GMLs folder with .gml files"
+            )
 
 
 @router.get("/jobs/{job_id}")
