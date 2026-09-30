@@ -485,7 +485,7 @@ def get_best_track_geojson(cyclone_id: str) -> dict | None:
     )
     interpolated_data = interpolated_data.dropna(subset=["LAT", "LON"])
 
-    line = LineString(zip(interpolated_data.LON, interpolated_data.LAT))
+    line = LineString(zip(interpolated_data.LON, interpolated_data.LAT, strict=True))
     gdf = gpd.GeoDataFrame(
         [{"disturbance_id": cyclone_id}], geometry=[line], crs="EPSG:4283"
     )

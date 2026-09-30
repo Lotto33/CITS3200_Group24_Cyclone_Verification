@@ -201,7 +201,7 @@ def split_at_antimeridian(coords):
     segments = []
     current_segment = [coords[0]]
 
-    for prev_coord, curr_coord in zip(coords, coords[1:]):
+    for prev_coord, curr_coord in zip(coords, coords[1:], strict=False):
         if abs(curr_coord[0] - prev_coord[0]) > 180:
             crossing = interpolate_crossing(prev_coord, curr_coord)
             if crossing is not None:
@@ -249,7 +249,7 @@ def signed_area(ring):
         return 0.0
 
     area = 0.0
-    for (x1, y1), (x2, y2) in zip(ring, ring[1:]):
+    for (x1, y1), (x2, y2) in zip(ring, ring[1:], strict=False):
         area += (x1 * y2) - (x2 * y1)
     return area / 2.0
 

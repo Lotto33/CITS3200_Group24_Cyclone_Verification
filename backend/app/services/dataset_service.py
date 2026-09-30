@@ -28,7 +28,8 @@ def process_gml_dataset(input_dir: Path, data_dir: Path) -> dict:
         raise ValueError(
             f"No region GML directories found in {input_dir}; expected folders such as WA_GMLs"
         )
-    #NOTE : FOR DEBUGGING This counts the number of .gml files in the region directories. If there are no .gml files, it raises a ValueError.
+    #NOTE : FOR DEBUGGING This counts the number of .gml files in the region directories. 
+    # If there are no .gml files, it raises a ValueError.
     gml_file_count = sum(
         1 for region_dir in region_dirs
         for path in region_dir.iterdir()
