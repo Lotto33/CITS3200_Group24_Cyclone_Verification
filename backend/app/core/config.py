@@ -35,7 +35,10 @@ class Settings(BaseSettings):
     # carry. See app/api/v1/endpoints/bulletins.py.
     MAX_RESPONSE_VERTICES: int = 200_000
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(PROJECT_ROOT / ".env", PROJECT_ROOT / "backend" / ".env"),
+        extra="ignore",
+    )
 
     REPO_ROOT: Path = PROJECT_ROOT
     GML_DIR: Path = DATA_DIR / "gml"
