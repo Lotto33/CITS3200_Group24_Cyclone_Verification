@@ -1,9 +1,15 @@
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from app.build_gml_dataset import build
+from app.db.session import SessionLocal
+from app.models.enums import IngestKind, TrackDataset
 from app.services.interpolation.interpolation_pipeline import run_interpolation_pipeline
+from app.services.loaders.best_track import load_best_track, read_best_track_csv
+from app.services.loaders.common import Stats, ingest_run
+from app.services.loaders.gml import load_bulletins
+from app.services.loaders.interpolation import load_interpolation
 
 
 def process_gml_dataset(input_dir: Path, data_dir: Path) -> dict:
@@ -26,10 +32,10 @@ def process_gml_dataset(input_dir: Path, data_dir: Path) -> dict:
     )
     if not region_dirs:
         raise ValueError(
-            f"No region GML directories found in {input_dir}; expected folders such as WA_GMLs"
+            f"No region GML directories found in {input_dir}; expected folders "
+            "such as WA_GMLs"
         )
-    #NOTE : FOR DEBUGGING This counts the number of .gml files in the region directories. 
-    # If there are no .gml files, it raises a ValueError.
+    # NOTE: This validates that the uploaded region directories contain GML files.
     gml_file_count = sum(
         1 for region_dir in region_dirs
         for path in region_dir.iterdir()
@@ -63,16 +69,22 @@ def process_gml_dataset(input_dir: Path, data_dir: Path) -> dict:
     )
     generated_region_json_count = sum(
         1 for region_dir in data_dir.iterdir()
-        if region_dir.is_dir() and region_dir.name in {path.name.removesuffix("_GMLs") for path in region_dirs}
+        if region_dir.is_dir()
+        and region_dir.name
+        in {path.name.removesuffix("_GMLs") for path in region_dirs}
         for path in region_dir.glob("*.json")
         if path.is_file()
     )
 
     index_path = data_dir / "index.json"
     if not index_path.is_file():
-        raise RuntimeError(f"Parser completed without generating expected index: {index_path}")
+        raise RuntimeError(
+            f"Parser completed without generating expected index: {index_path}"
+        )
     if generated_geojson_count == 0:
-        raise RuntimeError(f"Parser completed without generating GeoJSON files under {geojson_dir}")
+        raise RuntimeError(
+            f"Parser completed without generating GeoJSON files under {geojson_dir}"
+        )
 
     return {
         "status": "success",
@@ -107,7 +119,13 @@ def get_status(data_dir: Path) -> dict:
 
 
 def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
-    """Extract a GML ZIP and immediately run the existing parser."""
+    """Build static artifacts before committing the uploaded GML database ingest.
+
+    The filesystem build and database transaction cannot be truly atomic; this
+    ordering avoids committing database rows when static viewer generation
+    fails. A database failure after the build leaves valid static artifacts but
+    no successful ingest run, which the job result reports.
+    """
     archive_path = Path(archive_path).resolve()
     if not archive_path.is_file() or archive_path.suffix.lower() != ".zip":
         raise ValueError("Expected a .zip archive containing *_GMLs directories")
@@ -116,8 +134,8 @@ def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
         staging_dir = Path(temp_dir)
         with zipfile.ZipFile(archive_path) as archive:
             for member in archive.infolist():
-                target = (staging_dir / member.filename).resolve()
-                if target != staging_dir and staging_dir not in target.parents:
+                member_path = PurePosixPath(member.filename)
+                if member_path.is_absolute() or ".." in member_path.parts:
                     raise ValueError("ZIP contains an unsafe path")
             archive.extractall(staging_dir)
 
@@ -126,7 +144,34 @@ def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
         children = list(staging_dir.iterdir())
         if len(children) == 1 and children[0].is_dir():
             input_dir = children[0]
-        return process_gml_dataset(input_dir, data_dir)
+        print("=== Static viewer dataset generation ===")
+        static_result = process_gml_dataset(input_dir, data_dir)
+        print("=== Database ingest: GML bulletins ===")
+        with SessionLocal() as session:
+            stats = Stats()
+            with ingest_run(
+                session,
+                IngestKind.GML,
+                source=f"uploaded:{archive_path.name}",
+            ) as run:
+                counts = load_bulletins(
+                    session,
+                    data_dir=input_dir,
+                    ingest_run_id=run.id,
+                    stats=stats,
+                )
+                run.rows_read = counts["rows_read"]
+                run.rows_written = counts["rows_written"]
+                run.rows_skipped = counts["rows_skipped"]
+                run.stats = stats.as_dict()
+            session.commit()
+        print(
+            f"Database GML ingest: {counts['rows_read']} files read, "
+            f"{counts['rows_written']} written, {counts['rows_skipped']} unchanged"
+        )
+        static_result["database_gml_rows_written"] = counts["rows_written"]
+        static_result["database_gml_rows_read"] = counts["rows_read"]
+        return static_result
 
 
 def interpolate_and_process_dataset(data_dir: Path) -> dict:
@@ -136,7 +181,7 @@ def interpolate_and_process_dataset(data_dir: Path) -> dict:
 
 
 def process_uploaded_best_track(csv_path: Path, data_dir: Path) -> dict:
-    """Store a raw best-track upload, interpolate it, then rebuild datasets."""
+    """Store a best-track upload in the DB and create DB interpolation points."""
     csv_path = Path(csv_path).resolve()
     data_dir = Path(data_dir).resolve()
     if not csv_path.is_file() or csv_path.suffix.lower() != ".csv":
@@ -145,4 +190,69 @@ def process_uploaded_best_track(csv_path: Path, data_dir: Path) -> dict:
     raw_target = data_dir / "best_track.csv"
     raw_target.parent.mkdir(parents=True, exist_ok=True)
     raw_target.write_bytes(csv_path.read_bytes())
-    return interpolate_and_process_dataset(data_dir)
+
+    print("=== Database ingest: best-track observations ===")
+    with SessionLocal() as session:
+        stats = Stats()
+        frame = read_best_track_csv(raw_target)
+        with ingest_run(
+            session,
+            IngestKind.BEST_TRACK,
+            source=str(raw_target),
+        ) as run:
+            counts = load_best_track(
+                session,
+                frame,
+                dataset=TrackDataset.BOM_BEST_TRACK,
+                ingest_run_id=run.id,
+                stats=stats,
+            )
+            run.rows_read = counts["rows_read"]
+            run.rows_written = counts["rows_written"]
+            run.stats = stats.as_dict()
+        session.commit()
+        print(
+            f"Database best-track ingest: {counts['rows_read']} rows read, "
+            f"{counts['rows_written']} observations written"
+        )
+
+        interpolation: dict[str, int] | None = None
+        interpolation_error: str | None = None
+        try:
+            print("=== Database interpolation ===")
+            interpolation_stats = Stats()
+            with ingest_run(
+                session,
+                IngestKind.INTERPOLATION,
+                source="uploaded best-track observations",
+            ) as run:
+                interpolation = load_interpolation(
+                    session,
+                    dataset=TrackDataset.BOM_BEST_TRACK,
+                    label="uploaded best-track",
+                    replace=True,
+                    stats=interpolation_stats,
+                )
+                run.rows_read = interpolation["rows_read"]
+                run.rows_written = interpolation["rows_written"]
+                run.stats = interpolation_stats.as_dict()
+            session.commit()
+            print(
+                "Database interpolation: "
+                f"{interpolation['rows_written']} points written"
+            )
+        except ValueError as exc:
+            # The raw best-track ingest is useful even when no watch/warning
+            # bulletins exist yet to constrain interpolation.
+            session.rollback()
+            interpolation_error = str(exc)
+            print(f"Database interpolation skipped: {interpolation_error}")
+
+    return {
+        "status": "success",
+        "best_track_csv": str(raw_target),
+        "rows_read": counts["rows_read"],
+        "rows_written": counts["rows_written"],
+        "interpolation": interpolation,
+        "interpolation_error": interpolation_error,
+    }

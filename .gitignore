@@ -58,6 +58,10 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
+
+# Node / TypeScript (frontend/)
+node_modules/
+
 db.sqlite3
 db.sqlite3-journal
 

@@ -68,6 +68,24 @@ see [Data sources](#data-sources) below.
 [docs/architecture.md](docs/architecture.md) explains how the two pipelines,
 the backend layers and the viewer's data sources fit together.
 
+## The verification page (`verification.html`)
+
+Unlike the viewers below, this page is generated code: it is written in
+TypeScript under `frontend/src/` and compiled to `assets/verification.js`,
+which is what `verification.html` and the FastAPI app actually serve. It
+calls `POST /api/v1/contingency-tables/` to build a real contingency table
+and skill scores for a cyclone/season/state selection. Rebuild it after
+editing the source:
+
+```bash
+cd frontend
+npm install
+npm run build     # or: npm run watch
+```
+
+The compiled `assets/verification.js` is committed, so this step is only
+needed when changing `frontend/src/verification.ts`.
+
 ## Visualizing the BOM cyclone GML data
 
 `data/NT_GMLs`, `data/QLD_GMLs`, `data/WA_GMLs` contain ~3,450 individual BOM
