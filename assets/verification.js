@@ -4,6 +4,7 @@
     "use strict";
     const API_BASE = "/api/v1";
     const ALL_VALUE = "__all__";
+    const SUPPORTED_STATES = ["NT", "QLD", "WA"];
     const tableInstances = document.getElementById("tableInstances");
     const firstInstance = tableInstances === null || tableInstances === void 0 ? void 0 : tableInstances.querySelector(".table-instance");
     const savedContext = JSON.parse(localStorage.getItem("cycloneVerification") || "null") || {};
@@ -161,7 +162,16 @@
             requestJson("/towns"),
         ]);
         disturbances = disturbanceRows;
-        states = [...new Set(townRows.map((town) => town.state).filter(Boolean))].sort();
+        states = [...new Set([
+                ...SUPPORTED_STATES,
+                ...townRows.map((town) => town.state).filter(Boolean),
+            ])].sort((a, b) => {
+            const rank = (state) => {
+                const index = SUPPORTED_STATES.indexOf(state);
+                return index < 0 ? SUPPORTED_STATES.length : index;
+            };
+            return rank(a) - rank(b) || a.localeCompare(b);
+        });
         document.querySelectorAll(".table-instance").forEach(populateInstanceFilters);
     }
     function selected(select) {
@@ -301,7 +311,6 @@
             ["Precision", formatPercent(hit, hit + falseAlarm)],
             ["Recall", formatPercent(hit, hit + miss)],
             ["F1 score", precision + recall ? `${(2 * precision * recall / (precision + recall) * 100).toFixed(1)}%` : "—"],
-            ["POD", formatPercent(hit, hit + miss)],
             ["FAR", formatPercent(falseAlarm, hit + falseAlarm)],
             ["CSI", formatPercent(hit, hit + falseAlarm + miss)],
             ["Bias", hit + miss ? ((hit + falseAlarm) / (hit + miss)).toFixed(2) : "—"],
