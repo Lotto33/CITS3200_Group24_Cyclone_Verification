@@ -553,6 +553,20 @@ def list_disturbance_ids_for_season(season: str) -> list[str]:
     return result
 
 
+def filter_base_times(
+    fcast_times: list[str], base_time_hours: list[int] | None
+) -> list[str]:
+    """Keep only forecast timestamps whose UTC hour is selected."""
+    if base_time_hours is None:
+        return sorted(fcast_times)
+    selected = set(base_time_hours)
+    return [
+        fcast_time
+        for fcast_time in sorted(fcast_times)
+        if pd.to_datetime(fcast_time, utc=True).hour in selected
+    ]
+
+
 """See the client's scope and deliverables"""
 
 
@@ -563,6 +577,8 @@ def generate_table_a(
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
     forecasts: dict[str, dict] | None = None,
+    fcast_times: list[str] | None = None,
+    base_time_hours: list[int] | None = None,
 ) -> pd.DataFrame:
     """
     create a table from the forecast polygons for each forecast base time including relevant locations
@@ -606,11 +622,14 @@ def generate_table_a(
         locations = load_locations()
     rows = []
     if forecasts is not None:
-        fcast_times = sorted(forecasts)
+        available_times = sorted(forecasts)
+    elif fcast_times is not None:
+        available_times = fcast_times
     else:
-        fcast_times = get_reference_times(disturbance_id)
-    for i, fcast_time in enumerate(fcast_times, start=1):
-        print(f"[table_a] ({i}/{len(fcast_times)}) base time {fcast_time}")
+        available_times = get_reference_times(disturbance_id)
+    selected_times = filter_base_times(available_times, base_time_hours)
+    for i, fcast_time in enumerate(selected_times, start=1):
+        print(f"[table_a] ({i}/{len(selected_times)}) base time {fcast_time}")
         if forecasts is not None:
             geo = forecasts[fcast_time]
         else:
@@ -1043,6 +1062,7 @@ def _output_filename_prefix(
     identifier: str,
     state: str | None = None,
     season: str | None = None,
+    base_time_hours: list[int] | None = None,
     generated_date: date | None = None,
 ) -> str:
     """Build a readable output prefix containing applied filters and run date."""
@@ -1051,6 +1071,8 @@ def _output_filename_prefix(
         parts.append(f"season-{season}")
     if state is not None:
         parts.append(f"state-{state}")
+    if base_time_hours is not None:
+        parts.append("base-times-" + "-".join(f"{hour:02d}" for hour in base_time_hours))
     parts.append(
         f"date-{(generated_date or date.today()).isoformat().replace('-', '')}"
     )
@@ -1072,6 +1094,7 @@ def generate_all_tables_for_disturbance(
     locations: gpd.GeoDataFrame | None = None,
     forecasts: dict[str, dict] | None = None,
     track: pd.DataFrame | None = None,
+    base_time_hours: list[int] | None = None,
 ) -> dict[str, pd.DataFrame | dict]:
     """Generate Tables A-D for one disturbance, optionally limited by state.
 
@@ -1101,13 +1124,25 @@ def generate_all_tables_for_disturbance(
     else:
         locations_for_table_a = all_locations
 
+    if forecasts is not None:
+        available_times = sorted(forecasts)
+    else:
+        available_times = get_reference_times(disturbance_id)
+    selected_times = filter_base_times(available_times, base_time_hours)
+    selected_forecasts = (
+        {time: forecasts[time] for time in selected_times}
+        if forecasts is not None
+        else None
+    )
+
     table_a = generate_table_a(
         disturbance_id,
         locations_for_table_a,
         coastal_buffer_km=coastal_buffer_km,
         relevance_km=relevance_km,
         coastal_buffer_cutoff=coastal_buffer_cutoff,
-        forecasts=forecasts,
+        forecasts=selected_forecasts,
+        fcast_times=selected_times,
     )
 
     # Table B/C only need the locations that actually appear in Table A for
@@ -1129,7 +1164,7 @@ def generate_all_tables_for_disturbance(
         y_hours=y_hours,
         wind_level=wind_level,
         table_b=table_b,
-        fcast_times=sorted(forecasts) if forecasts is not None else None,
+        fcast_times=selected_times,
     )
     table_d = generate_table_d(table_a, table_c, forecast_level=forecast_level,)
     stats = generate_contingency_dict(table_d)
@@ -1148,7 +1183,10 @@ def generate_all_tables_for_disturbance(
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         output_prefix = _output_filename_prefix(
-            disturbance_id, state=state, season=season
+            disturbance_id,
+            state=state,
+            season=season,
+            base_time_hours=base_time_hours,
         )
         print(f"\n[write] Writing CSVs to {out_dir} ...")
         for name, frame in (
@@ -1182,6 +1220,7 @@ def generate_all_tables_for_disturbances(
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
     state: str | None = None,
     season: str | None = None,
+    base_time_hours: list[int] | None = None,
 ) -> dict[str, object]:
     """Run the full Table A-D pipeline for each disturbance ID in turn (each
     still gets its own per-disturbance CSVs, same as generate_all_tables_for_disturbance),
@@ -1207,6 +1246,7 @@ def generate_all_tables_for_disturbances(
             coastal_buffer_cutoff=coastal_buffer_cutoff,
             state=state,
             season=season,
+            base_time_hours=base_time_hours,
         )
         per_disturbance[disturbance_id] = outputs
         table_d_frames.append(outputs["table_d"])
@@ -1234,7 +1274,12 @@ def generate_all_tables_for_disturbances(
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        output_prefix = _output_filename_prefix("combined", state=state, season=season)
+        output_prefix = _output_filename_prefix(
+            "combined",
+            state=state,
+            season=season,
+            base_time_hours=base_time_hours,
+        )
         combined_table_path = out_dir / f"{output_prefix}_table_d.csv"
         combined_table_d.to_csv(combined_table_path, index=False)
         print(f"[write]   {combined_table_path} ({len(combined_table_d)} row(s))")

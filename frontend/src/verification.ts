@@ -28,7 +28,7 @@
   interface SavedContext { distId?: string; distName?: string; region?: string; season?: string; bulletin?: string }
   interface TableRequest {
     disturbance_ids: string[]; season: string | null; state: string | null;
-    x_hours: number; y_hours: number;
+    x_hours: number; y_hours: number; base_time_hours: number[];
   }
 
   const API_BASE = "/api/v1";
@@ -239,7 +239,9 @@
       const ids = selected(instance.querySelector<HTMLSelectElement>(".cyclone-select")!);
       const stateValues = selected(instance.querySelector<HTMLSelectElement>(".state-select")!);
       const seasons = selected(instance.querySelector<HTMLSelectElement>(".season-select")!);
-      return `${ids.length ? `${ids.length} cyclone(s)` : "season-based selection"}; ${stateValues.length ? stateValues.join(", ") : "all states"}; ${seasons.length ? seasons.join(", ") : "all seasons"}`;
+      const baseTimes = Array.from(instance.querySelectorAll<HTMLInputElement>(".base-time-hour:checked"))
+        .map((input) => `${input.value.padStart(2, "0")}:00`);
+      return `${ids.length ? `${ids.length} cyclone(s)` : "season-based selection"}; ${stateValues.length ? stateValues.join(", ") : "all states"}; ${seasons.length ? seasons.join(", ") : "all seasons"}; base times ${baseTimes.join(", ") || "none"} UTC`;
     });
     context.textContent = `Contingency table filters: ${descriptions.join(" | ")}${savedContext.bulletin ? `; visualizer bulletin ${savedContext.bulletin}` : ""}.`;
   }
@@ -367,8 +369,10 @@
     panel.append(table, metrics);
   }
 
-  function isCurrentRunFile(name: string, ids: string[]): boolean {
-    return name.startsWith("combined_") || ids.some((id) => name.startsWith(`${id}_`));
+  function isCurrentRunFile(name: string, ids: string[], baseTimeHours: number[]): boolean {
+    const identifierMatches = name.startsWith("combined_") || ids.some((id) => name.startsWith(`${id}_`));
+    const baseTimeTag = `base-times-${baseTimeHours.slice().sort((a, b) => a - b).map((hour) => String(hour).padStart(2, "0")).join("-")}`;
+    return identifierMatches && name.includes(baseTimeTag);
   }
 
   async function downloadFile(filename: string): Promise<void> {
@@ -381,8 +385,8 @@
     URL.revokeObjectURL(url);
   }
 
-  async function showRunFiles(instance: HTMLElement, files: Record<string, string>, ids: string[], stats: Stats): Promise<void> {
-    const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids));
+  async function showRunFiles(instance: HTMLElement, files: Record<string, string>, ids: string[], stats: Stats, baseTimeHours: number[]): Promise<void> {
+    const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids, baseTimeHours));
     const dates = candidates.map((name) => name.match(/date-(\d{8})/)?.[1] || "").sort();
     const latestDate = dates[dates.length - 1] || "";
     latestFiles = candidates.filter((name) => !latestDate || name.includes(`date-${latestDate}`));
@@ -431,8 +435,13 @@
     const selectedIds = selected(cycloneSelect);
     const selectedStates = selected(stateSelect);
     const selectedSeasons = selected(seasonSelect);
+    const baseTimeHours = Array.from(instance.querySelectorAll<HTMLInputElement>(".base-time-hour:checked"))
+      .map((input) => Number(input.value));
     if (!selectedIds.length && !selectedSeasons.length) {
       instanceStatus(instance, "Choose one or more cyclones or seasons.", true); return;
+    }
+    if (!baseTimeHours.length) {
+      instanceStatus(instance, "Select at least one UTC base time.", true); return;
     }
     const xHours = Number(instance.querySelector<HTMLInputElement>(".x-hours")?.value ?? 0);
     const yHours = Number(instance.querySelector<HTMLInputElement>(".y-hours")?.value ?? 24);
@@ -448,7 +457,16 @@
         ? selectedIds.filter((id) => !season || disturbances.find((row) => row.disturbance_id === id)?.season === season)
         : disturbances.filter((row) => row.season === season).map((row) => row.disturbance_id);
       if (!seasonIds.length) continue;
-      for (const state of statesToRun) jobs.push({ disturbance_ids: seasonIds, season, state, x_hours: xHours, y_hours: yHours });
+      for (const state of statesToRun) {
+        jobs.push({
+          disturbance_ids: seasonIds,
+          season,
+          state,
+          x_hours: xHours,
+          y_hours: yHours,
+          base_time_hours: baseTimeHours,
+        });
+      }
     }
     if (!jobs.length) { instanceStatus(instance, "No cyclones match the selected season(s).", true); return; }
 
@@ -471,8 +489,8 @@
       }), { hit: 0, false_alarm: 0, miss: 0, correct_negative: 0, total: 0 });
       const mergedFiles = Object.assign({}, ...results.map((result) => result.files));
       const ids = [...new Set(results.flatMap((result) => result.disturbance_ids))];
-      await showRunFiles(instance, mergedFiles, ids, combined);
-      instanceStatus(instance, `Generated ${results.length} request(s); ${ids.length} disturbance(s), ${combined.total} observations.`);
+      await showRunFiles(instance, mergedFiles, ids, combined, baseTimeHours);
+      instanceStatus(instance, `Generated ${results.length} request(s) for ${baseTimeHours.map((hour) => `${String(hour).padStart(2, "0")}:00`).join(", ")} UTC; ${ids.length} disturbance(s), ${combined.total} observations.`);
     } catch (error) {
       instanceStatus(instance, `Generation failed: ${(error as Error).message}`, true);
     } finally { if (button) button.disabled = false; }
@@ -502,6 +520,7 @@
     initializedInstances.add(instance);
     wireTabs(instance);
     instance.querySelectorAll<HTMLSelectElement>("select").forEach((select) => select.addEventListener("change", updateContext));
+    instance.querySelectorAll<HTMLInputElement>(".base-time-hour").forEach((input) => input.addEventListener("change", updateContext));
     instance.querySelector<HTMLButtonElement>(".generate-table")?.addEventListener("click", () => { void generateForInstance(instance); });
   }
 
@@ -608,6 +627,7 @@
     firstInstance.querySelectorAll<HTMLElement>(".instance-status").forEach((el) => { el.textContent = ""; el.classList.remove("error"); });
     firstInstance.querySelector<HTMLInputElement>(".x-hours")!.value = "0";
     firstInstance.querySelector<HTMLInputElement>(".y-hours")!.value = "24";
+    firstInstance.querySelectorAll<HTMLInputElement>(".base-time-hour").forEach((input) => { input.checked = true; });
     byId<HTMLInputElement>("gmlUploadInput").value = ""; byId<HTMLInputElement>("bestTrackUploadInput").value = "";
     byId<HTMLDivElement>("uploadProgress").hidden = true;
     status(""); updateTableControls(); updateContext();

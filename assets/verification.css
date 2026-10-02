@@ -46,6 +46,10 @@ p, caption { color: var(--muted); }
 .filter-field select[multiple] { min-height: 132px; }
 .filter-field input[type="number"] { width: 100%; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
 .filter-grid-params { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
+.base-time-filter { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; }
+.base-time-filter legend { padding: 0 6px; color: var(--muted); font-size: 12px; }
+.base-time-filter label { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; cursor: pointer; }
+.base-time-filter input { accent-color: #4fa8ff; }
 .instance-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
 .instance-actions button, .results-downloads button { border: 1px solid var(--border); border-radius: 6px; background: #1f2a3f; color: var(--text); padding: 9px 12px; cursor: pointer; font: inherit; font-size: 13px; }
 .instance-actions button:hover, .instance-actions button:focus-visible, .results-downloads button:hover, .results-downloads button:focus-visible { background: #2a3852; }

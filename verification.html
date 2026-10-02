@@ -60,6 +60,13 @@
         <div class="filter-field"><label for="xHours-1">Start offset (hours)</label><input id="xHours-1" class="x-hours" type="number" min="0" step="1" value="0"></div>
         <div class="filter-field"><label for="yHours-1">End offset (hours)</label><input id="yHours-1" class="y-hours" type="number" min="1" step="1" value="24"></div>
       </div>
+      <fieldset class="base-time-filter">
+        <legend>Base times (UTC)</legend>
+        <label for="baseTime00-1"><input id="baseTime00-1" class="base-time-hour" type="checkbox" value="0" checked> 00:00</label>
+        <label for="baseTime06-1"><input id="baseTime06-1" class="base-time-hour" type="checkbox" value="6" checked> 06:00</label>
+        <label for="baseTime12-1"><input id="baseTime12-1" class="base-time-hour" type="checkbox" value="12" checked> 12:00</label>
+        <label for="baseTime18-1"><input id="baseTime18-1" class="base-time-hour" type="checkbox" value="18" checked> 18:00</label>
+      </fieldset>
       <div class="instance-actions">
         <button class="generate-table" type="button">Generate / refresh tables</button>
         <span class="instance-status" role="status" aria-live="polite"></span>
