@@ -26,9 +26,8 @@
     status: document.getElementById("status"),
     uploadStatus: document.getElementById("uploadStatus"),
     uploadGmlBtn: document.getElementById("uploadGmlBtn"),
-    uploadBestTrackBtn: document.getElementById("uploadBestTrackBtn"),
+    refreshBestTrackBtn: document.getElementById("refreshBestTrackBtn"),
     gmlUploadInput: document.getElementById("gmlUploadInput"),
-    bestTrackUploadInput: document.getElementById("bestTrackUploadInput"),
     categoryLegend: document.getElementById("categoryLegend"),
     // Towns are static, so this checkbox is deliberately kept out of
     // els.layers -- everything in there is wired to renderBulletin().
@@ -159,10 +158,10 @@
   }
 
   async function uploadDataset(file, endpoint, label) {
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    setUploadStatus(`Uploading ${label}…`);
+    if (!file && endpoint !== "refresh-best-track") return;
+    const formData = file ? new FormData() : null;
+    if (file) formData.append("file", file);
+    setUploadStatus(file ? `Uploading ${label}…` : `Requesting current ${label} from BoM…`);
     try {
       const response = await fetch(`${API_BASE}/datasets/${endpoint}`, { method: "POST", body: formData });
       const payload = await response.json().catch(() => ({}));
@@ -193,7 +192,7 @@
       if (endpoint === "upload") {
         await loadIndex();
       }
-      if (endpoint === "upload-best-track") {
+      if (endpoint === "refresh-best-track") {
         await loadCyclone();
       }
     } catch (err) {
@@ -664,14 +663,14 @@
     }
   });
 
-  els.uploadBestTrackBtn.addEventListener("click", () => els.bestTrackUploadInput.click());
-  els.bestTrackUploadInput.addEventListener("change", async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  els.refreshBestTrackBtn.addEventListener("click", async () => {
+    els.refreshBestTrackBtn.disabled = true;
+    els.uploadGmlBtn.disabled = true;
     try {
-      await uploadDataset(file, "upload-best-track", "best track CSV");
+      await uploadDataset(null, "refresh-best-track", "best track");
     } finally {
-      event.target.value = "";
+      els.refreshBestTrackBtn.disabled = false;
+      els.uploadGmlBtn.disabled = false;
     }
   });
 

@@ -14,6 +14,7 @@ dependencies = [
     "alembic>=1.13",
     "openpyxl>=3.1",
     "psycopg[binary]>=3.2",
+    "certifi>=2024.2.2",
     # app/gen_cont_tables.py: contingency tables are built by intersecting
     # the bulletin GeoJSON with town points on the WGS84 ellipsoid.
     "geopandas>=1.0",

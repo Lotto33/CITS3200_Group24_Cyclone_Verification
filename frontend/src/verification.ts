@@ -75,14 +75,15 @@
     }
   }
 
-  function uploadFile(file: File, endpoint: string, description: string): Promise<void> {
+  function uploadFile(file: File | null, endpoint: string, description: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       const form = new FormData();
-      form.append("file", file);
+      if (file) form.append("file", file);
       xhr.open("POST", `${API_BASE}/datasets/${endpoint}`);
       xhr.responseType = "json";
       xhr.upload.addEventListener("progress", (event) => {
+        if (!file) return;
         if (!event.lengthComputable) {
           updateUploadProgress("Uploading file", `${file.name} — ${formatBytes(event.loaded)} sent.`);
           return;
@@ -91,7 +92,13 @@
         updateUploadProgress("Uploading file", `${file.name} — ${formatBytes(event.loaded)} of ${formatBytes(event.total)} transferred.`, percent);
       });
       xhr.upload.addEventListener("load", () => {
-        updateUploadProgress("Processing on server", `${file.name} uploaded. The server is validating and processing the ${description}; this may take a little while.`);
+        if (!file) return;
+        updateUploadProgress(
+          file ? "Processing on server" : "Fetching from BoM",
+          file
+            ? `${file.name} uploaded. The server is validating and processing the ${description}; this may take a little while.`
+            : `Request accepted. The server is downloading and processing the ${description}; this may take a little while.`,
+        );
       });
       xhr.addEventListener("load", () => {
         const payload = xhr.response as { detail?: string; job_id?: string } | null;
@@ -103,11 +110,15 @@
           reject(new Error("The backend accepted the file but did not return a processing job ID."));
           return;
         }
-        void waitForUploadJob(payload.job_id, file.name, description).then(resolve, reject);
+        void waitForUploadJob(
+          payload.job_id,
+          file?.name || "BoM best-track data",
+          description,
+        ).then(resolve, reject);
       });
       xhr.addEventListener("error", () => reject(new Error("Network error while uploading. Check your connection and try again.")));
       xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled.")));
-      xhr.send(form);
+      xhr.send(file ? form : null);
     });
   }
 
@@ -582,13 +593,18 @@
     }
   });
 
-  async function upload(file: File, endpoint: string, description: string): Promise<void> {
+  async function upload(file: File | null, endpoint: string, description: string): Promise<void> {
     byId<HTMLOListElement>("uploadBackendMessages").replaceChildren();
-    updateUploadProgress("Preparing upload", `${file.name} · ${formatBytes(file.size)} · ${description}` , 0);
+    updateUploadProgress(
+      file ? "Preparing upload" : "Requesting BoM best track",
+      file ? `${file.name} · ${formatBytes(file.size)} · ${description}` : description,
+      file ? 0 : undefined,
+    );
     await uploadFile(file, endpoint, description);
     updateUploadProgress("Refreshing cyclone and state filters", `${description} processed. Updating available filter options…`);
     await loadFilterOptions();
-    updateUploadProgress("Complete", `${file.name} uploaded, processed, and filter options refreshed.`, 100);
+    const sourceName = file?.name || "BoM best-track data";
+    updateUploadProgress("Complete", `${sourceName} processed, and filter options refreshed.`, 100);
   }
 
   function wireUpload(inputId: string, buttonId: string, endpoint: string, description: string): void {
@@ -597,8 +613,7 @@
     button.addEventListener("click", () => input.click());
     input.addEventListener("change", async () => {
       const file = input.files?.[0]; if (!file) return;
-      const otherButtonId = buttonId === "uploadGmlBtn" ? "uploadBestTrackBtn" : "uploadGmlBtn";
-      const otherButton = byId<HTMLButtonElement>(otherButtonId);
+      const otherButton = byId<HTMLButtonElement>("refreshBestTrackBtn");
       button.disabled = true;
       otherButton.disabled = true;
       try { await upload(file, endpoint, description); }
@@ -610,6 +625,22 @@
       finally { input.value = ""; button.disabled = false; otherButton.disabled = false; }
     });
   }
+
+  byId<HTMLButtonElement>("refreshBestTrackBtn").addEventListener("click", async () => {
+    const button = byId<HTMLButtonElement>("refreshBestTrackBtn");
+    const gmlButton = byId<HTMLButtonElement>("uploadGmlBtn");
+    button.disabled = true;
+    gmlButton.disabled = true;
+    try {
+      await upload(null, "refresh-best-track", "current BoM best-track CSV");
+    } catch (error) {
+      updateUploadProgress("Best-track refresh failed", (error as Error).message, 0);
+      byId<HTMLDivElement>("uploadStatus").classList.add("error");
+    } finally {
+      button.disabled = false;
+      gmlButton.disabled = false;
+    }
+  });
 
   byId<HTMLButtonElement>("downloadContingencyBtn").addEventListener("click", async () => {
     const filenames = [...new Set([...filesByInstance.values()].flat())];
@@ -637,14 +668,13 @@
     firstInstance.querySelector<HTMLInputElement>(".x-hours")!.value = "0";
     firstInstance.querySelector<HTMLInputElement>(".y-hours")!.value = "24";
     firstInstance.querySelectorAll<HTMLInputElement>(".base-time-hour").forEach((input) => { input.checked = true; });
-    byId<HTMLInputElement>("gmlUploadInput").value = ""; byId<HTMLInputElement>("bestTrackUploadInput").value = "";
+    byId<HTMLInputElement>("gmlUploadInput").value = "";
     byId<HTMLDivElement>("uploadProgress").hidden = true;
     status(""); updateTableControls(); updateContext();
   });
 
   byId<HTMLButtonElement>("backToVisualizer").addEventListener("click", () => { window.location.href = "visualize.html"; });
   wireUpload("gmlUploadInput", "uploadGmlBtn", "upload", "GML archive");
-  wireUpload("bestTrackUploadInput", "uploadBestTrackBtn", "upload-best-track", "best-track CSV");
   initializeInstance(firstInstance);
   updateTableControls();
   updateContext();
