@@ -267,7 +267,7 @@ def process_uploaded_best_track(csv_path: Path, data_dir: Path) -> dict:
 
 
 def refresh_best_track_from_bom(data_dir: Path) -> dict:
-    """Download BoM's current best-track CSV and ingest it through the DB path."""
+    """Download BOM's current best-track CSV and ingest it through the DB path."""
     data_dir = Path(data_dir).resolve()
     upload_dir = data_dir / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -281,7 +281,7 @@ def refresh_best_track_from_bom(data_dir: Path) -> dict:
         suffix=".csv", prefix="bom-best-track-", dir=upload_dir, delete=False
     ) as download:
         download_path = Path(download.name)
-        print(f"Downloading current BoM best-track CSV from {BOM_BEST_TRACK_URL}")
+        print(f"Downloading current BOM best-track CSV from {BOM_BEST_TRACK_URL}")
         try:
             with urllib.request.urlopen(
                 request, timeout=60, context=tls_context

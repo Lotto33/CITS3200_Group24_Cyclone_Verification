@@ -62,15 +62,24 @@
     const container = byId<HTMLDivElement>("uploadProgress");
     const label = byId<HTMLElement>("uploadPhase");
     const percentLabel = byId<HTMLSpanElement>("uploadPercent");
-    const progress = byId<HTMLProgressElement>("uploadProgressBar");
+    const progress = byId<HTMLDivElement>("uploadProgressBar");
     container.hidden = false;
     label.textContent = phase;
     status(detail);
     if (percentage === undefined) {
-      progress.removeAttribute("value");
+      progress.style.width = "35%";
+      progress.removeAttribute("aria-valuenow");
+      progress.setAttribute("aria-valuetext", "Processing");
+      progress.classList.add("progress-bar-striped", "progress-bar-animated");
+      progress.classList.add("progress-bar-indeterminate");
       percentLabel.textContent = "";
     } else {
-      progress.value = percentage;
+      progress.style.width = `${percentage}%`;
+      progress.setAttribute("aria-valuenow", String(percentage));
+      progress.removeAttribute("aria-valuetext");
+      progress.classList.remove("progress-bar-indeterminate");
+      progress.classList.toggle("progress-bar-striped", percentage < 100);
+      progress.classList.toggle("progress-bar-animated", percentage < 100);
       percentLabel.textContent = `${percentage}%`;
     }
   }
@@ -94,7 +103,7 @@
       xhr.upload.addEventListener("load", () => {
         if (!file) return;
         updateUploadProgress(
-          file ? "Processing on server" : "Fetching from BoM",
+          file ? "Processing on server" : "Fetching from BOM",
           file
             ? `${file.name} uploaded. The server is validating and processing the ${description}; this may take a little while.`
             : `Request accepted. The server is downloading and processing the ${description}; this may take a little while.`,
@@ -112,7 +121,7 @@
         }
         void waitForUploadJob(
           payload.job_id,
-          file?.name || "BoM best-track data",
+          file?.name || "BOM best-track data",
           description,
         ).then(resolve, reject);
       });
@@ -146,6 +155,7 @@
 
   async function waitForUploadJob(jobId: string, filename: string, description: string): Promise<void> {
     let offset = 0;
+    let refreshStage: { label: string; percentage: number } | null = null;
     const deadline = Date.now() + 30 * 60 * 1000;
     while (Date.now() < deadline) {
       let job: UploadJobStatus;
@@ -160,10 +170,20 @@
       }
       appendBackendMessages(job.messages);
       offset = job.next;
+      if (description.toLowerCase().includes("bom")) {
+        for (const message of job.messages) {
+          const stage = bestTrackRefreshStage(message);
+          if (stage) refreshStage = stage;
+        }
+      }
       if (job.status === "completed") {
         const interpolationError = job.result?.interpolation_error;
         updateUploadProgress(
-          interpolationError ? "Upload complete with warning" : "Backend processing complete",
+          description.toLowerCase().includes("bom")
+            ? "Step 5 of 5 · Complete"
+            : interpolationError
+              ? "Upload complete with warning"
+              : "Backend processing complete",
           interpolationError
             ? `${filename}: uploaded successfully, but interpolation was skipped: ${interpolationError}`
             : `${filename}: ${description} processing completed successfully.`,
@@ -172,13 +192,39 @@
         return;
       }
       if (job.status === "failed") throw new Error(job.error || `${description} processing failed.`);
-      updateUploadProgress(
-        job.status === "queued" ? "Waiting for backend" : "Backend processing",
-        job.messages[job.messages.length - 1] || `${filename}: waiting for backend pipeline messages.`,
-      );
+      const latestMessage = job.messages[job.messages.length - 1]
+        || `${filename}: waiting for backend pipeline messages.`;
+      if (refreshStage) {
+        updateUploadProgress(refreshStage.label, latestMessage, refreshStage.percentage);
+      } else {
+        updateUploadProgress(
+          job.status === "queued" ? "Waiting for backend" : "Backend processing",
+          latestMessage,
+        );
+      }
       await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
     }
     throw new Error("The upload job exceeded the 30-minute polling limit. Check the backend logs and try again.");
+  }
+
+  function bestTrackRefreshStage(message: string): { label: string; percentage: number } | null {
+    const normalized = message.toLowerCase();
+    if (normalized.startsWith("starting bom best-track refresh")) {
+    return { label: "Step 1 of 5 · Starting refresh", percentage: 10 };
+    }
+    if (normalized.startsWith("downloading current bom best-track csv")) {
+      return { label: "Step 2 of 5 · Downloading from BOM", percentage: 20 };
+    }
+    if (normalized.startsWith("validating downloaded best-track csv")) {
+      return { label: "Step 3 of 5 · Validating CSV", percentage: 30 };
+    }
+    if (normalized.startsWith("=== database ingest: best-track observations ===")) {
+      return { label: "Step 4 of 5 · Ingesting and interpolating", percentage: 75 };
+    }
+    if (normalized.startsWith("=== database interpolation ===")) {
+      return { label: "Step 4 of 5 · Ingesting and interpolating", percentage: 75 };
+    }
+    return null;
   }
 
   async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -596,14 +642,14 @@
   async function upload(file: File | null, endpoint: string, description: string): Promise<void> {
     byId<HTMLOListElement>("uploadBackendMessages").replaceChildren();
     updateUploadProgress(
-      file ? "Preparing upload" : "Requesting BoM best track",
+      file ? "Preparing upload" : "Step 1 of 5 · Requesting BOM best track",
       file ? `${file.name} · ${formatBytes(file.size)} · ${description}` : description,
-      file ? 0 : undefined,
+      file ? 0 : 10,
     );
     await uploadFile(file, endpoint, description);
     updateUploadProgress("Refreshing cyclone and state filters", `${description} processed. Updating available filter options…`);
     await loadFilterOptions();
-    const sourceName = file?.name || "BoM best-track data";
+    const sourceName = file?.name || "BOM best-track data";
     updateUploadProgress("Complete", `${sourceName} processed, and filter options refreshed.`, 100);
   }
 
@@ -632,7 +678,7 @@
     button.disabled = true;
     gmlButton.disabled = true;
     try {
-      await upload(null, "refresh-best-track", "current BoM best-track CSV");
+      await upload(null, "refresh-best-track", "current BOM best-track CSV");
     } catch (error) {
       updateUploadProgress("Best-track refresh failed", (error as Error).message, 0);
       byId<HTMLDivElement>("uploadStatus").classList.add("error");

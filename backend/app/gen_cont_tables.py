@@ -45,6 +45,11 @@ DEFAULT_COASTAL_BUFFER_CUTOFF = pd.Timestamp("2025-06-01")
 # warning area (scope doc S43).
 DEFAULT_RELEVANCE_KM = 300.0
 
+# Beyond this multiple of position-analysis uncertainty, all three observed
+# wind-radius distances are treated as safely unobservable and omitted from
+# the large town-by-time distance table. Distances and uncertainty are in km.
+DISTANCE_UNCERTAINTY_CUTOFF_MULTIPLIER = 100.0
+
 # Columns that interpolate normally (continuous quantities)
 LINEAR_COLS = ["LAT", "LON", "MAX_WIND_SPD", "POSITION_UNCERTAINTY", "CENTRAL_PRES"]
 # GF = galeforce
@@ -300,6 +305,23 @@ def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
         return float(mean_val)
 
     return np.nan
+
+
+def _beyond_observation_cutoff(
+    uncertainty_km: float,
+    distances_km: tuple[float, float, float],
+) -> bool:
+    """Whether every wind-radius distance is known to exceed 100x uncertainty.
+
+    Unknown uncertainty or any unknown distance is retained conservatively.
+    Negative signed distances are inside a wind radius and are always retained.
+    """
+    if pd.isna(uncertainty_km) or not np.isfinite(uncertainty_km) or uncertainty_km < 0:
+        return False
+    if any(pd.isna(distance) or not np.isfinite(distance) for distance in distances_km):
+        return False
+    cutoff_km = uncertainty_km * DISTANCE_UNCERTAINTY_CUTOFF_MULTIPLIER
+    return all(distance > cutoff_km for distance in distances_km)
 
 
 def signed_distance_to_polygon_km(point, polygon_union) -> float:
@@ -773,6 +795,7 @@ def generate_table_b(
         locations = load_locations()
 
     rows = []
+    cutoff_rows = 0
     df = track if track is not None else load_best_track(disturbance_id)
     if track is not None or _best_track_is_preprocessed():
         print(
@@ -816,12 +839,18 @@ def generate_table_b(
             dist_storm_km = dist_center_km - storm_radius_km
             dist_hurricane_km = dist_center_km - hurricane_radius_km
 
+            uncertainty_km = step.get("POSITION_UNCERTAINTY", np.nan)
+            distances = (dist_gale_km, dist_storm_km, dist_hurricane_km)
+            if _beyond_observation_cutoff(uncertainty_km, distances):
+                cutoff_rows += 1
+                continue
+
             rows.append(
                 {
                     "Disturbance ID": disturbance_id,
                     "Location": loc["name"],
                     "Time": step["TM"],
-                    "Analysis Uncertainty": step.get("POSITION_UNCERTAINTY", np.nan),
+                    "Analysis Uncertainty": uncertainty_km,
                     "Distance to gale": dist_gale_km,
                     "Distance to storm": dist_storm_km,
                     "Distance to hurricane": dist_hurricane_km,
@@ -840,7 +869,11 @@ def generate_table_b(
             "Distance to hurricane",
         ],
     )
-    print(f"[table_b] Done: {len(result)} row(s)")
+    print(
+        f"[table_b] Done: {len(result)} row(s); "
+        f"{cutoff_rows} beyond the {DISTANCE_UNCERTAINTY_CUTOFF_MULTIPLIER:g}x "
+        "position-uncertainty cutoff omitted"
+    )
     return result
 
 

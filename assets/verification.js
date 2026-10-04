@@ -35,11 +35,20 @@
         label.textContent = phase;
         status(detail);
         if (percentage === undefined) {
-            progress.removeAttribute("value");
+            progress.style.width = "35%";
+            progress.removeAttribute("aria-valuenow");
+            progress.setAttribute("aria-valuetext", "Processing");
+            progress.classList.add("progress-bar-striped", "progress-bar-animated");
+            progress.classList.add("progress-bar-indeterminate");
             percentLabel.textContent = "";
         }
         else {
-            progress.value = percentage;
+            progress.style.width = `${percentage}%`;
+            progress.setAttribute("aria-valuenow", String(percentage));
+            progress.removeAttribute("aria-valuetext");
+            progress.classList.remove("progress-bar-indeterminate");
+            progress.classList.toggle("progress-bar-striped", percentage < 100);
+            progress.classList.toggle("progress-bar-animated", percentage < 100);
             percentLabel.textContent = `${percentage}%`;
         }
     }
@@ -64,7 +73,7 @@
             xhr.upload.addEventListener("load", () => {
                 if (!file)
                     return;
-                updateUploadProgress(file ? "Processing on server" : "Fetching from BoM", file
+                updateUploadProgress(file ? "Processing on server" : "Fetching from BOM", file
                     ? `${file.name} uploaded. The server is validating and processing the ${description}; this may take a little while.`
                     : `Request accepted. The server is downloading and processing the ${description}; this may take a little while.`);
             });
@@ -78,7 +87,7 @@
                     reject(new Error("The backend accepted the file but did not return a processing job ID."));
                     return;
                 }
-                void waitForUploadJob(payload.job_id, (file === null || file === void 0 ? void 0 : file.name) || "BoM best-track data", description).then(resolve, reject);
+                void waitForUploadJob(payload.job_id, (file === null || file === void 0 ? void 0 : file.name) || "BOM best-track data", description).then(resolve, reject);
             });
             xhr.addEventListener("error", () => reject(new Error("Network error while uploading. Check your connection and try again.")));
             xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled.")));
@@ -109,6 +118,7 @@
     async function waitForUploadJob(jobId, filename, description) {
         var _a;
         let offset = 0;
+        let refreshStage = null;
         const deadline = Date.now() + 30 * 60 * 1000;
         while (Date.now() < deadline) {
             let job;
@@ -124,19 +134,56 @@
             }
             appendBackendMessages(job.messages);
             offset = job.next;
+            if (description.toLowerCase().includes("bom")) {
+                for (const message of job.messages) {
+                    const stage = bestTrackRefreshStage(message);
+                    if (stage)
+                        refreshStage = stage;
+                }
+            }
             if (job.status === "completed") {
                 const interpolationError = (_a = job.result) === null || _a === void 0 ? void 0 : _a.interpolation_error;
-                updateUploadProgress(interpolationError ? "Upload complete with warning" : "Backend processing complete", interpolationError
+                updateUploadProgress(description.toLowerCase().includes("bom")
+                    ? "Step 5 of 5 · Complete"
+                    : interpolationError
+                        ? "Upload complete with warning"
+                        : "Backend processing complete", interpolationError
                     ? `${filename}: uploaded successfully, but interpolation was skipped: ${interpolationError}`
                     : `${filename}: ${description} processing completed successfully.`, 100);
                 return;
             }
             if (job.status === "failed")
                 throw new Error(job.error || `${description} processing failed.`);
-            updateUploadProgress(job.status === "queued" ? "Waiting for backend" : "Backend processing", job.messages[job.messages.length - 1] || `${filename}: waiting for backend pipeline messages.`);
+            const latestMessage = job.messages[job.messages.length - 1]
+                || `${filename}: waiting for backend pipeline messages.`;
+            if (refreshStage) {
+                updateUploadProgress(refreshStage.label, latestMessage, refreshStage.percentage);
+            }
+            else {
+                updateUploadProgress(job.status === "queued" ? "Waiting for backend" : "Backend processing", latestMessage);
+            }
             await new Promise((resolve) => window.setTimeout(resolve, 650));
         }
         throw new Error("The upload job exceeded the 30-minute polling limit. Check the backend logs and try again.");
+    }
+    function bestTrackRefreshStage(message) {
+        const normalized = message.toLowerCase();
+        if (normalized.startsWith("starting bom best-track refresh")) {
+            return { label: "Step 1 of 5 · Starting refresh", percentage: 10 };
+        }
+        if (normalized.startsWith("downloading current bom best-track csv")) {
+            return { label: "Step 2 of 5 · Downloading from BOM", percentage: 20 };
+        }
+        if (normalized.startsWith("validating downloaded best-track csv")) {
+            return { label: "Step 3 of 5 · Validating CSV", percentage: 30 };
+        }
+        if (normalized.startsWith("=== database ingest: best-track observations ===")) {
+            return { label: "Step 4 of 5 · Ingesting and interpolating", percentage: 75 };
+        }
+        if (normalized.startsWith("=== database interpolation ===")) {
+            return { label: "Step 4 of 5 · Ingesting and interpolating", percentage: 75 };
+        }
+        return null;
     }
     async function requestJson(path, init) {
         const response = await fetch(`${API_BASE}${path}`, init);
@@ -609,11 +656,11 @@
     });
     async function upload(file, endpoint, description) {
         byId("uploadBackendMessages").replaceChildren();
-        updateUploadProgress(file ? "Preparing upload" : "Requesting BoM best track", file ? `${file.name} · ${formatBytes(file.size)} · ${description}` : description, file ? 0 : undefined);
+        updateUploadProgress(file ? "Preparing upload" : "Step 1 of 5 · Requesting BOM best track", file ? `${file.name} · ${formatBytes(file.size)} · ${description}` : description, file ? 0 : 10);
         await uploadFile(file, endpoint, description);
         updateUploadProgress("Refreshing cyclone and state filters", `${description} processed. Updating available filter options…`);
         await loadFilterOptions();
-        const sourceName = (file === null || file === void 0 ? void 0 : file.name) || "BoM best-track data";
+        const sourceName = (file === null || file === void 0 ? void 0 : file.name) || "BOM best-track data";
         updateUploadProgress("Complete", `${sourceName} processed, and filter options refreshed.`, 100);
     }
     function wireUpload(inputId, buttonId, endpoint, description) {
@@ -649,7 +696,7 @@
         button.disabled = true;
         gmlButton.disabled = true;
         try {
-            await upload(null, "refresh-best-track", "current BoM best-track CSV");
+            await upload(null, "refresh-best-track", "current BOM best-track CSV");
         }
         catch (error) {
             updateUploadProgress("Best-track refresh failed", error.message, 0);

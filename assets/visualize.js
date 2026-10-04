@@ -161,7 +161,7 @@
     if (!file && endpoint !== "refresh-best-track") return;
     const formData = file ? new FormData() : null;
     if (file) formData.append("file", file);
-    setUploadStatus(file ? `Uploading ${label}…` : `Requesting current ${label} from BoM…`);
+    setUploadStatus(file ? `Uploading ${label}…` : `Requesting current ${label} from BOM…`);
     try {
       const response = await fetch(`${API_BASE}/datasets/${endpoint}`, { method: "POST", body: formData });
       const payload = await response.json().catch(() => ({}));
@@ -396,7 +396,7 @@
   // The API only answers when the page is served by app.main (uvicorn) AND
   // `python -m app.cli interpolate` has produced a run. Served from a plain
   // `python -m http.server`, or before the DB is loaded, the fetch just fails
-  // and we fall back to data/best_track/<id>.json -- the raw 6-hourly BoM
+  // and we fall back to data/best_track/<id>.json -- the raw 6-hourly BOM
   // fixes from build_gml_dataset.py. Both are normalised to the same shape so
   // drawBestTrack() only has to care about `source`.
   const API_BASE = "api/v1";
@@ -470,7 +470,7 @@
   function bestTrackSummaryFor(track) {
     if (!track) return "not available";
     const n = track.points.length;
-    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BoM fixes)`;
+    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BOM fixes)`;
     const step = trackStepMinutes(track.points);
     return `${n} points (interpolated${step ? ` ${step}-minute` : ""} grid, as verified)`;
   }
@@ -543,8 +543,8 @@
     L.polyline(latlngs, { color: "#2fd4d9", weight: 3, opacity: 0.9 })
       .bindPopup(`<b>Best track</b>${currentBestTrack.name ? ` — ${currentBestTrack.name}` : ""}<br>
         ${interpolated
-          ? `Interpolated grid${step ? ` (${step}-minute step)` : ""} — ${points.length} points from ${anchors.length} BoM fixes`
-          : `Raw BoM fixes — ${points.length} points`}<br>
+          ? `Interpolated grid${step ? ` (${step}-minute step)` : ""} — ${points.length} points from ${anchors.length} BOM fixes`
+          : `Raw BOM fixes — ${points.length} points`}<br>
         ${fmtTime(points[0].time)} → ${fmtTime(points[points.length - 1].time)}`)
       .addTo(bestTrackLayer);
 
