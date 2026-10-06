@@ -15,6 +15,15 @@
   };
   const WIND_AREA_COLORS = { Current: "#ff5d5d", Forecast: "#4fa8ff" };
 
+  // Best-track wind areas: gale / storm / hurricane force, drawn from the
+  // interpolated quadrant radii. Colours are kept apart from the bulletin
+  // area colours above.
+  const BEST_TRACK_AREA_STYLE = {
+    GF: { label: "Gale force (34 kn)",      color: "#2fd4d9", fillOpacity: 0.10, layerKey: "btGale" },
+    SF: { label: "Storm force (48 kn)",     color: "#ffb347", fillOpacity: 0.14, layerKey: "btStorm" },
+    HF: { label: "Hurricane force (64 kn)", color: "#ff4d6d", fillOpacity: 0.18, layerKey: "btHurricane" },
+  };
+
   const els = {
     cyclone: document.getElementById("cycloneSelect"),
     slider: document.getElementById("bulletinSlider"),
@@ -43,6 +52,9 @@
       watchArea: document.getElementById("layer-watchArea"),
       allBulletins: document.getElementById("layer-allBulletins"),
       bestTrack: document.getElementById("layer-bestTrack"),
+      btGale: document.getElementById("layer-btGale"),
+      btStorm: document.getElementById("layer-btStorm"),
+      btHurricane: document.getElementById("layer-btHurricane"),
     },
     compareToggle: document.getElementById("compareToggle"),
     comparePanel: document.getElementById("comparePanel"),
@@ -408,6 +420,79 @@
     return (tm || "").replace("+00:00", "Z").replace(/\.\d+(?=Z?$)/, "");
   }
 
+  // Wind radii (km) per threshold, keyed by quadrant. `mean` is the all-round
+  // radius used when a quadrant is missing.
+  function radiiFromRow(r) {
+    const radii = {};
+    for (const level of Object.keys(BEST_TRACK_AREA_STYLE)) {
+      const k = level.toLowerCase();
+      radii[level] = {
+        ne: r[`mn_radius_${k}_secne`], se: r[`mn_radius_${k}_secse`],
+        sw: r[`mn_radius_${k}_secsw`], nw: r[`mn_radius_${k}_secnw`],
+        mean: r[`mn_radius_${k}_wind`],
+      };
+    }
+    return radii;
+  }
+
+  // Quadrant radius for a compass bearing, or null when unknown. Mirrors
+  // get_quadrant_radius() in backend/app/gen_cont_tables.py so the map shows
+  // the same area the verification was scored against: 0 or missing means
+  // "use the mean radius", and if that is missing too there is no area.
+  function quadrantRadiusKm(radii, bearing) {
+    const quadrant = bearing < 90 ? "ne" : bearing < 180 ? "se" : bearing < 270 ? "sw" : "nw";
+    const q = radii[quadrant];
+    if (q !== null && q !== undefined && q > 0) return q;
+    const m = radii.mean;
+    if (m !== null && m !== undefined && m > 0) return m;
+    return null;
+  }
+
+  // Point `km` away from (lat, lon) along `bearing` degrees (spherical earth;
+  // the error is far below what is visible at map scale).
+  function destinationPoint(lat, lon, bearing, km) {
+    const R = 6371, d = km / R, b = bearing * Math.PI / 180;
+    const phi1 = lat * Math.PI / 180, lam1 = lon * Math.PI / 180;
+    const phi2 = Math.asin(Math.sin(phi1) * Math.cos(d) + Math.cos(phi1) * Math.sin(d) * Math.cos(b));
+    const lam2 = lam1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(phi1),
+      Math.cos(d) - Math.sin(phi1) * Math.sin(phi2));
+    return [phi2 * 180 / Math.PI, ((lam2 * 180 / Math.PI + 540) % 360) - 180];
+  }
+
+  // Ring of [lat, lon] for one threshold, or null if no bearing has a radius.
+  // Bearings with no radius collapse onto the centre, so a missing quadrant
+  // leaves a notch instead of an invented area.
+  function windAreaRing(lat, lon, radii) {
+    const ring = [];
+    let any = false;
+    for (let bearing = 0; bearing < 360; bearing += 3) {
+      const km = quadrantRadiusKm(radii, bearing);
+      if (km === null) { ring.push([lat, lon]); continue; }
+      any = true;
+      ring.push(destinationPoint(lat, lon, bearing, km));
+    }
+    return any ? ring : null;
+  }
+
+  function parseUtc(t) {
+    if (!t) return NaN;
+    return Date.parse(t.includes("T") ? t : t.replace(" ", "T") + "Z");
+  }
+
+  // The best-track point closest in time to `timeIso`, but only if it is
+  // within one grid step -- otherwise the bulletin is outside the track.
+  function nearestBestTrackPoint(points, timeIso) {
+    const target = parseUtc(timeIso);
+    if (!Number.isFinite(target) || !points.length) return null;
+    const stepMs = (trackStepMinutes(points) || 360) * 60000;
+    let best = null, bestDiff = Infinity;
+    for (const p of points) {
+      const diff = Math.abs(parseUtc(p.time) - target);
+      if (diff < bestDiff) { best = p; bestDiff = diff; }
+    }
+    return bestDiff <= stepMs ? best : null;
+  }
+
   async function loadInterpolatedTrack(distId) {
     // 404 here is routine: unknown disturbance, or no interpolation run yet.
     const res = await fetch(`${API_BASE}/disturbances/${encodeURIComponent(distId)}/interpolated-track`);
@@ -421,6 +506,7 @@
         pressure: null,          // not carried on the interpolated grid
         windSpeed: r.max_wind_spd,
         interpolated: Boolean(r.is_interpolated),
+        radii: radiiFromRow(r),
       }));
     if (points.length < 2) return null;
     const cyclone = cyclonesById.get(distId);
@@ -471,7 +557,7 @@
   function bestTrackSummaryFor(track) {
     if (!track) return "not available";
     const n = track.points.length;
-    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BoM fixes)`;
+    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BoM fixes; wind areas unavailable without the API)`;
     const step = trackStepMinutes(track.points);
     return `${n} points (interpolated${step ? ` ${step}-minute` : ""} grid, as verified)`;
   }
@@ -529,7 +615,32 @@
   // featureless polyline; thousands of them just make panning stutter.
   const MAX_INTERPOLATED_MARKERS = 1200;
 
-  function drawBestTrack(bounds) {
+  // Wind areas for the best-track point nearest the bulletin's forecast base
+  // time, so they move with the bulletin slider. Drawn first so the track line
+  // and markers sit on top.
+  function drawBestTrackAreas(points, bulletin, bounds) {
+    if (!bulletin) return;
+    const p = nearestBestTrackPoint(points, bulletin.fcastTime || bulletin.issueTime);
+    if (!p || !p.radii) return;
+    const [lon, lat] = p.coord;
+    Object.entries(BEST_TRACK_AREA_STYLE).forEach(([level, style]) => {
+      if (!els.layers[style.layerKey].checked) return;
+      const ring = windAreaRing(lat, lon, p.radii[level]);
+      if (!ring) return;
+      const r = p.radii[level];
+      const km = v => (v === null || v === undefined ? "—" : `${Math.round(v)} km`);
+      L.polygon(ring, {
+        color: style.color, fillColor: style.color, fillOpacity: style.fillOpacity,
+        weight: 1.5, smoothFactor: 0,
+      }).bindPopup(`<b>Best track — ${style.label}</b><br>
+        Time: ${fmtTime(p.time)}${p.interpolated ? " (interpolated)" : ""}<br>
+        NE ${km(r.ne)}, SE ${km(r.se)}, SW ${km(r.sw)}, NW ${km(r.nw)}<br>
+        Mean ${km(r.mean)}`).addTo(bestTrackLayer);
+      bounds.push(...ring);
+    });
+  }
+
+  function drawBestTrack(bounds, bulletin) {
     bestTrackLayer.clearLayers();
     if (!els.layers.bestTrack.checked || !currentBestTrack) return;
     const points = currentBestTrack.points || [];
@@ -539,6 +650,8 @@
     const step = interpolated ? trackStepMinutes(points) : null;
     const anchors = points.filter(p => !p.interpolated);
     const showEveryPoint = !interpolated || points.length <= MAX_INTERPOLATED_MARKERS;
+
+    if (interpolated) drawBestTrackAreas(points, bulletin, bounds);
 
     const latlngs = points.map(p => [p.coord[1], p.coord[0]]);
     L.polyline(latlngs, { color: "#2fd4d9", weight: 3, opacity: 0.9 })
@@ -633,7 +746,7 @@
         latlngRings.forEach(ring => bounds.push(...ring));
       });
     });
-    drawBestTrack(bounds);
+    drawBestTrack(bounds, b);
     if (fitBounds && bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 9 });
   }
 
