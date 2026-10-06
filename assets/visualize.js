@@ -17,11 +17,12 @@
 
   // Best-track wind areas: gale / storm / hurricane force, drawn from the
   // interpolated quadrant radii. Colours are kept apart from the bulletin
-  // area colours above.
+  // area colours above: a pink-to-magenta ramp (no other layer uses pink) with
+  // dashed outlines, so they can't be mistaken for the solid bulletin areas.
   const BEST_TRACK_AREA_STYLE = {
-    GF: { label: "Gale force (34 kn)",      color: "#2fd4d9", fillOpacity: 0.10, layerKey: "btGale" },
-    SF: { label: "Storm force (48 kn)",     color: "#ffb347", fillOpacity: 0.14, layerKey: "btStorm" },
-    HF: { label: "Hurricane force (64 kn)", color: "#ff4d6d", fillOpacity: 0.18, layerKey: "btHurricane" },
+    GF: { label: "Gale force (34 kn)",      color: "#ff9ee0", fillOpacity: 0.10, layerKey: "btGale" },
+    SF: { label: "Storm force (48 kn)",     color: "#ff3fb4", fillOpacity: 0.16, layerKey: "btStorm" },
+    HF: { label: "Hurricane force (64 kn)", color: "#c4007a", fillOpacity: 0.24, layerKey: "btHurricane" },
   };
 
   const els = {
@@ -631,8 +632,8 @@
       const km = v => (v === null || v === undefined ? "—" : `${Math.round(v)} km`);
       L.polygon(ring, {
         color: style.color, fillColor: style.color, fillOpacity: style.fillOpacity,
-        weight: 1.5, smoothFactor: 0,
-      }).bindPopup(`<b>Best track — ${style.label}</b><br>
+        weight: 2, dashArray: "6,4", smoothFactor: 0,
+      }).bindPopup(`<b>Best track —${style.label}</b><br>
         Time: ${fmtTime(p.time)}${p.interpolated ? " (interpolated)" : ""}<br>
         NE ${km(r.ne)}, SE ${km(r.se)}, SW ${km(r.sw)}, NW ${km(r.nw)}<br>
         Mean ${km(r.mean)}`).addTo(bestTrackLayer);
