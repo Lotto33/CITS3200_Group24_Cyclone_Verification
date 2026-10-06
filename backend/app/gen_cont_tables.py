@@ -23,7 +23,7 @@ BEST_TRACK_INTERPOLATED_CSV = (
 # Location/state source for Table A. The TC Locations sheet is authoritative;
 # data/towns.csv is not read by this pipeline (and is currently an Excel
 # workbook despite its .csv filename).
-TOWNS_XLSX = PROJECT_ROOT / "data" / "towns.xlsx"
+TOWNS_XLSX = Path(__file__).resolve().parent / "resources" / "towns.xlsx"
 BEST_TRACK_SKIPROWS = 4  # 3 copyright lines + 1 blank before the header
 
 # A town counts as coastal if this column has a value in the TC Locations
@@ -45,10 +45,9 @@ DEFAULT_COASTAL_BUFFER_CUTOFF = pd.Timestamp("2025-06-01")
 # warning area (scope doc S43).
 DEFAULT_RELEVANCE_KM = 300.0
 
-# Beyond this multiple of position-analysis uncertainty, all three observed
-# wind-radius distances are treated as safely unobservable and omitted from
-# the large town-by-time distance table. Distances and uncertainty are in km.
-DISTANCE_UNCERTAINTY_CUTOFF_MULTIPLIER = 100.0
+# Observations beyond max(100 km, position uncertainty) of every wind radius
+# are omitted from Table B; Table D treats missing observations as no gales.
+DISTANCE_CUTOFF_MIN_KM = 100.0
 
 # Columns that interpolate normally (continuous quantities)
 LINEAR_COLS = ["LAT", "LON", "MAX_WIND_SPD", "POSITION_UNCERTAINTY", "CENTRAL_PRES"]
@@ -311,16 +310,16 @@ def _beyond_observation_cutoff(
     uncertainty_km: float,
     distances_km: tuple[float, float, float],
 ) -> bool:
-    """Whether every wind-radius distance is known to exceed 100x uncertainty.
+    """Whether every wind-radius distance exceeds max(100 km, uncertainty).
 
-    Unknown uncertainty or any unknown distance is retained conservatively.
-    Negative signed distances are inside a wind radius and are always retained.
+    Any unknown distance is retained conservatively. Negative signed
+    distances are inside a wind radius and are always retained.
     """
-    if pd.isna(uncertainty_km) or not np.isfinite(uncertainty_km) or uncertainty_km < 0:
-        return False
     if any(pd.isna(distance) or not np.isfinite(distance) for distance in distances_km):
         return False
-    cutoff_km = uncertainty_km * DISTANCE_UNCERTAINTY_CUTOFF_MULTIPLIER
+    cutoff_km = DISTANCE_CUTOFF_MIN_KM
+    if pd.notna(uncertainty_km) and np.isfinite(uncertainty_km):
+        cutoff_km = max(cutoff_km, float(uncertainty_km))
     return all(distance > cutoff_km for distance in distances_km)
 
 
@@ -871,8 +870,7 @@ def generate_table_b(
     )
     print(
         f"[table_b] Done: {len(result)} row(s); "
-        f"{cutoff_rows} beyond the {DISTANCE_UNCERTAINTY_CUTOFF_MULTIPLIER:g}x "
-        "position-uncertainty cutoff omitted"
+        f"{cutoff_rows} beyond the max(100 km, position uncertainty) cutoff omitted"
     )
     return result
 
@@ -1097,6 +1095,7 @@ def _output_filename_prefix(
     season: str | None = None,
     base_time_hours: list[int] | None = None,
     generated_date: date | None = None,
+    forecast_level: str | None = None,
 ) -> str:
     """Build a readable output prefix containing applied filters and run date."""
     parts = [identifier]
@@ -1106,6 +1105,8 @@ def _output_filename_prefix(
         parts.append(f"state-{state}")
     if base_time_hours is not None:
         parts.append("base-times-" + "-".join(f"{hour:02d}" for hour in base_time_hours))
+    if forecast_level is not None:
+        parts.append(f"level-{forecast_level.replace('_', '-')}")
     parts.append(
         f"date-{(generated_date or date.today()).isoformat().replace('-', '')}"
     )
@@ -1220,6 +1221,7 @@ def generate_all_tables_for_disturbance(
             state=state,
             season=season,
             base_time_hours=base_time_hours,
+            forecast_level=forecast_level,
         )
         print(f"\n[write] Writing CSVs to {out_dir} ...")
         for name, frame in (
@@ -1312,6 +1314,7 @@ def generate_all_tables_for_disturbances(
             state=state,
             season=season,
             base_time_hours=base_time_hours,
+            forecast_level=forecast_level,
         )
         combined_table_path = out_dir / f"{output_prefix}_table_d.csv"
         combined_table_d.to_csv(combined_table_path, index=False)

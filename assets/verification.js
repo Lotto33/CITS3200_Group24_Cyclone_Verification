@@ -231,13 +231,79 @@
     function selected(select) {
         return Array.from(select.selectedOptions).map((option) => option.value).filter((value) => value !== ALL_VALUE);
     }
+    const selectStates = new WeakMap();
+    // Selected options always stay visible so searching never drops a selection.
+    function renderSelect(select) {
+        const state = selectStates.get(select);
+        if (!state)
+            return;
+        const query = state.query.trim().toLowerCase();
+        const visible = state.options.filter((option) => option.value === ALL_VALUE || state.selected.has(option.value) || !query || option.label.toLowerCase().includes(query));
+        select.replaceChildren(...visible.map(({ value, label }) => {
+            const option = new Option(label, value);
+            option.selected = state.selected.has(value);
+            return option;
+        }));
+    }
+    // "All" is exclusive: picking it clears the rest, picking anything else clears it.
+    function applySelection(select, next, added) {
+        const state = selectStates.get(select);
+        if (!state)
+            return;
+        if (next.has(ALL_VALUE) && next.size > 1) {
+            if (added.includes(ALL_VALUE)) {
+                next.clear();
+                next.add(ALL_VALUE);
+            }
+            else
+                next.delete(ALL_VALUE);
+        }
+        if (next.size === 0)
+            next.add(ALL_VALUE);
+        state.selected = next;
+        renderSelect(select);
+    }
+    function wireMultiSelect(select, searchInput) {
+        // Plain clicks toggle an option; the native list box needs Cmd/Ctrl-click.
+        select.addEventListener("mousedown", (event) => {
+            const option = event.target;
+            const state = selectStates.get(select);
+            if (!(option instanceof HTMLOptionElement) || !state)
+                return;
+            event.preventDefault();
+            select.focus();
+            const next = new Set(state.selected);
+            if (next.has(option.value))
+                next.delete(option.value);
+            else
+                next.add(option.value);
+            applySelection(select, next, [option.value]);
+            select.dispatchEvent(new Event("change"));
+        });
+        // Keyboard selection still goes through the native change event.
+        select.addEventListener("change", () => {
+            const state = selectStates.get(select);
+            if (!state)
+                return;
+            const current = new Set(Array.from(select.selectedOptions).map((option) => option.value));
+            const added = [...current].filter((value) => !state.selected.has(value));
+            applySelection(select, current, added);
+        });
+        searchInput === null || searchInput === void 0 ? void 0 : searchInput.addEventListener("input", () => {
+            const state = selectStates.get(select);
+            if (!state)
+                return;
+            state.query = searchInput.value;
+            renderSelect(select);
+        });
+    }
     function populateSelect(select, options, defaults) {
-        select.replaceChildren(...options.map(({ value, label }) => new Option(label, value)));
         const available = new Set(options.map((option) => option.value));
         const chosen = defaults.filter((value) => available.has(value));
         if (!chosen.length)
             chosen.push(ALL_VALUE);
-        Array.from(select.options).forEach((option) => { option.selected = chosen.includes(option.value); });
+        selectStates.set(select, { options, selected: new Set(chosen), query: "" });
+        renderSelect(select);
     }
     function populateInstanceFilters(instance) {
         const cycloneSelect = instance.querySelector(".cyclone-select");
@@ -251,6 +317,7 @@
         populateSelect(stateSelect, [{ value: ALL_VALUE, label: "All states" }, ...states.map((value) => ({ value, label: value }))], [ALL_VALUE]);
         const seasons = [...new Set(disturbances.map((row) => row.season).filter((value) => Boolean(value)))].sort().reverse();
         populateSelect(seasonSelect, [{ value: ALL_VALUE, label: "All seasons" }, ...seasons.map((value) => ({ value, label: value }))], instance === firstInstance && savedContext.season ? [savedContext.season] : [ALL_VALUE]);
+        instance.querySelectorAll(".cyclone-search").forEach((input) => { input.value = ""; });
         updateContext();
     }
     function updateContext() {
@@ -482,7 +549,7 @@
         target.appendChild(downloadBox);
     }
     async function generateForInstance(instance) {
-        var _a, _b, _c, _d;
+        var _a, _b, _c, _d, _e;
         const cycloneSelect = instance.querySelector(".cyclone-select");
         const stateSelect = instance.querySelector(".state-select");
         const seasonSelect = instance.querySelector(".season-select");
@@ -524,6 +591,7 @@
                     x_hours: xHours,
                     y_hours: yHours,
                     base_time_hours: baseTimeHours,
+                    forecast_level: ((_e = instance.querySelector(".warning-level")) === null || _e === void 0 ? void 0 : _e.value) || "watch_warning",
                 });
             }
         }
@@ -591,7 +659,20 @@
             return;
         initializedInstances.add(instance);
         wireTabs(instance);
-        instance.querySelectorAll("select").forEach((select) => select.addEventListener("change", updateContext));
+        const cycloneSearch = instance.querySelector(".cyclone-search");
+        const warningLevel = instance.querySelector(".warning-level");
+        // Warning = 0-24 h and Watch = 24-48 h of the base time.
+        warningLevel === null || warningLevel === void 0 ? void 0 : warningLevel.addEventListener("change", () => {
+            const hours = { warning: [0, 24], watch: [24, 48] }[warningLevel.value];
+            if (!hours)
+                return;
+            instance.querySelector(".x-hours").value = String(hours[0]);
+            instance.querySelector(".y-hours").value = String(hours[1]);
+        });
+        instance.querySelectorAll("select:not(.warning-level)").forEach((select) => {
+            wireMultiSelect(select, select.classList.contains("cyclone-select") ? cycloneSearch : null);
+            select.addEventListener("change", updateContext);
+        });
         instance.querySelectorAll(".base-time-hour").forEach((input) => input.addEventListener("change", updateContext));
         (_a = instance.querySelector(".generate-table")) === null || _a === void 0 ? void 0 : _a.addEventListener("click", () => { void generateForInstance(instance); });
     }

@@ -60,6 +60,9 @@ p, caption { color: var(--muted); }
 .filter-field select { width: 100%; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
 .filter-field select:focus-visible { outline: 2px solid #4fa8ff; outline-offset: 2px; }
 .filter-field select[multiple] { min-height: 132px; }
+.filter-field input[type="search"] { width: 100%; margin-bottom: 6px; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
+.filter-field input[type="search"]:focus-visible { outline: 2px solid #4fa8ff; outline-offset: 2px; }
+.filter-hint { margin: 8px 0 0; font-size: 12px; }
 .filter-field input[type="number"] { width: 100%; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
 .filter-grid-params { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
 .base-time-filter { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; }

@@ -22,7 +22,6 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.db.column_maps import TOWN_COLUMNS, TOWN_SHEET_NAME
 from app.models.town import Town, TownGroupMembership
 from app.services.loaders.common import Stats, clean_cell, to_bool, to_float
@@ -31,7 +30,7 @@ log = logging.getLogger(__name__)
 
 
 def default_towns_path() -> Path:
-    return settings.DATA_DIR / "towns.xlsx"
+    return Path(__file__).resolve().parents[2] / "resources" / "towns.xlsx"
 
 
 def read_towns_sheet(path: Path | None = None) -> pd.DataFrame:

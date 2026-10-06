@@ -47,6 +47,7 @@
       <div class="filter-grid" aria-label="Verification filters">
         <div class="filter-field">
           <label for="cycloneSelect-1">Cyclone</label>
+          <input id="cycloneSearch-1" class="cyclone-search" type="search" placeholder="Search cyclones by name or ID…" autocomplete="off">
           <select id="cycloneSelect-1" class="cyclone-select" multiple size="5"></select>
         </div>
         <div class="filter-field">
@@ -58,7 +59,16 @@
           <select id="seasonSelect-1" class="season-select" multiple size="5"></select>
         </div>
       </div>
+      <p class="filter-hint">Click options to select several. Choosing an "All" option clears the others.</p>
       <div class="filter-grid filter-grid-params" aria-label="Generation parameters">
+        <div class="filter-field">
+          <label for="warningLevel-1">Warning level</label>
+          <select id="warningLevel-1" class="warning-level">
+            <option value="warning">Warning (0–24 h)</option>
+            <option value="watch">Watch (24–48 h)</option>
+            <option value="watch_warning" selected>Watch or Warning (custom offsets)</option>
+          </select>
+        </div>
         <div class="filter-field"><label for="xHours-1">Start offset (hours)</label><input id="xHours-1" class="x-hours" type="number" min="0" step="1" value="0"></div>
         <div class="filter-field"><label for="yHours-1">End offset (hours)</label><input id="yHours-1" class="y-hours" type="number" min="1" step="1" value="24"></div>
       </div>

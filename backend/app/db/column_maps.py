@@ -223,7 +223,7 @@ OTCR_EXTRA_HEADERS: dict[int, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# data/towns.xlsx, sheet "TC Locations" -- 472 rows, 466 distinct locations.
+# app/resources/towns.xlsx, sheet "TC Locations" -- 472 rows, 466 distinct locations.
 # ---------------------------------------------------------------------------
 TOWN_SHEET_NAME = "TC Locations"
 
