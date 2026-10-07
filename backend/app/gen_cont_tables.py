@@ -12,13 +12,14 @@ from shapely.geometry import shape as shapely_shape
 from shapely.ops import nearest_points, unary_union
 from shapely.validation import make_valid
 
+from app.core.config import settings
+
 geod = Geod(ellps="WGS84")
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-GEOJSON_DIR = PROJECT_ROOT / "data" / "geojson"
-BEST_TRACK_CSV = PROJECT_ROOT / "data" / "best_track.csv"
+GEOJSON_DIR = settings.GEOJSON_DIR
+BEST_TRACK_CSV = settings.DATA_DIR / "best_track.csv"
 BEST_TRACK_INTERPOLATED_CSV = (
-    PROJECT_ROOT / "data" / "processed" / "best_track_interpolated.csv"
+    settings.DATA_DIR / "processed" / "best_track_interpolated.csv"
 )
 # Location/state source for Table A. The TC Locations sheet is authoritative;
 # data/towns.csv is not read by this pipeline (and is currently an Excel
