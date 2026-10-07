@@ -310,14 +310,15 @@ def _beyond_observation_cutoff(
     uncertainty_km: float,
     gale_distance_km: float,
 ) -> bool:
-    """Whether the gale distance exceeds max(100 km, uncertainty).
+    """Whether a Table B row should be omitted.
 
-    Storm/hurricane radii are nested inside the gale radius and often missing,
-    so only the gale distance decides. An unknown or negative (inside) gale
-    distance is always retained.
+    A missing gale distance means no gale radius was recorded (max wind below
+    gale force), so the row can never be an observed gale. Otherwise the row is
+    omitted when the gale distance exceeds max(100 km, uncertainty); storm and
+    hurricane radii are nested inside the gale radius and ignored.
     """
     if pd.isna(gale_distance_km) or not np.isfinite(gale_distance_km):
-        return False
+        return True
     cutoff_km = DISTANCE_CUTOFF_MIN_KM
     if pd.notna(uncertainty_km) and np.isfinite(uncertainty_km):
         cutoff_km = max(cutoff_km, float(uncertainty_km))
