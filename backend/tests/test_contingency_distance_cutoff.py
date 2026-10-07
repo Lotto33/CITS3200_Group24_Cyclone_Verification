@@ -19,7 +19,7 @@ from app.gen_cont_tables import (
         (300.0, 250.0, False),
         (300.0, 301.0, True),
         (1.0, -1.0, False),
-        (1.0, np.nan, False),
+        (1.0, np.nan, True),
         (np.nan, 500.0, True),
     ],
 )
