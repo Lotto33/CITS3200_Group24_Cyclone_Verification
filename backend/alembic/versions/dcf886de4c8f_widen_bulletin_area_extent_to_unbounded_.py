@@ -7,7 +7,6 @@ Create Date: 2026-09-25 11:52:34.782881
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
 # Autogenerate renders this project's custom column types by their full
@@ -15,8 +14,9 @@ import sqlalchemy as sa
 # variant with a bare Text(), so both have to be importable here even
 # when a particular migration does not use them.
 from sqlalchemy import Text  # noqa: F401
-import app.db.columns  # noqa: F401
 
+import app.db.columns  # noqa: F401
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'dcf886de4c8f'

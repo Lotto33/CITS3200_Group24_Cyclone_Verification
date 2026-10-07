@@ -87,7 +87,7 @@ def load_towns(xlsx_path, sheet):
     except ValueError as exc:
         raise SystemExit(
             f"Error: could not read sheet {sheet!r} from {xlsx_path}: {exc}"
-        )
+        ) from exc
 
     missing = [c for c in (NAME_COLUMN, LAT_COLUMN, LON_COLUMN) if c not in df.columns]
     if missing:
