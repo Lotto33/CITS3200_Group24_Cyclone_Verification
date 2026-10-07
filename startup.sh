@@ -7,6 +7,9 @@ mkdir -p /home/cyclone/data/gml
 mkdir -p /home/cyclone/data/uploads
 mkdir -p /home/cyclone/data/geojson
 
+echo "Generating map configuration..."
+python backend/app/build_map_config.py
+
 cd backend
 
 echo "Running database migrations..."
