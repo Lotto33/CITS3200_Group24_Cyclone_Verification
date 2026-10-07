@@ -8,7 +8,7 @@ mkdir -p /home/cyclone/data/uploads
 mkdir -p /home/cyclone/data/geojson
 
 echo "Generating map configuration..."
-python backend/app/build_map_config.py
+python backend/app/build_map_config.py --out-dir /home/cyclone/data
 
 cd backend
 
