@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 VALID_BASE_TIME_HOURS = (0, 6, 12, 18)
 
+
 class ContingencyRequest(BaseModel):
     disturbance_ids: list[str] = Field(default_factory=list)
     season: str | None = None

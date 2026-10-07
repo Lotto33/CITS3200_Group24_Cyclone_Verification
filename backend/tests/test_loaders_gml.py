@@ -143,6 +143,8 @@ def test_watch_and_warning_areas_are_distinguished(db: Session):
 
 
 def test_watch_warning_flags_are_derived(db: Session):
+    if not any(region_dirs().values()):
+        pytest.skip("no GML bulletins present")
     load_bulletins(db, region="NT", limit=40)
     flagged = db.execute(
         select(func.count())
@@ -171,6 +173,8 @@ def test_empty_category_is_null_never_zero(db: Session):
 
 
 def test_time_offset_is_signed(db: Session):
+    if not any(region_dirs().values()):
+        pytest.skip("no GML bulletins present")
     load_bulletins(db, region="NT", limit=40)
     minimum = db.execute(select(func.min(BulletinFix.time_offset_hours))).scalar()
     assert minimum is not None and minimum < 0
