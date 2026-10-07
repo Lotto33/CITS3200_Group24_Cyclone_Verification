@@ -33,6 +33,21 @@
     </div>
     <div id="compareSelectors"></div>
     <button id="addCompareCyclone" class="secondary-button" type="button">+ Add cyclone</button>
+    <div class="layer-row"><input type="checkbox" id="compare-gale" checked>
+      <span class="swatch" style="background:#ff9ee0"></span> Gale-force area (34 kn)</div>
+    <div class="layer-row"><input type="checkbox" id="compare-storm">
+      <span class="swatch" style="background:#ff3fb4"></span> Storm-force area (48 kn)</div>
+    <div class="layer-row"><input type="checkbox" id="compare-hurricane">
+      <span class="swatch" style="background:#c4007a"></span> Hurricane-force area (64 kn)</div>
+    <div id="compareTimeBar" class="field">
+      <label for="compareSlider">Wind-radii analysis point</label>
+      <div class="slider-row">
+        <button id="comparePrevBtn" class="icon" type="button" title="Earlier">◀</button>
+        <input type="range" id="compareSlider" min="0" max="0" value="0" step="1" style="flex:1">
+        <button id="compareNextBtn" class="icon" type="button" title="Later">▶</button>
+      </div>
+      <div id="compareTimeLabel" style="white-space:pre-line">—</div>
+    </div>
     <div id="compareStatus" class="layer-note"></div>
   </div>
 
