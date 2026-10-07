@@ -25,6 +25,11 @@
     HF: { label: "Hurricane force (64 kn)", color: "#c4007a", fillOpacity: 0.24, layerKey: "btHurricane" },
   };
 
+  // Observed gale area over a window after the bulletin's base time. The
+  // 24-48 h window is the Watch range, the same one gen_cont_tables.py scores
+  // Table C against (--x-hours 24 --y-hours 48).
+  const GALE_WINDOW = { startH: 24, endH: 48, color: "#3ddc84", fillOpacity: 0.14 };
+
   const els = {
     cyclone: document.getElementById("cycloneSelect"),
     slider: document.getElementById("bulletinSlider"),
@@ -56,6 +61,7 @@
       btGale: document.getElementById("layer-btGale"),
       btStorm: document.getElementById("layer-btStorm"),
       btHurricane: document.getElementById("layer-btHurricane"),
+      btGaleWindow: document.getElementById("layer-btGaleWindow"),
     },
     compareToggle: document.getElementById("compareToggle"),
     comparePanel: document.getElementById("comparePanel"),
@@ -127,6 +133,7 @@
   let cyclonesById = new Map();
   let currentBulletins = [];
   let currentBestTrack = null;
+  let galeWindowNote = "";
   let currentIdx = 0;
   let playTimer = null;
   let towns = [];
@@ -751,6 +758,51 @@
       Mean ${km(r.mean)}`);
   }
 
+  // Union of the best-track gale areas over [startH, endH] after the bulletin's
+  // base time: where gale-force wind was actually observed in that window, to
+  // set against the bulletin's Watch area. The ring is built exactly as for the
+  // T+0 areas (windAreaRing), one per hour to keep the union cheap.
+  function drawObservedGaleWindow(points, bulletin) {
+    galeWindowNote = "";
+    if (!bulletin || !els.layers.btGaleWindow.checked) return;
+    const base = parseUtc(bulletin.fcastTime || bulletin.issueTime);
+    if (!Number.isFinite(base)) return;
+    const start = base + GALE_WINDOW.startH * 3600000;
+    const end = base + GALE_WINDOW.endH * 3600000;
+    const inWindow = points.filter(p => {
+      const t = parseUtc(p.time);
+      return t >= start && t <= end;
+    });
+    // Every point's ring (null where no gale radius is known); the union uses
+    // roughly hourly ones, indexed rather than clock-aligned because the base
+    // time can be an off-hour issue time.
+    const allRings = inWindow.map(p => (p.radii ? windAreaRing(p.coord[1], p.coord[0], p.radii.GF) : null));
+    const stride = Math.max(1, Math.round(60 / (trackStepMinutes(points) || 60)));
+    const rings = allRings.filter((ring, i) => ring && i % stride === 0);
+    galeWindowNote = `Observed gale 24–48 h: ${allRings.filter(Boolean).length} of ${inWindow.length} best-track points in the window have gale radii`;
+    if (!rings.length) return;
+
+    const label = `${fmtTime(new Date(start).toISOString())} → ${fmtTime(new Date(end).toISOString())}`;
+    const popup = `<b>Observed gale area (34 kn)</b><br>T+${GALE_WINDOW.startH} h → T+${GALE_WINDOW.endH} h: ${label}<br>${galeWindowNote.replace("Observed gale 24–48 h: ", "")}`;
+    const style = {
+      color: GALE_WINDOW.color, fillColor: GALE_WINDOW.color, fillOpacity: GALE_WINDOW.fillOpacity,
+      weight: 2, dashArray: "2,5", smoothFactor: 0,
+    };
+    try {
+      // polygon-clipping works in [lon, lat]; a failure (library blocked, or a
+      // degenerate ring) falls through to drawing the hourly rings overlapped.
+      const union = polygonClipping.union(...rings.map(r => [[r.map(([lat, lon]) => [lon, lat])]]));
+      union.forEach(polygon => {
+        L.polygon(polygon.map(ring => ring.map(([lon, lat]) => [lat, lon])), style)
+          .bindPopup(popup).addTo(bestTrackLayer);
+      });
+    } catch (err) {
+      rings.forEach(ring => {
+        L.polygon(ring, { ...style, weight: 1, fillOpacity: 0.05 }).bindPopup(popup).addTo(bestTrackLayer);
+      });
+    }
+  }
+
   function drawBestTrack(bounds, bulletin) {
     bestTrackLayer.clearLayers();
     if (!els.layers.bestTrack.checked || !currentBestTrack) return;
@@ -762,7 +814,10 @@
     const anchors = points.filter(p => !p.interpolated);
     const showEveryPoint = !interpolated || points.length <= MAX_INTERPOLATED_MARKERS;
 
-    if (interpolated) drawBestTrackAreas(points, bulletin, bounds);
+    if (interpolated) {
+      drawObservedGaleWindow(points, bulletin);
+      drawBestTrackAreas(points, bulletin, bounds);
+    }
 
     const latlngs = points.map(p => [p.coord[1], p.coord[0]]);
     L.polyline(latlngs, { color: "#2fd4d9", weight: 3, opacity: 0.9 })
@@ -858,6 +913,7 @@
       });
     });
     drawBestTrack(bounds, b);
+    if (galeWindowNote) els.info.innerHTML += `<br>${galeWindowNote}`;
     if (fitBounds && bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 9 });
   }
 
