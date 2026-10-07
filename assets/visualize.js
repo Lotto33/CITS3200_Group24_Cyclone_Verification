@@ -783,7 +783,7 @@
     if (!rings.length) return;
 
     const label = `${fmtTime(new Date(start).toISOString())} → ${fmtTime(new Date(end).toISOString())}`;
-    const popup = `<b>Observed gale area (34 kn)</b><br>T+${GALE_WINDOW.startH} h → T+${GALE_WINDOW.endH} h: ${label}<br>${galeWindowNote.replace("Observed gale 24–48 h: ", "")}`;
+    const popup = `<b>Observed gale area (34 kn) — from best-track area</b><br>T+${GALE_WINDOW.startH} h → T+${GALE_WINDOW.endH} h: ${label}<br>${galeWindowNote.replace("Observed gale 24–48 h: ", "")}`;
     const style = {
       color: GALE_WINDOW.color, fillColor: GALE_WINDOW.color, fillOpacity: GALE_WINDOW.fillOpacity,
       weight: 2, dashArray: "2,5", smoothFactor: 0,
