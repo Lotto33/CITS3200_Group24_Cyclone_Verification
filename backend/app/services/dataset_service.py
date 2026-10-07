@@ -1,6 +1,11 @@
+import shutil
+import ssl
 import tempfile
+import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
+
+import certifi
 
 from app.build_gml_dataset import build
 from app.db.session import SessionLocal
@@ -10,6 +15,8 @@ from app.services.loaders.best_track import load_best_track, read_best_track_csv
 from app.services.loaders.common import Stats, ingest_run
 from app.services.loaders.gml import load_bulletins
 from app.services.loaders.interpolation import load_interpolation
+
+BOM_BEST_TRACK_URL = "https://www.bom.gov.au/clim_data/IDCKMSTM0S.csv"
 
 
 def process_gml_dataset(input_dir: Path, data_dir: Path) -> dict:
@@ -189,7 +196,8 @@ def process_uploaded_best_track(csv_path: Path, data_dir: Path) -> dict:
 
     raw_target = data_dir / "best_track.csv"
     raw_target.parent.mkdir(parents=True, exist_ok=True)
-    raw_target.write_bytes(csv_path.read_bytes())
+    with csv_path.open("rb") as source, raw_target.open("wb") as target:
+        shutil.copyfileobj(source, target)
 
     print("=== Database ingest: best-track observations ===")
     with SessionLocal() as session:
@@ -256,3 +264,50 @@ def process_uploaded_best_track(csv_path: Path, data_dir: Path) -> dict:
         "interpolation": interpolation,
         "interpolation_error": interpolation_error,
     }
+
+
+def refresh_best_track_from_bom(data_dir: Path) -> dict:
+    """Download BOM's current best-track CSV and ingest it through the DB path."""
+    data_dir = Path(data_dir).resolve()
+    upload_dir = data_dir / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(
+        BOM_BEST_TRACK_URL,
+        headers={"User-Agent": "CycloneVerification/1.0"},
+    )
+    tls_context = ssl.create_default_context(cafile=certifi.where())
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".csv", prefix="bom-best-track-", dir=upload_dir, delete=False
+    ) as download:
+        download_path = Path(download.name)
+        print(f"Downloading current BOM best-track CSV from {BOM_BEST_TRACK_URL}")
+        try:
+            with urllib.request.urlopen(
+                request, timeout=60, context=tls_context
+            ) as response:
+                total = response.headers.get("Content-Length")
+                total_bytes = int(total) if total and total.isdigit() else None
+                received = 0
+                while chunk := response.read(1024 * 1024):
+                    download.write(chunk)
+                    received += len(chunk)
+                    if total_bytes:
+                        print(
+                            f"Downloaded {received:,} of {total_bytes:,} bytes "
+                            f"({received * 100 // total_bytes}%)"
+                        )
+                    else:
+                        print(f"Downloaded {received:,} bytes")
+        except Exception:
+            download_path.unlink(missing_ok=True)
+            raise
+
+    try:
+        print("Validating downloaded best-track CSV header")
+        read_best_track_csv(download_path)
+        result = process_uploaded_best_track(download_path, data_dir)
+        result["source_url"] = BOM_BEST_TRACK_URL
+        return result
+    finally:
+        download_path.unlink(missing_ok=True)

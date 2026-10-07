@@ -23,7 +23,7 @@ BEST_TRACK_INTERPOLATED_CSV = (
 # Location/state source for Table A. The TC Locations sheet is authoritative;
 # data/towns.csv is not read by this pipeline (and is currently an Excel
 # workbook despite its .csv filename).
-TOWNS_XLSX = PROJECT_ROOT / "data" / "towns.xlsx"
+TOWNS_XLSX = Path(__file__).resolve().parent / "resources" / "towns.xlsx"
 BEST_TRACK_SKIPROWS = 4  # 3 copyright lines + 1 blank before the header
 
 # A town counts as coastal if this column has a value in the TC Locations
@@ -44,6 +44,10 @@ DEFAULT_COASTAL_BUFFER_CUTOFF = pd.Timestamp("2025-06-01")
 # Towns only appear in Table A if within this distance of a watch OR
 # warning area (scope doc S43).
 DEFAULT_RELEVANCE_KM = 300.0
+
+# Observations beyond max(100 km, position uncertainty) of every wind radius
+# are omitted from Table B; Table D treats missing observations as no gales.
+DISTANCE_CUTOFF_MIN_KM = 100.0
 
 # Columns that interpolate normally (continuous quantities)
 LINEAR_COLS = ["LAT", "LON", "MAX_WIND_SPD", "POSITION_UNCERTAINTY", "CENTRAL_PRES"]
@@ -302,6 +306,24 @@ def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
     return np.nan
 
 
+def _beyond_observation_cutoff(
+    uncertainty_km: float,
+    gale_distance_km: float,
+) -> bool:
+    """Whether the gale distance exceeds max(100 km, uncertainty).
+
+    Storm/hurricane radii are nested inside the gale radius and often missing,
+    so only the gale distance decides. An unknown or negative (inside) gale
+    distance is always retained.
+    """
+    if pd.isna(gale_distance_km) or not np.isfinite(gale_distance_km):
+        return False
+    cutoff_km = DISTANCE_CUTOFF_MIN_KM
+    if pd.notna(uncertainty_km) and np.isfinite(uncertainty_km):
+        cutoff_km = max(cutoff_km, float(uncertainty_km))
+    return gale_distance_km > cutoff_km
+
+
 def signed_distance_to_polygon_km(point, polygon_union) -> float:
     """Geodesic distance in km from point to the nearest edge of
     polygon_union. Negative when point is inside the polygon, matching
@@ -553,6 +575,20 @@ def list_disturbance_ids_for_season(season: str) -> list[str]:
     return result
 
 
+def filter_base_times(
+    fcast_times: list[str], base_time_hours: list[int] | None
+) -> list[str]:
+    """Keep only forecast timestamps whose UTC hour is selected."""
+    if base_time_hours is None:
+        return sorted(fcast_times)
+    selected = set(base_time_hours)
+    return [
+        fcast_time
+        for fcast_time in sorted(fcast_times)
+        if pd.to_datetime(fcast_time, utc=True).hour in selected
+    ]
+
+
 """See the client's scope and deliverables"""
 
 
@@ -563,6 +599,8 @@ def generate_table_a(
     relevance_km: float = DEFAULT_RELEVANCE_KM,
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
     forecasts: dict[str, dict] | None = None,
+    fcast_times: list[str] | None = None,
+    base_time_hours: list[int] | None = None,
 ) -> pd.DataFrame:
     """
     create a table from the forecast polygons for each forecast base time including relevant locations
@@ -606,11 +644,14 @@ def generate_table_a(
         locations = load_locations()
     rows = []
     if forecasts is not None:
-        fcast_times = sorted(forecasts)
+        available_times = sorted(forecasts)
+    elif fcast_times is not None:
+        available_times = fcast_times
     else:
-        fcast_times = get_reference_times(disturbance_id)
-    for i, fcast_time in enumerate(fcast_times, start=1):
-        print(f"[table_a] ({i}/{len(fcast_times)}) base time {fcast_time}")
+        available_times = get_reference_times(disturbance_id)
+    selected_times = filter_base_times(available_times, base_time_hours)
+    for i, fcast_time in enumerate(selected_times, start=1):
+        print(f"[table_a] ({i}/{len(selected_times)}) base time {fcast_time}")
         if forecasts is not None:
             geo = forecasts[fcast_time]
         else:
@@ -754,6 +795,7 @@ def generate_table_b(
         locations = load_locations()
 
     rows = []
+    cutoff_rows = 0
     df = track if track is not None else load_best_track(disturbance_id)
     if track is not None or _best_track_is_preprocessed():
         print(
@@ -797,12 +839,17 @@ def generate_table_b(
             dist_storm_km = dist_center_km - storm_radius_km
             dist_hurricane_km = dist_center_km - hurricane_radius_km
 
+            uncertainty_km = step.get("POSITION_UNCERTAINTY", np.nan)
+            if _beyond_observation_cutoff(uncertainty_km, dist_gale_km):
+                cutoff_rows += 1
+                continue
+
             rows.append(
                 {
                     "Disturbance ID": disturbance_id,
                     "Location": loc["name"],
                     "Time": step["TM"],
-                    "Analysis Uncertainty": step.get("POSITION_UNCERTAINTY", np.nan),
+                    "Analysis Uncertainty": uncertainty_km,
                     "Distance to gale": dist_gale_km,
                     "Distance to storm": dist_storm_km,
                     "Distance to hurricane": dist_hurricane_km,
@@ -821,7 +868,10 @@ def generate_table_b(
             "Distance to hurricane",
         ],
     )
-    print(f"[table_b] Done: {len(result)} row(s)")
+    print(
+        f"[table_b] Done: {len(result)} row(s); "
+        f"{cutoff_rows} beyond the max(100 km, position uncertainty) cutoff omitted"
+    )
     return result
 
 
@@ -1043,7 +1093,11 @@ def _output_filename_prefix(
     identifier: str,
     state: str | None = None,
     season: str | None = None,
+    base_time_hours: list[int] | None = None,
     generated_date: date | None = None,
+    forecast_level: str | None = None,
+    x_hours: int | None = None,
+    y_hours: int | None = None,
 ) -> str:
     """Build a readable output prefix containing applied filters and run date."""
     parts = [identifier]
@@ -1051,6 +1105,12 @@ def _output_filename_prefix(
         parts.append(f"season-{season}")
     if state is not None:
         parts.append(f"state-{state}")
+    if base_time_hours is not None:
+        parts.append("base-times-" + "-".join(f"{hour:02d}" for hour in base_time_hours))
+    if forecast_level is not None:
+        parts.append(f"level-{forecast_level.replace('_', '-')}")
+    if x_hours is not None and y_hours is not None:
+        parts.append(f"hours-{x_hours}-{y_hours}")
     parts.append(
         f"date-{(generated_date or date.today()).isoformat().replace('-', '')}"
     )
@@ -1072,6 +1132,7 @@ def generate_all_tables_for_disturbance(
     locations: gpd.GeoDataFrame | None = None,
     forecasts: dict[str, dict] | None = None,
     track: pd.DataFrame | None = None,
+    base_time_hours: list[int] | None = None,
 ) -> dict[str, pd.DataFrame | dict]:
     """Generate Tables A-D for one disturbance, optionally limited by state.
 
@@ -1101,13 +1162,25 @@ def generate_all_tables_for_disturbance(
     else:
         locations_for_table_a = all_locations
 
+    if forecasts is not None:
+        available_times = sorted(forecasts)
+    else:
+        available_times = get_reference_times(disturbance_id)
+    selected_times = filter_base_times(available_times, base_time_hours)
+    selected_forecasts = (
+        {time: forecasts[time] for time in selected_times}
+        if forecasts is not None
+        else None
+    )
+
     table_a = generate_table_a(
         disturbance_id,
         locations_for_table_a,
         coastal_buffer_km=coastal_buffer_km,
         relevance_km=relevance_km,
         coastal_buffer_cutoff=coastal_buffer_cutoff,
-        forecasts=forecasts,
+        forecasts=selected_forecasts,
+        fcast_times=selected_times,
     )
 
     # Table B/C only need the locations that actually appear in Table A for
@@ -1129,7 +1202,7 @@ def generate_all_tables_for_disturbance(
         y_hours=y_hours,
         wind_level=wind_level,
         table_b=table_b,
-        fcast_times=sorted(forecasts) if forecasts is not None else None,
+        fcast_times=selected_times,
     )
     table_d = generate_table_d(table_a, table_c, forecast_level=forecast_level,)
     stats = generate_contingency_dict(table_d)
@@ -1148,9 +1221,16 @@ def generate_all_tables_for_disturbance(
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         output_prefix = _output_filename_prefix(
-            disturbance_id, state=state, season=season
+            disturbance_id,
+            state=state,
+            season=season,
+            base_time_hours=base_time_hours,
+            forecast_level=forecast_level,
+            x_hours=x_hours,
+            y_hours=y_hours,
         )
         print(f"\n[write] Writing CSVs to {out_dir} ...")
+        written: list[Path] = []
         for name, frame in (
             ("table_a", table_a),
             ("table_b", table_b),
@@ -1160,10 +1240,13 @@ def generate_all_tables_for_disturbance(
         ):
             out_path = out_dir / f"{output_prefix}_{name}.csv"
             frame.to_csv(out_path, index=False)
+            written.append(out_path)
             print(f"[write]   {out_path} ({len(frame)} row(s))")
 
         summary_path = out_dir / f"{output_prefix}_contingency_summary.csv"
         pd.DataFrame([stats]).to_csv(summary_path, index=False)
+        written.append(summary_path)
+        outputs["files"] = written
         print(f"[write]   {summary_path}")
 
     print(f"##### Done: {disturbance_id} #####\n")
@@ -1182,6 +1265,7 @@ def generate_all_tables_for_disturbances(
     coastal_buffer_cutoff: pd.Timestamp = DEFAULT_COASTAL_BUFFER_CUTOFF,
     state: str | None = None,
     season: str | None = None,
+    base_time_hours: list[int] | None = None,
 ) -> dict[str, object]:
     """Run the full Table A-D pipeline for each disturbance ID in turn (each
     still gets its own per-disturbance CSVs, same as generate_all_tables_for_disturbance),
@@ -1207,6 +1291,7 @@ def generate_all_tables_for_disturbances(
             coastal_buffer_cutoff=coastal_buffer_cutoff,
             state=state,
             season=season,
+            base_time_hours=base_time_hours,
         )
         per_disturbance[disturbance_id] = outputs
         table_d_frames.append(outputs["table_d"])
@@ -1230,20 +1315,35 @@ def generate_all_tables_for_disturbances(
     )
     combined_stats = generate_contingency_dict(combined_table_d)
     combined_matrix = get_contingency_matrix_df(combined_stats)
+    written_files: list[Path] = []
 
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        output_prefix = _output_filename_prefix("combined", state=state, season=season)
+        output_prefix = _output_filename_prefix(
+            "combined",
+            state=state,
+            season=season,
+            base_time_hours=base_time_hours,
+            forecast_level=forecast_level,
+            x_hours=x_hours,
+            y_hours=y_hours,
+        )
         combined_table_path = out_dir / f"{output_prefix}_table_d.csv"
         combined_table_d.to_csv(combined_table_path, index=False)
         print(f"[write]   {combined_table_path} ({len(combined_table_d)} row(s))")
         combined_summary_path = out_dir / f"{output_prefix}_contingency_summary.csv"
         pd.DataFrame([combined_stats]).to_csv(combined_summary_path, index=False)
         print(f"[write]   {combined_summary_path}")
+        written_files = [
+            *(path for outputs in per_disturbance.values() for path in outputs.get("files", [])),
+            combined_table_path,
+            combined_summary_path,
+        ]
 
     return {
         "per_disturbance": per_disturbance,
+        "files": written_files,
         "combined_table_d": combined_table_d,
         "combined_stats": combined_stats,
         "combined_matrix": combined_matrix,

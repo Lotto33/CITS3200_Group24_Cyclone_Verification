@@ -26,9 +26,8 @@
     status: document.getElementById("status"),
     uploadStatus: document.getElementById("uploadStatus"),
     uploadGmlBtn: document.getElementById("uploadGmlBtn"),
-    uploadBestTrackBtn: document.getElementById("uploadBestTrackBtn"),
+    refreshBestTrackBtn: document.getElementById("refreshBestTrackBtn"),
     gmlUploadInput: document.getElementById("gmlUploadInput"),
-    bestTrackUploadInput: document.getElementById("bestTrackUploadInput"),
     categoryLegend: document.getElementById("categoryLegend"),
     // Towns are static, so this checkbox is deliberately kept out of
     // els.layers -- everything in there is wired to renderBulletin().
@@ -159,10 +158,10 @@
   }
 
   async function uploadDataset(file, endpoint, label) {
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    setUploadStatus(`Uploading ${label}…`);
+    if (!file && endpoint !== "refresh-best-track") return;
+    const formData = file ? new FormData() : null;
+    if (file) formData.append("file", file);
+    setUploadStatus(file ? `Uploading ${label}…` : `Requesting current ${label} from BOM…`);
     try {
       const response = await fetch(`${API_BASE}/datasets/${endpoint}`, { method: "POST", body: formData });
       const payload = await response.json().catch(() => ({}));
@@ -193,7 +192,7 @@
       if (endpoint === "upload") {
         await loadIndex();
       }
-      if (endpoint === "upload-best-track") {
+      if (endpoint === "refresh-best-track") {
         await loadCyclone();
       }
     } catch (err) {
@@ -397,7 +396,7 @@
   // The API only answers when the page is served by app.main (uvicorn) AND
   // `python -m app.cli interpolate` has produced a run. Served from a plain
   // `python -m http.server`, or before the DB is loaded, the fetch just fails
-  // and we fall back to data/best_track/<id>.json -- the raw 6-hourly BoM
+  // and we fall back to data/best_track/<id>.json -- the raw 6-hourly BOM
   // fixes from build_gml_dataset.py. Both are normalised to the same shape so
   // drawBestTrack() only has to care about `source`.
   const API_BASE = "api/v1";
@@ -471,7 +470,7 @@
   function bestTrackSummaryFor(track) {
     if (!track) return "not available";
     const n = track.points.length;
-    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BoM fixes)`;
+    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BOM fixes)`;
     const step = trackStepMinutes(track.points);
     return `${n} points (interpolated${step ? ` ${step}-minute` : ""} grid, as verified)`;
   }
@@ -544,8 +543,8 @@
     L.polyline(latlngs, { color: "#2fd4d9", weight: 3, opacity: 0.9 })
       .bindPopup(`<b>Best track</b>${currentBestTrack.name ? ` — ${currentBestTrack.name}` : ""}<br>
         ${interpolated
-          ? `Interpolated grid${step ? ` (${step}-minute step)` : ""} — ${points.length} points from ${anchors.length} BoM fixes`
-          : `Raw BoM fixes — ${points.length} points`}<br>
+          ? `Interpolated grid${step ? ` (${step}-minute step)` : ""} — ${points.length} points from ${anchors.length} BOM fixes`
+          : `Raw BOM fixes — ${points.length} points`}<br>
         ${fmtTime(points[0].time)} → ${fmtTime(points[points.length - 1].time)}`)
       .addTo(bestTrackLayer);
 
@@ -664,14 +663,14 @@
     }
   });
 
-  els.uploadBestTrackBtn.addEventListener("click", () => els.bestTrackUploadInput.click());
-  els.bestTrackUploadInput.addEventListener("change", async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  els.refreshBestTrackBtn.addEventListener("click", async () => {
+    els.refreshBestTrackBtn.disabled = true;
+    els.uploadGmlBtn.disabled = true;
     try {
-      await uploadDataset(file, "upload-best-track", "best track CSV");
+      await uploadDataset(null, "refresh-best-track", "best track");
     } finally {
-      event.target.value = "";
+      els.refreshBestTrackBtn.disabled = false;
+      els.uploadGmlBtn.disabled = false;
     }
   });
 
