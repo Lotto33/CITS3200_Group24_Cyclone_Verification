@@ -5,6 +5,9 @@
     const API_BASE = "/api/v1";
     const ALL_VALUE = "__all__";
     const SUPPORTED_STATES = ["NT", "QLD", "WA"];
+    // Project scope: verification period 2016/17 to 2025/26.
+    const FIRST_SEASON = "2016-17";
+    const LAST_SEASON = "2025-26";
     const tableInstances = document.getElementById("tableInstances");
     const firstInstance = tableInstances === null || tableInstances === void 0 ? void 0 : tableInstances.querySelector(".table-instance");
     const savedContext = JSON.parse(localStorage.getItem("cycloneVerification") || "null") || {};
@@ -215,7 +218,7 @@
             loadDisturbances(),
             requestJson("/towns"),
         ]);
-        disturbances = disturbanceRows;
+        disturbances = disturbanceRows.filter((row) => Boolean(row.season) && row.season >= FIRST_SEASON && row.season <= LAST_SEASON);
         states = [...new Set([
                 ...SUPPORTED_STATES,
                 ...townRows.map((town) => town.state).filter(Boolean),
@@ -487,6 +490,7 @@
         URL.revokeObjectURL(url);
     }
     async function showRunFiles(instance, files, ids, stats, baseTimeHours) {
+        var _a;
         const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids, baseTimeHours));
         const dates = candidates.map((name) => { var _a; return ((_a = name.match(/date-(\d{8})/)) === null || _a === void 0 ? void 0 : _a[1]) || ""; }).sort();
         const latestDate = dates[dates.length - 1] || "";
@@ -503,6 +507,7 @@
                     const response = await fetch(`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`);
                     if (!response.ok)
                         throw new Error(`Could not load ${file} (HTTP ${response.status})`);
+                    (_a = panel.querySelector(".layer-note")) === null || _a === void 0 ? void 0 : _a.remove();
                     renderCsv(panel, await response.text());
                 }
                 catch (error) {
@@ -591,7 +596,7 @@
                     x_hours: xHours,
                     y_hours: yHours,
                     base_time_hours: baseTimeHours,
-                    forecast_level: ((_e = instance.querySelector(".warning-level")) === null || _e === void 0 ? void 0 : _e.value) || "watch_warning",
+                    forecast_level: ((_e = instance.querySelector(".warning-level")) === null || _e === void 0 ? void 0 : _e.value) || "warning",
                 });
             }
         }
@@ -828,6 +833,7 @@
         firstInstance.querySelectorAll(".instance-status").forEach((el) => { el.textContent = ""; el.classList.remove("error"); });
         firstInstance.querySelector(".x-hours").value = "0";
         firstInstance.querySelector(".y-hours").value = "24";
+        firstInstance.querySelector(".warning-level").value = "warning";
         firstInstance.querySelectorAll(".base-time-hour").forEach((input) => { input.checked = true; });
         byId("gmlUploadInput").value = "";
         byId("uploadProgress").hidden = true;

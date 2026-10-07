@@ -12,19 +12,19 @@ from app.gen_cont_tables import (
 
 
 @pytest.mark.parametrize(
-    ("uncertainty", "distances", "expected"),
+    ("uncertainty", "gale_distance", "expected"),
     [
-        (1.0, (101.0, 150.0, 200.0), True),
-        (1.0, (100.0, 150.0, 200.0), False),
-        (300.0, (250.0, 350.0, 400.0), False),
-        (300.0, (301.0, 350.0, 400.0), True),
-        (1.0, (101.0, -1.0, 200.0), False),
-        (1.0, (101.0, np.nan, 200.0), False),
-        (np.nan, (500.0, 600.0, 700.0), True),
+        (1.0, 101.0, True),
+        (1.0, 100.0, False),
+        (300.0, 250.0, False),
+        (300.0, 301.0, True),
+        (1.0, -1.0, False),
+        (1.0, np.nan, False),
+        (np.nan, 500.0, True),
     ],
 )
-def test_beyond_uncertainty_cutoff_is_conservative(uncertainty, distances, expected):
-    assert _beyond_observation_cutoff(uncertainty, distances) is expected
+def test_beyond_uncertainty_cutoff_uses_gale_distance(uncertainty, gale_distance, expected):
+    assert _beyond_observation_cutoff(uncertainty, gale_distance) is expected
 
 
 def test_table_b_omits_only_provably_unobservable_rows(monkeypatch):

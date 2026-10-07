@@ -62,11 +62,7 @@ def generate_tables(request: ContingencyRequest):
         "total": stats["total"],
     }
 
-    files = {
-        path.name: str(path)
-        for path in output_dir.glob("*.csv")
-        if path.is_file()
-    }
+    files = {path.name: str(path) for path in result.get("files", [])}
 
     return {
         "status": "success",

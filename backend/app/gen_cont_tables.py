@@ -308,19 +308,20 @@ def get_quadrant_radius(row: pd.Series, prefix: str, bearing: float) -> float:
 
 def _beyond_observation_cutoff(
     uncertainty_km: float,
-    distances_km: tuple[float, float, float],
+    gale_distance_km: float,
 ) -> bool:
-    """Whether every wind-radius distance exceeds max(100 km, uncertainty).
+    """Whether the gale distance exceeds max(100 km, uncertainty).
 
-    Any unknown distance is retained conservatively. Negative signed
-    distances are inside a wind radius and are always retained.
+    Storm/hurricane radii are nested inside the gale radius and often missing,
+    so only the gale distance decides. An unknown or negative (inside) gale
+    distance is always retained.
     """
-    if any(pd.isna(distance) or not np.isfinite(distance) for distance in distances_km):
+    if pd.isna(gale_distance_km) or not np.isfinite(gale_distance_km):
         return False
     cutoff_km = DISTANCE_CUTOFF_MIN_KM
     if pd.notna(uncertainty_km) and np.isfinite(uncertainty_km):
         cutoff_km = max(cutoff_km, float(uncertainty_km))
-    return all(distance > cutoff_km for distance in distances_km)
+    return gale_distance_km > cutoff_km
 
 
 def signed_distance_to_polygon_km(point, polygon_union) -> float:
@@ -839,8 +840,7 @@ def generate_table_b(
             dist_hurricane_km = dist_center_km - hurricane_radius_km
 
             uncertainty_km = step.get("POSITION_UNCERTAINTY", np.nan)
-            distances = (dist_gale_km, dist_storm_km, dist_hurricane_km)
-            if _beyond_observation_cutoff(uncertainty_km, distances):
+            if _beyond_observation_cutoff(uncertainty_km, dist_gale_km):
                 cutoff_rows += 1
                 continue
 
@@ -1096,6 +1096,8 @@ def _output_filename_prefix(
     base_time_hours: list[int] | None = None,
     generated_date: date | None = None,
     forecast_level: str | None = None,
+    x_hours: int | None = None,
+    y_hours: int | None = None,
 ) -> str:
     """Build a readable output prefix containing applied filters and run date."""
     parts = [identifier]
@@ -1107,6 +1109,8 @@ def _output_filename_prefix(
         parts.append("base-times-" + "-".join(f"{hour:02d}" for hour in base_time_hours))
     if forecast_level is not None:
         parts.append(f"level-{forecast_level.replace('_', '-')}")
+    if x_hours is not None and y_hours is not None:
+        parts.append(f"hours-{x_hours}-{y_hours}")
     parts.append(
         f"date-{(generated_date or date.today()).isoformat().replace('-', '')}"
     )
@@ -1222,8 +1226,11 @@ def generate_all_tables_for_disturbance(
             season=season,
             base_time_hours=base_time_hours,
             forecast_level=forecast_level,
+            x_hours=x_hours,
+            y_hours=y_hours,
         )
         print(f"\n[write] Writing CSVs to {out_dir} ...")
+        written: list[Path] = []
         for name, frame in (
             ("table_a", table_a),
             ("table_b", table_b),
@@ -1233,10 +1240,13 @@ def generate_all_tables_for_disturbance(
         ):
             out_path = out_dir / f"{output_prefix}_{name}.csv"
             frame.to_csv(out_path, index=False)
+            written.append(out_path)
             print(f"[write]   {out_path} ({len(frame)} row(s))")
 
         summary_path = out_dir / f"{output_prefix}_contingency_summary.csv"
         pd.DataFrame([stats]).to_csv(summary_path, index=False)
+        written.append(summary_path)
+        outputs["files"] = written
         print(f"[write]   {summary_path}")
 
     print(f"##### Done: {disturbance_id} #####\n")
@@ -1305,6 +1315,7 @@ def generate_all_tables_for_disturbances(
     )
     combined_stats = generate_contingency_dict(combined_table_d)
     combined_matrix = get_contingency_matrix_df(combined_stats)
+    written_files: list[Path] = []
 
     if output_dir is not None:
         out_dir = Path(output_dir)
@@ -1315,6 +1326,8 @@ def generate_all_tables_for_disturbances(
             season=season,
             base_time_hours=base_time_hours,
             forecast_level=forecast_level,
+            x_hours=x_hours,
+            y_hours=y_hours,
         )
         combined_table_path = out_dir / f"{output_prefix}_table_d.csv"
         combined_table_d.to_csv(combined_table_path, index=False)
@@ -1322,9 +1335,15 @@ def generate_all_tables_for_disturbances(
         combined_summary_path = out_dir / f"{output_prefix}_contingency_summary.csv"
         pd.DataFrame([combined_stats]).to_csv(combined_summary_path, index=False)
         print(f"[write]   {combined_summary_path}")
+        written_files = [
+            *(path for outputs in per_disturbance.values() for path in outputs.get("files", [])),
+            combined_table_path,
+            combined_summary_path,
+        ]
 
     return {
         "per_disturbance": per_disturbance,
+        "files": written_files,
         "combined_table_d": combined_table_d,
         "combined_stats": combined_stats,
         "combined_matrix": combined_matrix,

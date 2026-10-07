@@ -10,7 +10,7 @@ class ContingencyRequest(BaseModel):
     state: str | None = None
     x_hours: int = Field(default=0, ge=0)
     y_hours: int = Field(default=24, gt=0)
-    forecast_level: Literal["watch", "warning", "watch_warning"] = "watch_warning"
+    forecast_level: Literal["watch", "warning", "watch_warning"] = "warning"
     base_time_hours: list[int] = Field(
         default_factory=lambda: list(VALID_BASE_TIME_HOURS)
     )

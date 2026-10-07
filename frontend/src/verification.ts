@@ -34,6 +34,9 @@
   const API_BASE = "/api/v1";
   const ALL_VALUE = "__all__";
   const SUPPORTED_STATES = ["NT", "QLD", "WA"];
+  // Project scope: verification period 2016/17 to 2025/26.
+  const FIRST_SEASON = "2016-17";
+  const LAST_SEASON = "2025-26";
 
   const tableInstances = document.getElementById("tableInstances");
   const firstInstance = tableInstances?.querySelector<HTMLElement>(".table-instance");
@@ -258,7 +261,8 @@
       loadDisturbances(),
       requestJson<Town[]>("/towns"),
     ]);
-    disturbances = disturbanceRows;
+    disturbances = disturbanceRows.filter((row) =>
+      Boolean(row.season) && row.season! >= FIRST_SEASON && row.season! <= LAST_SEASON);
     states = [...new Set([
       ...SUPPORTED_STATES,
       ...townRows.map((town) => town.state).filter(Boolean),
@@ -527,6 +531,7 @@
         try {
           const response = await fetch(`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`);
           if (!response.ok) throw new Error(`Could not load ${file} (HTTP ${response.status})`);
+          panel.querySelector(".layer-note")?.remove();
           renderCsv(panel, await response.text());
         }
         catch (error) { instanceStatus(instance, (error as Error).message, true); }
@@ -591,7 +596,7 @@
           x_hours: xHours,
           y_hours: yHours,
           base_time_hours: baseTimeHours,
-          forecast_level: instance.querySelector<HTMLSelectElement>(".warning-level")?.value || "watch_warning",
+          forecast_level: instance.querySelector<HTMLSelectElement>(".warning-level")?.value || "warning",
         });
       }
     }
@@ -786,6 +791,7 @@
     firstInstance.querySelectorAll<HTMLElement>(".instance-status").forEach((el) => { el.textContent = ""; el.classList.remove("error"); });
     firstInstance.querySelector<HTMLInputElement>(".x-hours")!.value = "0";
     firstInstance.querySelector<HTMLInputElement>(".y-hours")!.value = "24";
+    firstInstance.querySelector<HTMLSelectElement>(".warning-level")!.value = "warning";
     firstInstance.querySelectorAll<HTMLInputElement>(".base-time-hour").forEach((input) => { input.checked = true; });
     byId<HTMLInputElement>("gmlUploadInput").value = "";
     byId<HTMLDivElement>("uploadProgress").hidden = true;
