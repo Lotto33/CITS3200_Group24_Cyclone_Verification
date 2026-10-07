@@ -1,0 +1,2 @@
+# All .sh files in this repository must use Linux LF endings
+*.sh text eol=lf
