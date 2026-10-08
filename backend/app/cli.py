@@ -68,13 +68,17 @@ def cmd_seed_codes(args: argparse.Namespace) -> int:
 
 
 def cmd_towns(args: argparse.Namespace) -> int:
-    from app.services.loaders.towns import load_towns, read_towns_sheet
+    from app.services.loaders.towns import (
+        default_towns_path,
+        load_towns,
+        read_towns_sheet,
+    )
 
     path = Path(args.xlsx) if args.xlsx else None
     with _session() as session:
         stats = Stats()
         frame = read_towns_sheet(path)
-        source = str(path or "towns.xlsx")
+        source = str(path or default_towns_path())
         with ingest_run(session, IngestKind.TOWNS, source=source) as run:
             counts = load_towns(session, frame, stats=stats)
             run.rows_read = counts["rows_read"]
@@ -448,7 +452,7 @@ def build_parser() -> argparse.ArgumentParser:
         handler=cmd_seed_codes
     )
 
-    towns = sub.add_parser("towns", help="load data/towns.xlsx")
+    towns = sub.add_parser("towns", help="load the packaged TC Locations workbook")
     towns.add_argument("--xlsx")
     towns.set_defaults(handler=cmd_towns)
 

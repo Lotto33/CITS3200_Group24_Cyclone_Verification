@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the towns dataset (for visualize.html's Towns layer) from
-data/towns.xlsx.
+the packaged backend/app/resources/towns.xlsx workbook.
 
 visualize.html is a static page served over plain HTTP -- it cannot read an
 xlsx. So, like build_gml_dataset.py, this script does the parsing offline and
@@ -20,7 +20,7 @@ Writes:
 
 Usage:
     python build_towns_dataset.py
-    python build_towns_dataset.py --towns-xlsx data/towns.xlsx --out-dir data
+    python build_towns_dataset.py --out-dir data
 """
 
 import argparse
@@ -28,6 +28,7 @@ import json
 import math
 import os
 import sys
+from pathlib import Path
 
 import pandas as pd
 
@@ -35,6 +36,7 @@ DEFAULT_SHEET = "TC Locations"
 
 # Sheet column -> JSON key. Everything else in the sheet (Island Major,
 # Island Territory, ...) is not needed by the map.
+DEFAULT_TOWNS_XLSX = Path(__file__).resolve().parent / "resources" / "towns.xlsx"
 NAME_COLUMN = "Name"
 STATE_COLUMN = "State"
 LAT_COLUMN = "Latitude"
@@ -87,12 +89,13 @@ def load_towns(xlsx_path, sheet):
     except ValueError as exc:
         raise SystemExit(
             f"Error: could not read sheet {sheet!r} from {xlsx_path}: {exc}"
-        )
+        ) from exc
 
     missing = [c for c in (NAME_COLUMN, LAT_COLUMN, LON_COLUMN) if c not in df.columns]
     if missing:
         raise SystemExit(
-            f"Error: sheet {sheet!r} is missing required column(s): {', '.join(missing)}"
+            f"Error: sheet {sheet!r} is missing required column(s): "
+            f"{', '.join(missing)}"
         )
 
     towns = []
@@ -136,24 +139,29 @@ def build(xlsx_path, sheet, out_dir):
         json.dump({"sheet": sheet, "count": len(towns), "towns": towns}, f)
 
     print(
-        f"{xlsx_path} [{sheet}]: {len(towns)} towns ({skipped} row(s) skipped: missing name or invalid coordinates)"
+        f"{xlsx_path} [{sheet}]: {len(towns)} towns "
+        f"({skipped} row(s) skipped: missing name or invalid coordinates)"
     )
     print(f"Wrote {out_path}.")
     if skipped:
         print(
-            "Skipped rows are expected -- the sheet has formatted-but-empty trailing rows.",
+            "Skipped rows are expected -- the sheet has formatted-but-empty "
+            "trailing rows.",
             file=sys.stderr,
         )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parse the towns workbook into data/towns.json for visualize.html's Towns layer."
+        description=(
+            "Parse the towns workbook into data/towns.json for "
+            "visualize.html's Towns layer."
+        )
     )
     parser.add_argument(
         "--towns-xlsx",
-        default="data/towns.xlsx",
-        help="Path to the towns workbook (default: data/towns.xlsx)",
+        default=str(DEFAULT_TOWNS_XLSX), 
+        help=f"Path to the towns workbook (default: {DEFAULT_TOWNS_XLSX})",
     )
     parser.add_argument(
         "--sheet",

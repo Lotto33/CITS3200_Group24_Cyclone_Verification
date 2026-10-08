@@ -1,14 +1,12 @@
 
-from pathlib import Path
-
+from app.core.config import settings
 from app.gen_cont_tables import (
     generate_all_tables_for_disturbance,
     generate_all_tables_for_disturbances,
     list_disturbance_ids_for_season,
 )
-
 from app.schemas.contigency import ContingencyRequest
-from app.core.config import settings
+
 
 def generate_tables(request: ContingencyRequest):
     if not request.disturbance_ids and not request.season:
@@ -31,10 +29,12 @@ def generate_tables(request: ContingencyRequest):
             output_dir=output_dir,
             x_hours=request.x_hours,
             y_hours=request.y_hours,
+            forecast_level=request.forecast_level,
             coastal_buffer_km=request.coastal_buffer_km,
             relevance_km=request.relevance_km,
             state=request.state,
             season=request.season,
+            base_time_hours=request.base_time_hours,
         )
         stats = result["stats"]
     else:
@@ -43,10 +43,12 @@ def generate_tables(request: ContingencyRequest):
             output_dir=output_dir,
             x_hours=request.x_hours,
             y_hours=request.y_hours,
+            forecast_level=request.forecast_level,
             coastal_buffer_km=request.coastal_buffer_km,
             relevance_km=request.relevance_km,
             state=request.state,
             season=request.season,
+            base_time_hours=request.base_time_hours,
         )
         stats = result["combined_stats"]
 
@@ -60,11 +62,7 @@ def generate_tables(request: ContingencyRequest):
         "total": stats["total"],
     }
 
-    files = {
-        path.name: str(path)
-        for path in output_dir.glob("*.csv")
-        if path.is_file()
-    }
+    files = {path.name: str(path) for path in result.get("files", [])}
 
     return {
         "status": "success",

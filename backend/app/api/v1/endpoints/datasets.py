@@ -84,6 +84,23 @@ def interpolate_best_track():
 
 
 @router.post(
+    "/refresh-best-track",
+    summary="Download the current BOM best-track CSV and refresh the database",
+    description=(
+        "Downloads IDCKMSTM0S.csv directly from BOM, validates it, ingests the "
+        "observations, and runs interpolation asynchronously. Poll "
+        "`/datasets/jobs/{job_id}` for progress and result."
+    ),
+)
+def refresh_best_track():
+    job = upload_jobs.start_upload_job(
+        "BOM best-track refresh",
+        lambda: dataset_service.refresh_best_track_from_bom(settings.DATA_DIR),
+    )
+    return {"job_id": job.job_id, "status": job.status}
+
+
+@router.post(
     "/upload-best-track",
     summary="Upload and ingest a best-track CSV asynchronously",
     description=(

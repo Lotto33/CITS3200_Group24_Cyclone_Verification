@@ -14,6 +14,7 @@ dependencies = [
     "alembic>=1.13",
     "openpyxl>=3.1",
     "psycopg[binary]>=3.2",
+    "certifi>=2024.2.2",
     # app/gen_cont_tables.py: contingency tables are built by intersecting
     # the bulletin GeoJSON with town points on the WGS84 ellipsoid.
     "geopandas>=1.0",
@@ -41,13 +42,16 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+app = ["resources/towns.xlsx"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 88
+line-length = 130
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -55,4 +59,13 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # Alembic writes these; reformatting generated output would be undone by the
 # next `alembic revision --autogenerate`.
-"alembic/versions/*.py" = ["E501"]
+"alembic/versions/*.py" = ["E501", "UP007", "UP035"]
+# FastAPI's recommended pattern for file uploads requires a function call
+# (File(...)) as the default argument
+"app/api/v1/endpoints/*.py" = ["B008"]
+# Import is placed after router = APIRouter() intentionally 
+# (or needs investigation) - not reordering blind
+"app/api/v1/endpoints/config.py" = ["E402"]
+# CLI help/docstring text in this file reads better as long lines than
+# manually wrapped mid-sentence
+"app/gen_cont_tables.py" = ["E501"]

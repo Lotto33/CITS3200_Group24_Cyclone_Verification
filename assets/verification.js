@@ -4,6 +4,10 @@
     "use strict";
     const API_BASE = "/api/v1";
     const ALL_VALUE = "__all__";
+    const SUPPORTED_STATES = ["NT", "QLD", "WA"];
+    // Project scope: verification period 2016/17 to 2025/26.
+    const FIRST_SEASON = "2016-17";
+    const LAST_SEASON = "2025-26";
     const tableInstances = document.getElementById("tableInstances");
     const firstInstance = tableInstances === null || tableInstances === void 0 ? void 0 : tableInstances.querySelector(".table-instance");
     const savedContext = JSON.parse(localStorage.getItem("cycloneVerification") || "null") || {};
@@ -34,11 +38,20 @@
         label.textContent = phase;
         status(detail);
         if (percentage === undefined) {
-            progress.removeAttribute("value");
+            progress.style.width = "35%";
+            progress.removeAttribute("aria-valuenow");
+            progress.setAttribute("aria-valuetext", "Processing");
+            progress.classList.add("progress-bar-striped", "progress-bar-animated");
+            progress.classList.add("progress-bar-indeterminate");
             percentLabel.textContent = "";
         }
         else {
-            progress.value = percentage;
+            progress.style.width = `${percentage}%`;
+            progress.setAttribute("aria-valuenow", String(percentage));
+            progress.removeAttribute("aria-valuetext");
+            progress.classList.remove("progress-bar-indeterminate");
+            progress.classList.toggle("progress-bar-striped", percentage < 100);
+            progress.classList.toggle("progress-bar-animated", percentage < 100);
             percentLabel.textContent = `${percentage}%`;
         }
     }
@@ -46,10 +59,13 @@
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             const form = new FormData();
-            form.append("file", file);
+            if (file)
+                form.append("file", file);
             xhr.open("POST", `${API_BASE}/datasets/${endpoint}`);
             xhr.responseType = "json";
             xhr.upload.addEventListener("progress", (event) => {
+                if (!file)
+                    return;
                 if (!event.lengthComputable) {
                     updateUploadProgress("Uploading file", `${file.name} — ${formatBytes(event.loaded)} sent.`);
                     return;
@@ -58,7 +74,11 @@
                 updateUploadProgress("Uploading file", `${file.name} — ${formatBytes(event.loaded)} of ${formatBytes(event.total)} transferred.`, percent);
             });
             xhr.upload.addEventListener("load", () => {
-                updateUploadProgress("Processing on server", `${file.name} uploaded. The server is validating and processing the ${description}; this may take a little while.`);
+                if (!file)
+                    return;
+                updateUploadProgress(file ? "Processing on server" : "Fetching from BOM", file
+                    ? `${file.name} uploaded. The server is validating and processing the ${description}; this may take a little while.`
+                    : `Request accepted. The server is downloading and processing the ${description}; this may take a little while.`);
             });
             xhr.addEventListener("load", () => {
                 const payload = xhr.response;
@@ -70,11 +90,11 @@
                     reject(new Error("The backend accepted the file but did not return a processing job ID."));
                     return;
                 }
-                void waitForUploadJob(payload.job_id, file.name, description).then(resolve, reject);
+                void waitForUploadJob(payload.job_id, (file === null || file === void 0 ? void 0 : file.name) || "BOM best-track data", description).then(resolve, reject);
             });
             xhr.addEventListener("error", () => reject(new Error("Network error while uploading. Check your connection and try again.")));
             xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled.")));
-            xhr.send(form);
+            xhr.send(file ? form : null);
         });
     }
     function formatBytes(bytes) {
@@ -101,6 +121,7 @@
     async function waitForUploadJob(jobId, filename, description) {
         var _a;
         let offset = 0;
+        let refreshStage = null;
         const deadline = Date.now() + 30 * 60 * 1000;
         while (Date.now() < deadline) {
             let job;
@@ -116,19 +137,56 @@
             }
             appendBackendMessages(job.messages);
             offset = job.next;
+            if (description.toLowerCase().includes("bom")) {
+                for (const message of job.messages) {
+                    const stage = bestTrackRefreshStage(message);
+                    if (stage)
+                        refreshStage = stage;
+                }
+            }
             if (job.status === "completed") {
                 const interpolationError = (_a = job.result) === null || _a === void 0 ? void 0 : _a.interpolation_error;
-                updateUploadProgress(interpolationError ? "Upload complete with warning" : "Backend processing complete", interpolationError
+                updateUploadProgress(description.toLowerCase().includes("bom")
+                    ? "Step 5 of 5 · Complete"
+                    : interpolationError
+                        ? "Upload complete with warning"
+                        : "Backend processing complete", interpolationError
                     ? `${filename}: uploaded successfully, but interpolation was skipped: ${interpolationError}`
                     : `${filename}: ${description} processing completed successfully.`, 100);
                 return;
             }
             if (job.status === "failed")
                 throw new Error(job.error || `${description} processing failed.`);
-            updateUploadProgress(job.status === "queued" ? "Waiting for backend" : "Backend processing", job.messages[job.messages.length - 1] || `${filename}: waiting for backend pipeline messages.`);
+            const latestMessage = job.messages[job.messages.length - 1]
+                || `${filename}: waiting for backend pipeline messages.`;
+            if (refreshStage) {
+                updateUploadProgress(refreshStage.label, latestMessage, refreshStage.percentage);
+            }
+            else {
+                updateUploadProgress(job.status === "queued" ? "Waiting for backend" : "Backend processing", latestMessage);
+            }
             await new Promise((resolve) => window.setTimeout(resolve, 650));
         }
         throw new Error("The upload job exceeded the 30-minute polling limit. Check the backend logs and try again.");
+    }
+    function bestTrackRefreshStage(message) {
+        const normalized = message.toLowerCase();
+        if (normalized.startsWith("starting bom best-track refresh")) {
+            return { label: "Step 1 of 5 · Starting refresh", percentage: 10 };
+        }
+        if (normalized.startsWith("downloading current bom best-track csv")) {
+            return { label: "Step 2 of 5 · Downloading from BOM", percentage: 20 };
+        }
+        if (normalized.startsWith("validating downloaded best-track csv")) {
+            return { label: "Step 3 of 5 · Validating CSV", percentage: 30 };
+        }
+        if (normalized.startsWith("=== database ingest: best-track observations ===")) {
+            return { label: "Step 4 of 5 · Ingesting and interpolating", percentage: 75 };
+        }
+        if (normalized.startsWith("=== database interpolation ===")) {
+            return { label: "Step 4 of 5 · Ingesting and interpolating", percentage: 75 };
+        }
+        return null;
     }
     async function requestJson(path, init) {
         const response = await fetch(`${API_BASE}${path}`, init);
@@ -160,20 +218,95 @@
             loadDisturbances(),
             requestJson("/towns"),
         ]);
-        disturbances = disturbanceRows;
-        states = [...new Set(townRows.map((town) => town.state).filter(Boolean))].sort();
+        disturbances = disturbanceRows.filter((row) => Boolean(row.season) && row.season >= FIRST_SEASON && row.season <= LAST_SEASON);
+        states = [...new Set([
+                ...SUPPORTED_STATES,
+                ...townRows.map((town) => town.state).filter(Boolean),
+            ])].sort((a, b) => {
+            const rank = (state) => {
+                const index = SUPPORTED_STATES.indexOf(state);
+                return index < 0 ? SUPPORTED_STATES.length : index;
+            };
+            return rank(a) - rank(b) || a.localeCompare(b);
+        });
         document.querySelectorAll(".table-instance").forEach(populateInstanceFilters);
     }
     function selected(select) {
         return Array.from(select.selectedOptions).map((option) => option.value).filter((value) => value !== ALL_VALUE);
     }
+    const selectStates = new WeakMap();
+    // Selected options always stay visible so searching never drops a selection.
+    function renderSelect(select) {
+        const state = selectStates.get(select);
+        if (!state)
+            return;
+        const query = state.query.trim().toLowerCase();
+        const visible = state.options.filter((option) => option.value === ALL_VALUE || state.selected.has(option.value) || !query || option.label.toLowerCase().includes(query));
+        select.replaceChildren(...visible.map(({ value, label }) => {
+            const option = new Option(label, value);
+            option.selected = state.selected.has(value);
+            return option;
+        }));
+    }
+    // "All" is exclusive: picking it clears the rest, picking anything else clears it.
+    function applySelection(select, next, added) {
+        const state = selectStates.get(select);
+        if (!state)
+            return;
+        if (next.has(ALL_VALUE) && next.size > 1) {
+            if (added.includes(ALL_VALUE)) {
+                next.clear();
+                next.add(ALL_VALUE);
+            }
+            else
+                next.delete(ALL_VALUE);
+        }
+        if (next.size === 0)
+            next.add(ALL_VALUE);
+        state.selected = next;
+        renderSelect(select);
+    }
+    function wireMultiSelect(select, searchInput) {
+        // Plain clicks toggle an option; the native list box needs Cmd/Ctrl-click.
+        select.addEventListener("mousedown", (event) => {
+            const option = event.target;
+            const state = selectStates.get(select);
+            if (!(option instanceof HTMLOptionElement) || !state)
+                return;
+            event.preventDefault();
+            select.focus();
+            const next = new Set(state.selected);
+            if (next.has(option.value))
+                next.delete(option.value);
+            else
+                next.add(option.value);
+            applySelection(select, next, [option.value]);
+            select.dispatchEvent(new Event("change"));
+        });
+        // Keyboard selection still goes through the native change event.
+        select.addEventListener("change", () => {
+            const state = selectStates.get(select);
+            if (!state)
+                return;
+            const current = new Set(Array.from(select.selectedOptions).map((option) => option.value));
+            const added = [...current].filter((value) => !state.selected.has(value));
+            applySelection(select, current, added);
+        });
+        searchInput === null || searchInput === void 0 ? void 0 : searchInput.addEventListener("input", () => {
+            const state = selectStates.get(select);
+            if (!state)
+                return;
+            state.query = searchInput.value;
+            renderSelect(select);
+        });
+    }
     function populateSelect(select, options, defaults) {
-        select.replaceChildren(...options.map(({ value, label }) => new Option(label, value)));
         const available = new Set(options.map((option) => option.value));
         const chosen = defaults.filter((value) => available.has(value));
         if (!chosen.length)
             chosen.push(ALL_VALUE);
-        Array.from(select.options).forEach((option) => { option.selected = chosen.includes(option.value); });
+        selectStates.set(select, { options, selected: new Set(chosen), query: "" });
+        renderSelect(select);
     }
     function populateInstanceFilters(instance) {
         const cycloneSelect = instance.querySelector(".cyclone-select");
@@ -187,6 +320,7 @@
         populateSelect(stateSelect, [{ value: ALL_VALUE, label: "All states" }, ...states.map((value) => ({ value, label: value }))], [ALL_VALUE]);
         const seasons = [...new Set(disturbances.map((row) => row.season).filter((value) => Boolean(value)))].sort().reverse();
         populateSelect(seasonSelect, [{ value: ALL_VALUE, label: "All seasons" }, ...seasons.map((value) => ({ value, label: value }))], instance === firstInstance && savedContext.season ? [savedContext.season] : [ALL_VALUE]);
+        instance.querySelectorAll(".cyclone-search").forEach((input) => { input.value = ""; });
         updateContext();
     }
     function updateContext() {
@@ -195,7 +329,9 @@
             const ids = selected(instance.querySelector(".cyclone-select"));
             const stateValues = selected(instance.querySelector(".state-select"));
             const seasons = selected(instance.querySelector(".season-select"));
-            return `${ids.length ? `${ids.length} cyclone(s)` : "season-based selection"}; ${stateValues.length ? stateValues.join(", ") : "all states"}; ${seasons.length ? seasons.join(", ") : "all seasons"}`;
+            const baseTimes = Array.from(instance.querySelectorAll(".base-time-hour:checked"))
+                .map((input) => `${input.value.padStart(2, "0")}:00`);
+            return `${ids.length ? `${ids.length} cyclone(s)` : "season-based selection"}; ${stateValues.length ? stateValues.join(", ") : "all states"}; ${seasons.length ? seasons.join(", ") : "all seasons"}; base times ${baseTimes.join(", ") || "none"} UTC`;
         });
         context.textContent = `Contingency table filters: ${descriptions.join(" | ")}${savedContext.bulletin ? `; visualizer bulletin ${savedContext.bulletin}` : ""}.`;
     }
@@ -299,7 +435,6 @@
             ["Precision", formatPercent(hit, hit + falseAlarm)],
             ["Recall", formatPercent(hit, hit + miss)],
             ["F1 score", precision + recall ? `${(2 * precision * recall / (precision + recall) * 100).toFixed(1)}%` : "—"],
-            ["POD", formatPercent(hit, hit + miss)],
             ["FAR", formatPercent(falseAlarm, hit + falseAlarm)],
             ["CSI", formatPercent(hit, hit + falseAlarm + miss)],
             ["Bias", hit + miss ? ((hit + falseAlarm) / (hit + miss)).toFixed(2) : "—"],
@@ -337,8 +472,10 @@
         table.appendChild(body);
         panel.append(table, metrics);
     }
-    function isCurrentRunFile(name, ids) {
-        return name.startsWith("combined_") || ids.some((id) => name.startsWith(`${id}_`));
+    function isCurrentRunFile(name, ids, baseTimeHours) {
+        const identifierMatches = name.startsWith("combined_") || ids.some((id) => name.startsWith(`${id}_`));
+        const baseTimeTag = `base-times-${baseTimeHours.slice().sort((a, b) => a - b).map((hour) => String(hour).padStart(2, "0")).join("-")}`;
+        return identifierMatches && name.includes(baseTimeTag);
     }
     async function downloadFile(filename) {
         const response = await fetch(`${API_BASE}/contingency-tables/files/${encodeURIComponent(filename)}`);
@@ -352,8 +489,9 @@
         anchor.click();
         URL.revokeObjectURL(url);
     }
-    async function showRunFiles(instance, files, ids, stats) {
-        const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids));
+    async function showRunFiles(instance, files, ids, stats, baseTimeHours) {
+        var _a;
+        const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids, baseTimeHours));
         const dates = candidates.map((name) => { var _a; return ((_a = name.match(/date-(\d{8})/)) === null || _a === void 0 ? void 0 : _a[1]) || ""; }).sort();
         const latestDate = dates[dates.length - 1] || "";
         latestFiles = candidates.filter((name) => !latestDate || name.includes(`date-${latestDate}`));
@@ -369,6 +507,7 @@
                     const response = await fetch(`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`);
                     if (!response.ok)
                         throw new Error(`Could not load ${file} (HTTP ${response.status})`);
+                    (_a = panel.querySelector(".layer-note")) === null || _a === void 0 ? void 0 : _a.remove();
                     renderCsv(panel, await response.text());
                 }
                 catch (error) {
@@ -415,7 +554,7 @@
         target.appendChild(downloadBox);
     }
     async function generateForInstance(instance) {
-        var _a, _b, _c, _d;
+        var _a, _b, _c, _d, _e;
         const cycloneSelect = instance.querySelector(".cyclone-select");
         const stateSelect = instance.querySelector(".state-select");
         const seasonSelect = instance.querySelector(".season-select");
@@ -424,8 +563,14 @@
         const selectedIds = selected(cycloneSelect);
         const selectedStates = selected(stateSelect);
         const selectedSeasons = selected(seasonSelect);
+        const baseTimeHours = Array.from(instance.querySelectorAll(".base-time-hour:checked"))
+            .map((input) => Number(input.value));
         if (!selectedIds.length && !selectedSeasons.length) {
             instanceStatus(instance, "Choose one or more cyclones or seasons.", true);
+            return;
+        }
+        if (!baseTimeHours.length) {
+            instanceStatus(instance, "Select at least one UTC base time.", true);
             return;
         }
         const xHours = Number((_b = (_a = instance.querySelector(".x-hours")) === null || _a === void 0 ? void 0 : _a.value) !== null && _b !== void 0 ? _b : 0);
@@ -443,8 +588,17 @@
                 : disturbances.filter((row) => row.season === season).map((row) => row.disturbance_id);
             if (!seasonIds.length)
                 continue;
-            for (const state of statesToRun)
-                jobs.push({ disturbance_ids: seasonIds, season, state, x_hours: xHours, y_hours: yHours });
+            for (const state of statesToRun) {
+                jobs.push({
+                    disturbance_ids: seasonIds,
+                    season,
+                    state,
+                    x_hours: xHours,
+                    y_hours: yHours,
+                    base_time_hours: baseTimeHours,
+                    forecast_level: ((_e = instance.querySelector(".warning-level")) === null || _e === void 0 ? void 0 : _e.value) || "warning",
+                });
+            }
         }
         if (!jobs.length) {
             instanceStatus(instance, "No cyclones match the selected season(s).", true);
@@ -470,8 +624,8 @@
             }), { hit: 0, false_alarm: 0, miss: 0, correct_negative: 0, total: 0 });
             const mergedFiles = Object.assign({}, ...results.map((result) => result.files));
             const ids = [...new Set(results.flatMap((result) => result.disturbance_ids))];
-            await showRunFiles(instance, mergedFiles, ids, combined);
-            instanceStatus(instance, `Generated ${results.length} request(s); ${ids.length} disturbance(s), ${combined.total} observations.`);
+            await showRunFiles(instance, mergedFiles, ids, combined, baseTimeHours);
+            instanceStatus(instance, `Generated ${results.length} request(s) for ${baseTimeHours.map((hour) => `${String(hour).padStart(2, "0")}:00`).join(", ")} UTC; ${ids.length} disturbance(s), ${combined.total} observations.`);
         }
         catch (error) {
             instanceStatus(instance, `Generation failed: ${error.message}`, true);
@@ -510,7 +664,21 @@
             return;
         initializedInstances.add(instance);
         wireTabs(instance);
-        instance.querySelectorAll("select").forEach((select) => select.addEventListener("change", updateContext));
+        const cycloneSearch = instance.querySelector(".cyclone-search");
+        const warningLevel = instance.querySelector(".warning-level");
+        // Warning = 0-24 h and Watch = 24-48 h of the base time.
+        warningLevel === null || warningLevel === void 0 ? void 0 : warningLevel.addEventListener("change", () => {
+            const hours = { warning: [0, 24], watch: [24, 48] }[warningLevel.value];
+            if (!hours)
+                return;
+            instance.querySelector(".x-hours").value = String(hours[0]);
+            instance.querySelector(".y-hours").value = String(hours[1]);
+        });
+        instance.querySelectorAll("select:not(.warning-level)").forEach((select) => {
+            wireMultiSelect(select, select.classList.contains("cyclone-select") ? cycloneSearch : null);
+            select.addEventListener("change", updateContext);
+        });
+        instance.querySelectorAll(".base-time-hour").forEach((input) => input.addEventListener("change", updateContext));
         (_a = instance.querySelector(".generate-table")) === null || _a === void 0 ? void 0 : _a.addEventListener("click", () => { void generateForInstance(instance); });
     }
     function updateTableControls() {
@@ -574,11 +742,12 @@
     });
     async function upload(file, endpoint, description) {
         byId("uploadBackendMessages").replaceChildren();
-        updateUploadProgress("Preparing upload", `${file.name} · ${formatBytes(file.size)} · ${description}`, 0);
+        updateUploadProgress(file ? "Preparing upload" : "Step 1 of 5 · Requesting BOM best track", file ? `${file.name} · ${formatBytes(file.size)} · ${description}` : description, file ? 0 : 10);
         await uploadFile(file, endpoint, description);
         updateUploadProgress("Refreshing cyclone and state filters", `${description} processed. Updating available filter options…`);
         await loadFilterOptions();
-        updateUploadProgress("Complete", `${file.name} uploaded, processed, and filter options refreshed.`, 100);
+        const sourceName = (file === null || file === void 0 ? void 0 : file.name) || "BOM best-track data";
+        updateUploadProgress("Complete", `${sourceName} processed, and filter options refreshed.`, 100);
     }
     function wireUpload(inputId, buttonId, endpoint, description) {
         const input = byId(inputId);
@@ -589,8 +758,7 @@
             const file = (_a = input.files) === null || _a === void 0 ? void 0 : _a[0];
             if (!file)
                 return;
-            const otherButtonId = buttonId === "uploadGmlBtn" ? "uploadBestTrackBtn" : "uploadGmlBtn";
-            const otherButton = byId(otherButtonId);
+            const otherButton = byId("refreshBestTrackBtn");
             button.disabled = true;
             otherButton.disabled = true;
             try {
@@ -608,6 +776,23 @@
             }
         });
     }
+    byId("refreshBestTrackBtn").addEventListener("click", async () => {
+        const button = byId("refreshBestTrackBtn");
+        const gmlButton = byId("uploadGmlBtn");
+        button.disabled = true;
+        gmlButton.disabled = true;
+        try {
+            await upload(null, "refresh-best-track", "current BOM best-track CSV");
+        }
+        catch (error) {
+            updateUploadProgress("Best-track refresh failed", error.message, 0);
+            byId("uploadStatus").classList.add("error");
+        }
+        finally {
+            button.disabled = false;
+            gmlButton.disabled = false;
+        }
+    });
     byId("downloadContingencyBtn").addEventListener("click", async () => {
         const filenames = [...new Set([...filesByInstance.values()].flat())];
         if (!filenames.length) {
@@ -648,8 +833,9 @@
         firstInstance.querySelectorAll(".instance-status").forEach((el) => { el.textContent = ""; el.classList.remove("error"); });
         firstInstance.querySelector(".x-hours").value = "0";
         firstInstance.querySelector(".y-hours").value = "24";
+        firstInstance.querySelector(".warning-level").value = "warning";
+        firstInstance.querySelectorAll(".base-time-hour").forEach((input) => { input.checked = true; });
         byId("gmlUploadInput").value = "";
-        byId("bestTrackUploadInput").value = "";
         byId("uploadProgress").hidden = true;
         status("");
         updateTableControls();
@@ -657,7 +843,6 @@
     });
     byId("backToVisualizer").addEventListener("click", () => { window.location.href = "visualize.html"; });
     wireUpload("gmlUploadInput", "uploadGmlBtn", "upload", "GML archive");
-    wireUpload("bestTrackUploadInput", "uploadBestTrackBtn", "upload-best-track", "best-track CSV");
     initializeInstance(firstInstance);
     updateTableControls();
     updateContext();

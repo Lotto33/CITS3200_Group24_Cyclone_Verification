@@ -1,6 +1,6 @@
 """Tropical-cyclone locations (the "Towns" layer).
 
-Source: the ``TC Locations`` sheet of ``data/towns.xlsx``.
+Source: the ``TC Locations`` sheet of ``app/resources/towns.xlsx``.
 
 The sheet has **472 rows but only 466 distinct locations**. Six QLD entries --
 Bamaga, Carmila, Hayman Is, QLD/NSW Border, Sandy Cape and Thursday Is --

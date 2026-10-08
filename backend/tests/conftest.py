@@ -106,9 +106,9 @@ def best_track_csv() -> Path:
 
 @pytest.fixture(scope="session")
 def towns_xlsx() -> Path:
-    path = DATA_DIR / "towns.xlsx"
+    path = REPO_ROOT / "backend" / "app" / "resources" / "towns.xlsx"
     if not path.is_file():
-        pytest.skip(f"{path} is not present (data/ is git-ignored)")
+        pytest.fail(f"Packaged towns workbook is missing: {path}")
     return path
 
 

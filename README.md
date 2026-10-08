@@ -119,7 +119,7 @@ the raw files:
 | `data/index.json` (cyclone list)                                    | `backend/app/build_gml_dataset.py`   | `data/NT_GMLs/`, `data/QLD_GMLs/`, `data/WA_GMLs/` (`productfile.*.gml`) |
 | `data/<REGION>/<distId>.json` (bulletins: tracks, fixes, areas)     | `backend/app/build_gml_dataset.py`   | same GML folders; only cyclones with at least one watch/warning area     |
 | `data/best_track/<distId>.json` (best-track overlay, fallback only) | `backend/app/build_gml_dataset.py`   | `data/best_track.csv` (BoM IDCKMSTM0S), matched on `DISTURBANCE_ID`      |
-| `data/towns.json` (Towns layer)                                     | `backend/app/build_towns_dataset.py` | `TC Locations` sheet of `data/towns.xlsx`                                |
+| `data/towns.json` (Towns layer)                                     | `backend/app/build_towns_dataset.py` | `TC Locations` sheet of `backend/app/resources/towns.xlsx`                |
 | `data/map_config.json` (basemap tile URL)                           | `backend/app/build_map_config.py`    | `CARTO_API_KEY` in `.env`                                                |
 
 The one exception is the best-track overlay. The verification is scored on
@@ -174,7 +174,7 @@ skip this step, or `--best-track-csv <path>` to point at a different CSV.
 
 The viewers overlay BOM's tropical-cyclone locations (the **Towns** layer) so
 you can see where a cyclone sits relative to populated places. They come from
-the `TC Locations` sheet of `data/towns.xlsx` — the same sheet
+the packaged `TC Locations` sheet of `backend/app/resources/towns.xlsx` — the same sheet
 `gen_cont_tables.py` scores against, so the map and the contingency tables
 refer to the same set of locations. As with the GML data, the browser can't
 read an xlsx, so parse it once into JSON (**from the repository root**):
@@ -273,14 +273,14 @@ python backend/app/gen_cont_tables.py AU202526_34U \
 #### Filter results by state or season
 
 To generate statistics for one Australian state, use `--state` with the
-state value stored in `data/towns.xlsx`:
+state value stored in `backend/app/resources/towns.xlsx`:
 
 ```bash
 python backend/app/gen_cont_tables.py AU202526_34U --state WA
 ```
 
 The state filter is applied to the `State` column from the `TC Locations`
-sheet in `data/towns.xlsx` before any tables are generated. Only matching
+sheet in `backend/app/resources/towns.xlsx` before any tables are generated. Only matching
 locations are passed through Tables A, B, C, and D. `State` is used for
 filtering but is not included as a column in Table A or Table D. The filter is
 not inferred from the cyclone's path or from the GML source region.
@@ -338,8 +338,8 @@ Progress plus the final contingency stats and matrix are also printed to the
 console as the script runs.
 
 Requires step 1 (`build_gml_dataset.py`) to have already been run — it reads
-the `data/geojson/<distId>/` files that step produces — plus the `TC Locations`
-sheet in `data/towns.xlsx` and a best-track CSV. If
+the `data/geojson/<distId>/` files that step produces — plus the packaged `TC Locations`
+sheet in `backend/app/resources/towns.xlsx` and a best-track CSV. If
 `data/processed/best_track_interpolated.csv` exists, it is preferred because
 it already contains the significant-cyclone filtering and interpolation. If
 it does not exist, the script falls back to `data/best_track.csv` and performs

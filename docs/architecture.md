@@ -20,7 +20,8 @@ come from?" question resolves to knowing which of the two you are looking at.
 
 ```
                      data/  (git-ignored raw BoM files)
-                     best_track.csv, towns.xlsx, {NT,QLD,WA}_GMLs/
+                     best_track.csv, {NT,QLD,WA}_GMLs/
+                     backend/app/resources/towns.xlsx (packaged)
                               │
               ┌───────────────┴────────────────┐
               │                                │
@@ -102,7 +103,7 @@ Two conventions that repay attention when extending it:
 | Group | Tables | Rows | Source |
 |---|---|---|---|
 | Reference codes | `code_domain`, `code_value` | 13 / 116 | `TC_Database_Structure_Oct2011.pdf`, transcribed |
-| Towns | `town`, `town_group_membership` | 466 / 472 | `towns.xlsx`, sheet `TC Locations` |
+| Towns | `town`, `town_group_membership` | 466 / 472 | packaged `backend/app/resources/towns.xlsx`, sheet `TC Locations` |
 | Cyclones | `disturbance` | 1,164 | union of the best track and the bulletins |
 | | `best_track_observation` | 45,449 | `best_track.csv` (31,706) + OTCR reanalysis (13,743) |
 | Bulletins | `bulletin`, `bulletin_track`, `bulletin_fix`, `bulletin_area` | 3,448 / 6,807 / 63,126 / 30,196 | `{NT,QLD,WA}_GMLs/` |

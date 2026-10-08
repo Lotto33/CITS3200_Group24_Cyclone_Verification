@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     bulletins,
     codes,
+    config,
     contingency,
     cyclones,
     datasets,
@@ -12,7 +13,6 @@ from app.api.v1.endpoints import (
     disturbances,
     towns,
     verification,
-    config,
 )
 
 api_router = APIRouter()
