@@ -766,7 +766,7 @@
   // Union of the best-track gale areas over [startH, endH] after the bulletin's
   // base time: where gale-force wind was actually observed in that window, to
   // set against the bulletin's Watch area. The ring is built exactly as for the
-  // T+0 areas (windAreaRing), one per hour to keep the union cheap.
+  // T+0 areas (windAreaRing), sampled every ~30 minutes to keep the union cheap.
   function drawObservedGaleWindow(points, bulletin) {
     galeWindowNote = "";
     if (!bulletin || !els.layers.btGaleWindow.checked) return;
@@ -778,12 +778,17 @@
       const t = parseUtc(p.time);
       return t >= start && t <= end;
     });
-    // Every point's ring (null where no gale radius is known); the union uses
-    // roughly hourly ones, indexed rather than clock-aligned because the base
-    // time can be an off-hour issue time.
+    // Every point's ring (null where no gale radius is known). The union uses
+    // roughly half-hourly ones: unioning all 15-minute rings took ~400 ms per
+    // redraw, too slow for the slider and play button, while 30 minutes costs
+    // ~75 ms and the track moves only a few km between samples. Sampling is by
+    // index, not clock-aligned, because the base time can be an off-hour issue
+    // time; the first and last point in the window are always included so the
+    // window's ends are not trimmed.
     const allRings = inWindow.map(p => (p.radii ? windAreaRing(p.coord[1], p.coord[0], p.radii.GF) : null));
-    const stride = Math.max(1, Math.round(60 / (trackStepMinutes(points) || 60)));
-    const rings = allRings.filter((ring, i) => ring && i % stride === 0);
+    const stride = Math.max(1, Math.round(30 / (trackStepMinutes(points) || 30)));
+    const rings = allRings.filter((ring, i) =>
+      ring && (i % stride === 0 || i === allRings.length - 1));
     galeWindowNote = `Observed gale 24–48 h: ${allRings.filter(Boolean).length} of ${inWindow.length} best-track points in the window have gale radii`;
     if (!rings.length) return;
 
