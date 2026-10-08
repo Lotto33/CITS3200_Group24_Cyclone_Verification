@@ -298,3 +298,39 @@ def test_openapi_builds(client: TestClient):
     schema = client.get("/api/v1/openapi.json").json()
     assert "/api/v1/disturbances" in schema["paths"]
     assert "/api/v1/bulletins/{bulletin_id}" in schema["paths"]
+
+
+def test_interpolated_track_serves_every_wind_radius(
+    client: TestClient, dataset: Session
+):
+    """The map builds gale/storm/hurricane polygons from these fields."""
+    from app.models.interpolation import InterpolatedPoint, InterpolationRun
+
+    disturbance = dataset.query(Disturbance).filter_by(disturbance_id="AU201617_19U").one()
+    tm = datetime(2017, 1, 1, tzinfo=UTC)
+    run = InterpolationRun(created_at=tm, step_minutes=15)
+    dataset.add(run)
+    dataset.flush()
+    dataset.add(
+        InterpolatedPoint(
+            run_id=run.id,
+            disturbance_pk=disturbance.id,
+            tm=tm,
+            is_interpolated=True,
+            lat=-12.0,
+            lon=130.0,
+            mn_radius_gf_secne=74.0,
+            mn_radius_sf_secse=40.0,
+            mn_radius_hf_wind=20.0,
+        )
+    )
+    dataset.flush()
+
+    response = client.get("/api/v1/disturbances/AU201617_19U/interpolated-track")
+
+    assert response.status_code == 200
+    point = response.json()[0]
+    assert point["mn_radius_gf_secne"] == 74.0
+    assert point["mn_radius_sf_secse"] == 40.0
+    assert point["mn_radius_hf_wind"] == 20.0
+    assert point["mn_radius_hf_secnw"] is None
