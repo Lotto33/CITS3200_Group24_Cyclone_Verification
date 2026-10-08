@@ -15,7 +15,7 @@ python -m venv .venv
 # source .venv/bin/activate
 pip install -e ".[dev]"
 cp ../.env.example .env
-# place best_track.csv, towns.xlsx, and then GML folders under data/ (Go to "Data Setup" to see more)
+# place best_track.csv and GML folders under data/ (towns.xlsx ships with the app)
 alembic upgrade head
 python -m app.cli all
 uvicorn app.main:app --reload
@@ -39,7 +39,9 @@ backend/
 │   ├── build_towns_dataset.py#  | file pipeline: raw data/ -> static JSON
 │   ├── build_map_config.py  # /  for the viewers. No database.
 │   ├── gml_to_geojson.py    # one GML bulletin -> GeoJSON FeatureCollection
-│   ├── gen_cont_tables.py   # contingency tables from the GeoJSON + best track
+│   ├── gen_cont_tables.py   # contingency tables from GeoJSON, packaged towns + best track
+│   ├── resources/
+│   │   └── towns.xlsx      # packaged TC Locations sheet used by town and table loaders
 │   ├── api/
 │   │   ├── deps.py          # get_db, DbSession, pagination
 │   │   └── v1/
@@ -83,13 +85,13 @@ pip install -e ".[dev,postgres]"
 
 ## Data setup
 
-The raw and generated cyclone data files are not stored in Git. Place them
-under `data/` at the repository root:
+The large/raw cyclone data files are not stored in Git. The TC Locations
+workbook is packaged at `app/resources/towns.xlsx`; only place the remaining
+raw files under `data/` at the repository root:
 
 ```text
 data/
 ├── best_track.csv                     # BoM product IDCKMSTM0S
-├── towns.xlsx                         # sheet "TC Locations"
 ├── OTCR_alldata_final_external.csv    # optional, reference only
 ├── NT_GMLs/ QLD_GMLs/ WA_GMLs/        # the supplied GML folders
 └── contingency_tables/                # optional, generator output
@@ -125,7 +127,7 @@ Or one source at a time:
 
 ```bash
 python -m app.cli seed-codes                 # BoM code lookup tables
-python -m app.cli towns                      # data/towns.xlsx
+python -m app.cli towns                      # packaged app/resources/towns.xlsx
 python -m app.cli best-track                 # data/best_track.csv
 python -m app.cli otcr                       # OTCR reanalysis (reference only)
 python -m app.cli gml [--region NT] [--force] # data/{NT,QLD,WA}_GMLs
@@ -188,7 +190,7 @@ Two consequences of merging to be aware of:
 | table | rows | source |
 |---|---|---|
 | `code_domain` / `code_value` | 13 / 116 | `TC_Database_Structure_Oct2011.pdf`, transcribed |
-| `town` / `town_group_membership` | 466 / 472 | `towns.xlsx`, sheet `TC Locations` |
+| `town` / `town_group_membership` | 466 / 472 | packaged `app/resources/towns.xlsx`, sheet `TC Locations` |
 | `disturbance` | 1,164 | union of the best track and the bulletins |
 | `best_track_observation` | 31,706 + 13,743 | `best_track.csv` + the OTCR reanalysis |
 | `bulletin` / `_track` / `_fix` / `_area` | 3,448 / 6,807 / 63,126 / 30,196 | `{NT,QLD,WA}_GMLs` |

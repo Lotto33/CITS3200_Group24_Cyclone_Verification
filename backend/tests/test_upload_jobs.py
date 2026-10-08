@@ -96,6 +96,17 @@ def test_best_track_upload_route_returns_job(client, monkeypatch):
     assert response.json()["job_id"]
 
 
+def test_refresh_best_track_route_returns_job(client, monkeypatch):
+    monkeypatch.setattr(
+        datasets.dataset_service,
+        "refresh_best_track_from_bom",
+        lambda data_dir: {"status": "success"},
+    )
+    response = client.post("/api/v1/datasets/refresh-best-track")
+    assert response.status_code == 200
+    assert response.json()["job_id"]
+
+
 def test_failed_job_reports_error_and_removes_temp_file(client, monkeypatch):
     captured: list[Path] = []
 
