@@ -62,10 +62,25 @@ class InterpolatedTrackPoint(BaseModel):
     lon: float | None
     max_wind_spd: float | None
     position_uncertainty: float | None
+
+    # Wind radii in km for the gale / storm / hurricane force thresholds. The
+    # map builds its wind-area polygons from these, so the quadrant and mean
+    # values for every threshold are served, not just gale force.
+    mn_radius_gf_wind: float | None
     mn_radius_gf_secne: float | None
     mn_radius_gf_secse: float | None
     mn_radius_gf_secsw: float | None
     mn_radius_gf_secnw: float | None
+    mn_radius_sf_wind: float | None
+    mn_radius_sf_secne: float | None
+    mn_radius_sf_secse: float | None
+    mn_radius_sf_secsw: float | None
+    mn_radius_sf_secnw: float | None
+    mn_radius_hf_wind: float | None
+    mn_radius_hf_secne: float | None
+    mn_radius_hf_secse: float | None
+    mn_radius_hf_secsw: float | None
+    mn_radius_hf_secnw: float | None
 
 
 class InterpolationRunRead(BaseModel):

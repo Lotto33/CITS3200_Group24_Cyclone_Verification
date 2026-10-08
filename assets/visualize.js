@@ -15,6 +15,21 @@
   };
   const WIND_AREA_COLORS = { Current: "#ff5d5d", Forecast: "#4fa8ff" };
 
+  // Best-track wind areas: gale / storm / hurricane force, drawn from the
+  // interpolated quadrant radii. Colours are kept apart from the bulletin
+  // area colours above: a pink-to-magenta ramp (no other layer uses pink) with
+  // dashed outlines, so they can't be mistaken for the solid bulletin areas.
+  const BEST_TRACK_AREA_STYLE = {
+    GF: { label: "Gale force (34 kn)",      color: "#ff9ee0", fillOpacity: 0.10, layerKey: "btGale" },
+    SF: { label: "Storm force (48 kn)",     color: "#ff3fb4", fillOpacity: 0.16, layerKey: "btStorm" },
+    HF: { label: "Hurricane force (64 kn)", color: "#c4007a", fillOpacity: 0.24, layerKey: "btHurricane" },
+  };
+
+  // Observed gale area over a window after the bulletin's base time. The
+  // 24-48 h window is the Watch range, the same one gen_cont_tables.py scores
+  // Table C against (--x-hours 24 --y-hours 48).
+  const GALE_WINDOW = { startH: 24, endH: 48, color: "#3ddc84", fillOpacity: 0.14 };
+
   const els = {
     cyclone: document.getElementById("cycloneSelect"),
     slider: document.getElementById("bulletinSlider"),
@@ -42,6 +57,10 @@
       watchArea: document.getElementById("layer-watchArea"),
       allBulletins: document.getElementById("layer-allBulletins"),
       bestTrack: document.getElementById("layer-bestTrack"),
+      btGale: document.getElementById("layer-btGale"),
+      btStorm: document.getElementById("layer-btStorm"),
+      btHurricane: document.getElementById("layer-btHurricane"),
+      btGaleWindow: document.getElementById("layer-btGaleWindow"),
     },
     compareToggle: document.getElementById("compareToggle"),
     comparePanel: document.getElementById("comparePanel"),
@@ -49,6 +68,16 @@
     compareSelectors: document.getElementById("compareSelectors"),
     addCompareCyclone: document.getElementById("addCompareCyclone"),
     compareStatus: document.getElementById("compareStatus"),
+    compareLevels: {
+      GF: document.getElementById("compare-gale"),
+      SF: document.getElementById("compare-storm"),
+      HF: document.getElementById("compare-hurricane"),
+    },
+    compareTimeBar: document.getElementById("compareTimeBar"),
+    compareSlider: document.getElementById("compareSlider"),
+    compareTimeLabel: document.getElementById("compareTimeLabel"),
+    comparePrev: document.getElementById("comparePrevBtn"),
+    compareNext: document.getElementById("compareNextBtn"),
   };
 
   Object.entries(CATEGORY_COLORS).forEach(([cat, color]) => {
@@ -96,17 +125,20 @@
   const ghostLayer = L.layerGroup().addTo(map);
   const bestTrackLayer = L.layerGroup().addTo(map);
   const comparisonLayer = L.layerGroup().addTo(map);
+  const compareAreaLayer = L.layerGroup().addTo(map);
   const townsLayer = L.layerGroup().addTo(map);
 
   let index = null;
   let cyclonesById = new Map();
   let currentBulletins = [];
   let currentBestTrack = null;
+  let galeWindowNote = "";
   let currentIdx = 0;
   let playTimer = null;
   let towns = [];
   let comparisonMode = false;
   let compareSelections = [];
+  let compareTracks = [];
   const COMPARE_COLORS = ["#2fd4d9", "#ff9f43", "#b06bff", "#3ddc84", "#ff5d5d"];
 
   const sidebar = document.getElementById("sidebar");
@@ -145,7 +177,19 @@
       renderCompareSelectors();
     }
   });
+  Object.values(els.compareLevels).forEach(box =>
+    box.addEventListener("change", () => updateCompareSlider(false)));
+  els.compareSlider.addEventListener("input", () => drawCompareAreas());
+  els.comparePrev.addEventListener("click", () => stepCompareSlider(-1));
+  els.compareNext.addEventListener("click", () => stepCompareSlider(1));
   setSidebarOpen(true);
+
+  function stepCompareSlider(direction) {
+    const slider = els.compareSlider;
+    const step = 1;
+    slider.value = Math.min(Number(slider.max), Math.max(0, Number(slider.value) + direction * step));
+    drawCompareAreas();
+  }
 
   function setStatus(msg, isError) {
     els.status.textContent = msg || "";
@@ -344,6 +388,7 @@
     ghostLayer.clearLayers();
     bestTrackLayer.clearLayers();
     townsLayer.clearLayers();
+    compareAreaLayer.clearLayers();
     renderCompareSelectors();
     drawComparison();
   }
@@ -355,15 +400,20 @@
     els.compareToggle.setAttribute("aria-expanded", "false");
     document.getElementById("standardControls").hidden = false;
     comparisonLayer.clearLayers();
+    compareAreaLayer.clearLayers();
+    compareTracks = [];
     renderBulletin(true);
   }
 
   async function drawComparison() {
     if (!comparisonMode) return;
     comparisonLayer.clearLayers();
+    compareAreaLayer.clearLayers();
+    compareTracks = [];
     const selected = [...new Set(compareSelections.filter(Boolean))];
     if (!selected.length) {
       els.compareStatus.textContent = "Choose at least one cyclone.";
+      els.compareTimeLabel.textContent = "—";
       return;
     }
     els.compareStatus.textContent = "Loading best tracks…";
@@ -378,12 +428,83 @@
         .bindPopup(`<b>${track.name || track.distId}</b><br>${bestTrackSummaryFor(track)}`)
         .addTo(comparisonLayer);
       bounds.push(...latlngs);
+      compareTracks.push({ track, color });
     });
-    const available = tracks.filter(Boolean).length;
-    els.compareStatus.textContent = available
+    if (bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 9 });
+
+    updateCompareSlider(true, tracks.filter(Boolean).length);
+  }
+
+  function checkedCompareLevels() {
+    return Object.keys(els.compareLevels).filter(level => els.compareLevels[level].checked);
+  }
+
+  function hasRadius(p, levels) {
+    return levels.some(level => {
+      const r = p.radii && p.radii[level];
+      return Boolean(r) && [r.ne, r.se, r.sw, r.nw, r.mean].some(v => v !== null && v !== undefined && v > 0);
+    });
+  }
+
+  // Wind radii are only analysed in short windows around some fixes (none at
+  // genesis or decay, and gaps in between), so a time axis would mostly land
+  // on empty steps. The slider instead steps through each cyclone's points
+  // that have a radius for a ticked threshold, and shows every cyclone at its
+  // n-th such point. Empty for the raw-fix fallback, which carries no radii.
+  function updateCompareSlider(reset, available) {
+    const levels = checkedCompareLevels();
+    compareTracks.forEach(entry => {
+      entry.areaPoints = entry.track.source === "interpolated"
+        ? entry.track.points.filter(p => hasRadius(p, levels)) : [];
+    });
+    const longest = Math.max(0, ...compareTracks.map(e => e.areaPoints.length));
+    els.compareSlider.max = Math.max(0, longest - 1);
+    els.compareSlider.step = 1;
+    els.compareSlider.value = reset ? 0 : Math.min(Number(els.compareSlider.value) || 0, els.compareSlider.max);
+    drawCompareAreas(available);
+  }
+
+  // Wind areas (gale / storm / hurricane force, per the ticked boxes) of every
+  // compared best track at the slider position, in each cyclone's own colour.
+  function drawCompareAreas(available) {
+    compareAreaLayer.clearLayers();
+    const levels = checkedCompareLevels();
+    els.compareTimeBar.hidden = !levels.length;
+    if (available === undefined) available = compareTracks.length;
+
+    let status = available
       ? `${available} best track${available === 1 ? "" : "s"} shown.`
       : "No best-track data is available for the selected cyclones.";
-    if (bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 9 });
+    if (!levels.length || !compareTracks.length) {
+      els.compareStatus.textContent = status;
+      return;
+    }
+
+    const i = Number(els.compareSlider.value) || 0;
+    const noRadii = [];
+    const labelLines = [];
+    compareTracks.forEach(({ track, color, areaPoints: pts }) => {
+      const name = track.name || track.distId;
+      if (!pts.length) { noRadii.push(name); return; }
+      const p = pts[i];
+      if (!p) { labelLines.push(`${name}: wind-radii analysis ended`); return; }
+      labelLines.push(`${name}: ${fmtTime(p.time)}`);
+      // Weakest threshold first so the smaller, stronger areas sit on top.
+      levels.forEach(level => {
+        const polygon = buildAreaPolygon(p, level, BEST_TRACK_AREA_STYLE[level], color, name);
+        if (polygon) polygon.addTo(compareAreaLayer);
+      });
+      L.circleMarker([p.coord[1], p.coord[0]], {
+        radius: 5, color: "#111826", weight: 1, fillColor: color, fillOpacity: 1,
+      }).bindPopup(`<b>${name}</b><br>Time: ${fmtTime(p.time)}<br>Max wind: ${p.windSpeed ?? "—"} kn`)
+        .addTo(compareAreaLayer);
+    });
+    const total = Number(els.compareSlider.max) + 1;
+    els.compareTimeLabel.textContent = total > 1 || labelLines.length
+      ? [`Wind-radii point ${i + 1} of ${total}`, ...labelLines].join("\n")
+      : "—";
+    if (noRadii.length) status += ` No wind radii for ${noRadii.join(", ")} at the ticked thresholds (needs the API and an interpolation run).`;
+    els.compareStatus.textContent = status;
   }
 
   // --- Best track -------------------------------------------------------
@@ -407,6 +528,84 @@
     return (tm || "").replace("+00:00", "Z").replace(/\.\d+(?=Z?$)/, "");
   }
 
+  // Wind radii (km) per threshold, keyed by quadrant. `mean` is the all-round
+  // radius used when a quadrant is missing.
+  function radiiFromRow(r) {
+    const radii = {};
+    for (const level of Object.keys(BEST_TRACK_AREA_STYLE)) {
+      const k = level.toLowerCase();
+      radii[level] = {
+        ne: r[`mn_radius_${k}_secne`], se: r[`mn_radius_${k}_secse`],
+        sw: r[`mn_radius_${k}_secsw`], nw: r[`mn_radius_${k}_secnw`],
+        mean: r[`mn_radius_${k}_wind`],
+      };
+    }
+    return radii;
+  }
+
+  // Quadrant radius for a compass bearing, or null when unknown. Mirrors
+  // get_quadrant_radius() in backend/app/gen_cont_tables.py so the map shows
+  // the same area the verification was scored against: 0 or missing means
+  // "use the mean radius", and if that is missing too there is no area.
+  function quadrantRadiusKm(radii, bearing) {
+    const quadrant = bearing < 90 ? "ne" : bearing < 180 ? "se" : bearing < 270 ? "sw" : "nw";
+    const q = radii[quadrant];
+    if (q !== null && q !== undefined && q > 0) return q;
+    const m = radii.mean;
+    if (m !== null && m !== undefined && m > 0) return m;
+    return null;
+  }
+
+  // Point `km` away from (lat, lon) along `bearing` degrees (spherical earth;
+  // the error is far below what is visible at map scale).
+  function destinationPoint(lat, lon, bearing, km) {
+    const R = 6371, d = km / R, b = bearing * Math.PI / 180;
+    const phi1 = lat * Math.PI / 180, lam1 = lon * Math.PI / 180;
+    const phi2 = Math.asin(Math.sin(phi1) * Math.cos(d) + Math.cos(phi1) * Math.sin(d) * Math.cos(b));
+    const lam2 = lam1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(phi1),
+      Math.cos(d) - Math.sin(phi1) * Math.sin(phi2));
+    return [phi2 * 180 / Math.PI, ((lam2 * 180 / Math.PI + 540) % 360) - 180];
+  }
+
+  // Ring of [lat, lon] for one threshold, or null if no bearing has a radius.
+  // Bearings with no radius collapse onto the centre, so a missing quadrant
+  // leaves a notch instead of an invented area.
+  function windAreaRing(lat, lon, radii) {
+    const ring = [];
+    let any = false;
+    for (let bearing = 0; bearing < 360; bearing += 3) {
+      const km = quadrantRadiusKm(radii, bearing);
+      if (km === null) { ring.push([lat, lon]); continue; }
+      any = true;
+      ring.push(destinationPoint(lat, lon, bearing, km));
+    }
+    return any ? ring : null;
+  }
+
+  function parseUtc(t) {
+    if (!t) return NaN;
+    return Date.parse(t.includes("T") ? t : t.replace(" ", "T") + "Z");
+  }
+
+  // The best-track point closest in time to `timeIso`, but only if it is
+  // within one grid step -- otherwise the bulletin is outside the track.
+  function nearestBestTrackPoint(points, timeIso) {
+    const target = parseUtc(timeIso);
+    if (!Number.isFinite(target) || !points.length) return null;
+    const stepMs = (trackStepMinutes(points) || 360) * 60000;
+    let best = null, bestDiff = Infinity;
+    for (const p of points) {
+      const diff = Math.abs(parseUtc(p.time) - target);
+      if (diff < bestDiff) { best = p; bestDiff = diff; }
+    }
+    return bestDiff <= stepMs ? best : null;
+  }
+
+  // The API serves max_wind_spd in m/s; the popups and thresholds are in knots.
+  function msToKnots(ms) {
+    return ms === null || ms === undefined ? null : Math.round(ms * 1.943844);
+  }
+
   async function loadInterpolatedTrack(distId) {
     // 404 here is routine: unknown disturbance, or no interpolation run yet.
     const res = await fetch(`${API_BASE}/disturbances/${encodeURIComponent(distId)}/interpolated-track`);
@@ -418,8 +617,9 @@
         time: normaliseTime(r.tm),
         coord: [r.lon, r.lat],
         pressure: null,          // not carried on the interpolated grid
-        windSpeed: r.max_wind_spd,
+        windSpeed: msToKnots(r.max_wind_spd),
         interpolated: Boolean(r.is_interpolated),
+        radii: radiiFromRow(r),
       }));
     if (points.length < 2) return null;
     const cyclone = cyclonesById.get(distId);
@@ -470,7 +670,7 @@
   function bestTrackSummaryFor(track) {
     if (!track) return "not available";
     const n = track.points.length;
-    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BOM fixes)`;
+    if (track.source !== "interpolated") return `${n} points (raw 6-hourly BoM fixes; wind areas unavailable without the API)`;
     const step = trackStepMinutes(track.points);
     return `${n} points (interpolated${step ? ` ${step}-minute` : ""} grid, as verified)`;
   }
@@ -528,9 +728,93 @@
   // featureless polyline; thousands of them just make panning stutter.
   const MAX_INTERPOLATED_MARKERS = 1200;
 
-  function drawBestTrack(bounds) {
+  // Wind areas for the best-track point nearest the bulletin's forecast base
+  // time, so they move with the bulletin slider. Drawn first so the track line
+  // and markers sit on top.
+  function drawBestTrackAreas(points, bulletin, bounds) {
+    if (!bulletin) return;
+    const p = nearestBestTrackPoint(points, bulletin.fcastTime || bulletin.issueTime);
+    if (!p || !p.radii) return;
+    Object.entries(BEST_TRACK_AREA_STYLE).forEach(([level, style]) => {
+      if (!els.layers[style.layerKey].checked) return;
+      const polygon = buildAreaPolygon(p, level, style);
+      if (!polygon) return;
+      polygon.addTo(bestTrackLayer);
+      bounds.push(...polygon.getLatLngs()[0]);
+    });
+  }
+
+  // Dashed wind-area polygon for one threshold at best-track point `p`, or
+  // null if no radius is known. `color` / `name` default to the level's style
+  // and the plain "Best track" title; compare mode passes the cyclone's own.
+  function buildAreaPolygon(p, level, style, color = style.color, name = null) {
+    const [lon, lat] = p.coord;
+    const r = p.radii[level];
+    const ring = windAreaRing(lat, lon, r);
+    if (!ring) return null;
+    const km = v => (v === null || v === undefined ? "—" : `${Math.round(v)} km`);
+    return L.polygon(ring, {
+      color, fillColor: color, fillOpacity: style.fillOpacity,
+      weight: 2, dashArray: "6,4", smoothFactor: 0,
+    }).bindPopup(`<b>${name ? `${name} — ` : "Best track — "}${style.label}</b><br>
+      Time: ${fmtTime(p.time)}${p.interpolated ? " (interpolated)" : ""}<br>
+      NE ${km(r.ne)}, SE ${km(r.se)}, SW ${km(r.sw)}, NW ${km(r.nw)}<br>
+      Mean ${km(r.mean)}`);
+  }
+
+  // Union of the best-track gale areas over [startH, endH] after the bulletin's
+  // base time: where gale-force wind was actually observed in that window, to
+  // set against the bulletin's Watch area. The ring is built exactly as for the
+  // T+0 areas (windAreaRing), sampled every ~30 minutes to keep the union cheap.
+  function drawObservedGaleWindow(points, bulletin) {
+    galeWindowNote = "";
+    if (!bulletin || !els.layers.btGaleWindow.checked) return;
+    const base = parseUtc(bulletin.fcastTime || bulletin.issueTime);
+    if (!Number.isFinite(base)) return;
+    const start = base + GALE_WINDOW.startH * 3600000;
+    const end = base + GALE_WINDOW.endH * 3600000;
+    const inWindow = points.filter(p => {
+      const t = parseUtc(p.time);
+      return t >= start && t <= end;
+    });
+    // Every point's ring (null where no gale radius is known). The union uses
+    // roughly half-hourly ones: unioning all 15-minute rings took ~400 ms per
+    // redraw, too slow for the slider and play button, while 30 minutes costs
+    // ~75 ms and the track moves only a few km between samples. Sampling is by
+    // index, not clock-aligned, because the base time can be an off-hour issue
+    // time; the first and last point in the window are always included so the
+    // window's ends are not trimmed.
+    const allRings = inWindow.map(p => (p.radii ? windAreaRing(p.coord[1], p.coord[0], p.radii.GF) : null));
+    const stride = Math.max(1, Math.round(30 / (trackStepMinutes(points) || 30)));
+    const rings = allRings.filter((ring, i) =>
+      ring && (i % stride === 0 || i === allRings.length - 1));
+    galeWindowNote = `Observed gale 24–48 h: ${allRings.filter(Boolean).length} of ${inWindow.length} best-track points in the window have gale radii`;
+    if (!rings.length) return;
+
+    const label = `${fmtTime(new Date(start).toISOString())} → ${fmtTime(new Date(end).toISOString())}`;
+    const popup = `<b>Observed gale area (34 kn) — from best-track area</b><br>T+${GALE_WINDOW.startH} h → T+${GALE_WINDOW.endH} h: ${label}<br>${galeWindowNote.replace("Observed gale 24–48 h: ", "")}`;
+    const style = {
+      color: GALE_WINDOW.color, fillColor: GALE_WINDOW.color, fillOpacity: GALE_WINDOW.fillOpacity,
+      weight: 2, dashArray: "2,5", smoothFactor: 0,
+    };
+    try {
+      // polygon-clipping works in [lon, lat]; a failure (library blocked, or a
+      // degenerate ring) falls through to drawing the hourly rings overlapped.
+      const union = polygonClipping.union(...rings.map(r => [[r.map(([lat, lon]) => [lon, lat])]]));
+      union.forEach(polygon => {
+        L.polygon(polygon.map(ring => ring.map(([lon, lat]) => [lat, lon])), style)
+          .bindPopup(popup).addTo(bestTrackLayer);
+      });
+    } catch (err) {
+      rings.forEach(ring => {
+        L.polygon(ring, { ...style, weight: 1, fillOpacity: 0.05 }).bindPopup(popup).addTo(bestTrackLayer);
+      });
+    }
+  }
+
+  function drawBestTrack(bounds, bulletin) {
     bestTrackLayer.clearLayers();
-    if (!els.layers.bestTrack.checked || !currentBestTrack) return;
+    if (!currentBestTrack) return;
     const points = currentBestTrack.points || [];
     if (points.length < 2) return;
 
@@ -538,6 +822,14 @@
     const step = interpolated ? trackStepMinutes(points) : null;
     const anchors = points.filter(p => !p.interpolated);
     const showEveryPoint = !interpolated || points.length <= MAX_INTERPOLATED_MARKERS;
+
+    // The wind areas have their own checkboxes, so they draw whether or not
+    // the track line itself is shown.
+    if (interpolated) {
+      drawObservedGaleWindow(points, bulletin);
+      drawBestTrackAreas(points, bulletin, bounds);
+    }
+    if (!els.layers.bestTrack.checked) return;
 
     const latlngs = points.map(p => [p.coord[1], p.coord[0]]);
     L.polyline(latlngs, { color: "#2fd4d9", weight: 3, opacity: 0.9 })
@@ -632,7 +924,8 @@
         latlngRings.forEach(ring => bounds.push(...ring));
       });
     });
-    drawBestTrack(bounds);
+    drawBestTrack(bounds, b);
+    if (galeWindowNote) els.info.innerHTML += `<br>${galeWindowNote}`;
     if (fitBounds && bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 9 });
   }
 
