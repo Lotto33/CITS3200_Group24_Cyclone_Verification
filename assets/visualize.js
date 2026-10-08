@@ -91,7 +91,11 @@
     els.categoryLegend.appendChild(chip);
   });
 
-  const map = L.map("map", { worldCopyJump: true }).setView([-20, 133], 4);
+  const map = L.map("map", {
+    maxZoom: 9,
+    minZoom: 3,
+    maxBounds: [[-90, -100], [90, 260]]
+  }).setView([-20, 133], 4);
 
   // Town dots need their own pane above Leaflet's overlayPane (400), or they
   // vanish under the translucent wind/warning/watch polygons.
@@ -107,7 +111,7 @@
     basemapUrl: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
     subdomains: "abcd",
-    maxZoom: 19,
+    maxZoom: 19
   };
 
   async function initBasemap() {
