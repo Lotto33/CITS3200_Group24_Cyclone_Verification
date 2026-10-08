@@ -602,6 +602,11 @@
     return bestDiff <= stepMs ? best : null;
   }
 
+  // The API serves max_wind_spd in m/s; the popups and thresholds are in knots.
+  function msToKnots(ms) {
+    return ms === null || ms === undefined ? null : Math.round(ms * 1.943844);
+  }
+
   async function loadInterpolatedTrack(distId) {
     // 404 here is routine: unknown disturbance, or no interpolation run yet.
     const res = await fetch(`${API_BASE}/disturbances/${encodeURIComponent(distId)}/interpolated-track`);
@@ -613,7 +618,7 @@
         time: normaliseTime(r.tm),
         coord: [r.lon, r.lat],
         pressure: null,          // not carried on the interpolated grid
-        windSpeed: r.max_wind_spd,
+        windSpeed: msToKnots(r.max_wind_spd),
         interpolated: Boolean(r.is_interpolated),
         radii: radiiFromRow(r),
       }));
@@ -805,7 +810,7 @@
 
   function drawBestTrack(bounds, bulletin) {
     bestTrackLayer.clearLayers();
-    if (!els.layers.bestTrack.checked || !currentBestTrack) return;
+    if (!currentBestTrack) return;
     const points = currentBestTrack.points || [];
     if (points.length < 2) return;
 
@@ -814,10 +819,13 @@
     const anchors = points.filter(p => !p.interpolated);
     const showEveryPoint = !interpolated || points.length <= MAX_INTERPOLATED_MARKERS;
 
+    // The wind areas have their own checkboxes, so they draw whether or not
+    // the track line itself is shown.
     if (interpolated) {
       drawObservedGaleWindow(points, bulletin);
       drawBestTrackAreas(points, bulletin, bounds);
     }
+    if (!els.layers.bestTrack.checked) return;
 
     const latlngs = points.map(p => [p.coord[1], p.coord[0]]);
     L.polyline(latlngs, { color: "#2fd4d9", weight: 3, opacity: 0.9 })
