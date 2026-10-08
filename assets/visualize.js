@@ -25,10 +25,11 @@
     HF: { label: "Hurricane force (64 kn)", color: "#c4007a", fillOpacity: 0.24, layerKey: "btHurricane" },
   };
 
-  // Observed gale area over a window after the bulletin's base time. The
-  // 24-48 h window is the Watch range, the same one gen_cont_tables.py scores
-  // Table C against (--x-hours 24 --y-hours 48).
-  const GALE_WINDOW = { startH: 24, endH: 48, color: "#3ddc84", fillOpacity: 0.14 };
+  // Observed gale area over a window after the bulletin's base time, set by the
+  // From / To inputs (default 24-48 h, the Watch range gen_cont_tables.py scores
+  // Table C against with --x-hours 24 --y-hours 48).
+  const GALE_WINDOW = { color: "#3ddc84", fillOpacity: 0.14 };
+  const GALE_WINDOW_MAX_H = 60;
 
   const els = {
     cyclone: document.getElementById("cycloneSelect"),
@@ -62,6 +63,9 @@
       btHurricane: document.getElementById("layer-btHurricane"),
       btGaleWindow: document.getElementById("layer-btGaleWindow"),
     },
+    // Outside els.layers: these are numbers, not checkboxes.
+    galeFrom: document.getElementById("galeFrom"),
+    galeTo: document.getElementById("galeTo"),
     compareToggle: document.getElementById("compareToggle"),
     comparePanel: document.getElementById("comparePanel"),
     compareClose: document.getElementById("compareClose"),
@@ -543,14 +547,16 @@
     return radii;
   }
 
-  // Quadrant radius for a compass bearing, or null when unknown. Mirrors
-  // get_quadrant_radius() in backend/app/gen_cont_tables.py so the map shows
-  // the same area the verification was scored against: 0 or missing means
-  // "use the mean radius", and if that is missing too there is no area.
+  // Quadrant radius for a compass bearing, or null when unknown. A quadrant
+  // of 0 is data ("no wind of this force here", per the BoM spec) and is kept
+  // as 0; only a missing (null) quadrant falls back to the mean radius, and if
+  // that is missing or 0 too the radius is unknown. Note this is stricter than
+  // get_quadrant_radius() in backend/app/gen_cont_tables.py, which also treats
+  // a quadrant of 0 as "use the mean".
   function quadrantRadiusKm(radii, bearing) {
     const quadrant = bearing < 90 ? "ne" : bearing < 180 ? "se" : bearing < 270 ? "sw" : "nw";
     const q = radii[quadrant];
-    if (q !== null && q !== undefined && q > 0) return q;
+    if (q !== null && q !== undefined) return q;
     const m = radii.mean;
     if (m !== null && m !== undefined && m > 0) return m;
     return null;
@@ -567,15 +573,15 @@
     return [phi2 * 180 / Math.PI, ((lam2 * 180 / Math.PI + 540) % 360) - 180];
   }
 
-  // Ring of [lat, lon] for one threshold, or null if no bearing has a radius.
-  // Bearings with no radius collapse onto the centre, so a missing quadrant
-  // leaves a notch instead of an invented area.
+  // Ring of [lat, lon] for one threshold, or null if no bearing has a radius
+  // above 0. Bearings with a zero or unknown radius collapse onto the centre,
+  // so they leave a notch instead of an invented area.
   function windAreaRing(lat, lon, radii) {
     const ring = [];
     let any = false;
     for (let bearing = 0; bearing < 360; bearing += 3) {
       const km = quadrantRadiusKm(radii, bearing);
-      if (km === null) { ring.push([lat, lon]); continue; }
+      if (km === null || km <= 0) { ring.push([lat, lon]); continue; }
       any = true;
       ring.push(destinationPoint(lat, lon, bearing, km));
     }
@@ -766,13 +772,30 @@
   // base time: where gale-force wind was actually observed in that window, to
   // set against the bulletin's Watch area. The ring is built exactly as for the
   // T+0 areas (windAreaRing), sampled every ~30 minutes to keep the union cheap.
+  // Hours after the bulletin's base time that the observed gale area covers,
+  // read from the From / To inputs. Out-of-range or inverted values are
+  // clamped to 0..GALE_WINDOW_MAX_H with To > From, and written back so the
+  // inputs always show what is drawn.
+  function galeWindowHours() {
+    let startH = Math.round(Number(els.galeFrom.value));
+    let endH = Math.round(Number(els.galeTo.value));
+    if (!Number.isFinite(startH)) startH = 24;
+    if (!Number.isFinite(endH)) endH = 48;
+    startH = Math.min(Math.max(startH, 0), GALE_WINDOW_MAX_H - 1);
+    endH = Math.min(Math.max(endH, startH + 1), GALE_WINDOW_MAX_H);
+    els.galeFrom.value = startH;
+    els.galeTo.value = endH;
+    return { startH, endH };
+  }
+
   function drawObservedGaleWindow(points, bulletin) {
     galeWindowNote = "";
     if (!bulletin || !els.layers.btGaleWindow.checked) return;
     const base = parseUtc(bulletin.fcastTime || bulletin.issueTime);
     if (!Number.isFinite(base)) return;
-    const start = base + GALE_WINDOW.startH * 3600000;
-    const end = base + GALE_WINDOW.endH * 3600000;
+    const { startH, endH } = galeWindowHours();
+    const start = base + startH * 3600000;
+    const end = base + endH * 3600000;
     const inWindow = points.filter(p => {
       const t = parseUtc(p.time);
       return t >= start && t <= end;
@@ -788,11 +811,11 @@
     const stride = Math.max(1, Math.round(30 / (trackStepMinutes(points) || 30)));
     const rings = allRings.filter((ring, i) =>
       ring && (i % stride === 0 || i === allRings.length - 1));
-    galeWindowNote = `Observed gale 24–48 h: ${allRings.filter(Boolean).length} of ${inWindow.length} best-track points in the window have gale radii`;
+    galeWindowNote = `Observed gale ${startH}–${endH} h: ${allRings.filter(Boolean).length} of ${inWindow.length} best-track points in the window have gale radii`;
     if (!rings.length) return;
 
     const label = `${fmtTime(new Date(start).toISOString())} → ${fmtTime(new Date(end).toISOString())}`;
-    const popup = `<b>Observed gale area (34 kn) — from best-track area</b><br>T+${GALE_WINDOW.startH} h → T+${GALE_WINDOW.endH} h: ${label}<br>${galeWindowNote.replace("Observed gale 24–48 h: ", "")}`;
+    const popup = `<b>Observed gale area (34 kn) — from best-track area</b><br>T+${startH} h → T+${endH} h: ${label}<br>${galeWindowNote.replace(/^Observed gale [^:]*: /, "")}`;
     const style = {
       color: GALE_WINDOW.color, fillColor: GALE_WINDOW.color, fillOpacity: GALE_WINDOW.fillOpacity,
       weight: 2, dashArray: "2,5", smoothFactor: 0,
@@ -974,6 +997,7 @@
   els.next.addEventListener("click", () => { stopPlay(); if (currentIdx < currentBulletins.length - 1) { currentIdx++; renderBulletin(false); } });
   els.play.addEventListener("click", togglePlay);
   Object.values(els.layers).forEach(cb => cb.addEventListener("change", () => renderBulletin(false)));
+  [els.galeFrom, els.galeTo].forEach(inp => inp.addEventListener("change", () => renderBulletin(false)));
   els.towns.addEventListener("change", drawTowns);
 
   initBasemap();
