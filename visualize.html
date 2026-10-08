@@ -33,6 +33,21 @@
     </div>
     <div id="compareSelectors"></div>
     <button id="addCompareCyclone" class="secondary-button" type="button">+ Add cyclone</button>
+    <div class="layer-row"><input type="checkbox" id="compare-gale" checked>
+      <span class="swatch" style="background:#ff9ee0"></span> Gale-force area (34 kn)</div>
+    <div class="layer-row"><input type="checkbox" id="compare-storm">
+      <span class="swatch" style="background:#ff3fb4"></span> Storm-force area (48 kn)</div>
+    <div class="layer-row"><input type="checkbox" id="compare-hurricane">
+      <span class="swatch" style="background:#c4007a"></span> Hurricane-force area (64 kn)</div>
+    <div id="compareTimeBar" class="field">
+      <label for="compareSlider">Wind-radii analysis point</label>
+      <div class="slider-row">
+        <button id="comparePrevBtn" class="icon" type="button" title="Earlier">◀</button>
+        <input type="range" id="compareSlider" min="0" max="0" value="0" step="1" style="flex:1">
+        <button id="compareNextBtn" class="icon" type="button" title="Later">▶</button>
+      </div>
+      <div id="compareTimeLabel" style="white-space:pre-line">—</div>
+    </div>
     <div id="compareStatus" class="layer-note"></div>
   </div>
 
@@ -85,6 +100,15 @@
       <span class="swatch" style="background:#8892a6"></span> Show all bulletins' tracks (ghost trails)</div>
     <div class="layer-row"><input type="checkbox" id="layer-bestTrack" checked>
       <span class="swatch" style="background:#2fd4d9"></span> Best track (interpolated grid, or raw fixes)</div>
+    <div class="layer-row"><input type="checkbox" id="layer-btGale" checked>
+      <span class="swatch" style="background:#ff9ee0"></span> Best track gale-force area (34 kn)</div>
+    <div class="layer-row"><input type="checkbox" id="layer-btStorm" checked>
+      <span class="swatch" style="background:#ff3fb4"></span> Best track storm-force area (48 kn)</div>
+    <div class="layer-row"><input type="checkbox" id="layer-btHurricane" checked>
+      <span class="swatch" style="background:#c4007a"></span> Best track hurricane-force area (64 kn)</div>
+    <div class="layer-row"><input type="checkbox" id="layer-btGaleWindow" checked>
+      <span class="swatch" style="background:#3ddc84"></span> Observed gale area after bulletin (from best-track area)</div>
+    <div class="layer-subrow">From T+<input type="number" id="galeFrom" min="0" max="59" step="1" value="24" style="width:56px"> to T+<input type="number" id="galeTo" min="1" max="60" step="1" value="48" style="width:56px"> h</div>
     <div class="layer-row"><input type="checkbox" id="layer-towns" checked>
       <span class="swatch" style="background:#cfd8e6"></span> Towns (TC locations)</div>
     <div class="layer-note" id="townsNote"></div>
@@ -113,6 +137,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"
+        integrity="sha384-2gzcIyrtB96QDjrxsFcJ1O461CWiXJ8fiHgIkJLwTgy4WTktHXTOXt4dviXz9Y5Q" crossorigin=""></script>
 <script src="assets/visualize.js"></script>
 </body>
 </html>
