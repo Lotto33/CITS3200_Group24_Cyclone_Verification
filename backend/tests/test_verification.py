@@ -30,7 +30,7 @@ from app.services.loaders.verification import (
 
 #: From the committed CSVs, verified by reading them.
 COMMITTED = {
-    "AU202526_02U": (277, 565, 23, 1890, 2755),
+    "AU202526_02U": (281, 561, 28, 1885, 2755),
     "AU202526_03U": (10, 9, 0, 0, 19),
     "AU202526_05U": (0, 0, 0, 0, 0),
 }
