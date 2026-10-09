@@ -20,8 +20,8 @@
   // area colours above: a pink-to-magenta ramp (no other layer uses pink) with
   // dashed outlines, so they can't be mistaken for the solid bulletin areas.
   const BEST_TRACK_AREA_STYLE = {
-    GF: { label: "Gale force (34 kn)",      color: "#ff9ee0", fillOpacity: 0.10, layerKey: "btGale" },
-    SF: { label: "Storm force (48 kn)",     color: "#ff3fb4", fillOpacity: 0.16, layerKey: "btStorm" },
+    GF: { label: "Gale force (34 kn)", color: "#ff9ee0", fillOpacity: 0.10, layerKey: "btGale" },
+    SF: { label: "Storm force (48 kn)", color: "#ff3fb4", fillOpacity: 0.16, layerKey: "btStorm" },
     HF: { label: "Hurricane force (64 kn)", color: "#c4007a", fillOpacity: 0.24, layerKey: "btHurricane" },
   };
 
@@ -884,7 +884,29 @@
     bounds.push(...latlngs);
   }
 
+  // Fixes are points on a track, so the Fixes checkbox is only relevant if Tracks is on.
+  // Disabled rather than unchecked so the user's choice comes back when they re-enable Tracks.
+  function syncFixesToggle() {
+    const tracksOn = els.layers.tracks.checked;
+    els.layers.fixes.disabled = !tracksOn;
+    const label = els.layers.fixes.closest("label");
+    if (label) {
+      label.style.opacity = tracksOn ? "" : "0.45";
+      label.title = tracksOn ? "" : "Fixes are only shown when Tracks is enabled";
+    }
+  }
+
+  // A fix is drawn only if a track line of its type is drawn through it.
+  // The current fix is where the observed and forecast tracks meet, so it
+  // stays as long as any track is drawn. Unknown fix types are treated the same way.
+  function fixHasTrack(fix, drawnTrackTypes) {
+    if (!drawnTrackTypes.size) return false;
+    if (fix.fixType === "Observed" || fix.fixType === "Forecast") return drawnTrackTypes.has(fix.fixType);
+    return true;
+  }
+
   function renderBulletin(fitBounds) {
+    syncFixesToggle();
     bulletinLayer.clearLayers();
     drawGhostTrails();
     const b = currentBulletins[currentIdx];
@@ -906,9 +928,11 @@
       Best track: ${bestTrackSummary()}`;
 
     const bounds = [];
+    const drawnTrackTypes = new Set();
     if (els.layers.tracks.checked) {
       b.tracks.forEach(track => {
         if (track.coords.length < 2) return;
+        drawnTrackTypes.add(track.trackType);
         const latlngs = toLatLngs(track.coords);
         L.polyline(latlngs, {
           color: track.trackType === "Forecast" ? "#4fa8ff" : "#ffd24f",
@@ -918,8 +942,8 @@
         bounds.push(...latlngs);
       });
     }
-    if (els.layers.fixes.checked) {
-      b.fixes.forEach(fix => {
+    if (els.layers.tracks.checked && els.layers.fixes.checked) {
+      b.fixes.filter(fix => fixHasTrack(fix, drawnTrackTypes)).forEach(fix => {
         const [lon, lat] = fix.coord;
         const marker = L.circleMarker([lat, lon], {
           radius: fix.fixType === "Current" ? 8 : 6, color: "#111826", weight: 1.5,
