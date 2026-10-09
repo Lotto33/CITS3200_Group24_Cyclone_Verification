@@ -23,7 +23,6 @@ p, caption { color: var(--muted); }
 .upload-progress { flex: 1 1 100%; max-width: 680px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .upload-progress[hidden] { display: none; }
 .upload-progress-heading { display: flex; justify-content: space-between; gap: 12px; color: var(--text); font-size: 13px; }
-#uploadPercent { color: #4fa8ff; font-variant-numeric: tabular-nums; }
 .progress.upload-progress-track {
   --bs-progress-height: 10px !important;
   --bs-progress-bg: #0c111b !important;

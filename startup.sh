@@ -3,12 +3,14 @@ set -e
 
 echo "Preparing persistent storage..."
 
-mkdir -p /home/cyclone/data/gml
-mkdir -p /home/cyclone/data/uploads
-mkdir -p /home/cyclone/data/geojson
+export DATA_DIR="${DATA_DIR:-/home/cyclone/data}"
+
+mkdir -p "$DATA_DIR/gml"
+mkdir -p "$DATA_DIR/uploads"
+mkdir -p "$DATA_DIR/geojson"
 
 echo "Generating map configuration..."
-python backend/app/build_map_config.py --out-dir /home/cyclone/data
+python backend/app/build_map_config.py --out-dir "$DATA_DIR"
 
 cd backend
 

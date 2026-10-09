@@ -32,7 +32,6 @@
     function updateUploadProgress(phase, detail, percentage) {
         const container = byId("uploadProgress");
         const label = byId("uploadPhase");
-        const percentLabel = byId("uploadPercent");
         const progress = byId("uploadProgressBar");
         container.hidden = false;
         label.textContent = phase;
@@ -43,7 +42,6 @@
             progress.setAttribute("aria-valuetext", "Processing");
             progress.classList.add("progress-bar-striped", "progress-bar-animated");
             progress.classList.add("progress-bar-indeterminate");
-            percentLabel.textContent = "";
         }
         else {
             progress.style.width = `${percentage}%`;
@@ -52,7 +50,6 @@
             progress.classList.remove("progress-bar-indeterminate");
             progress.classList.toggle("progress-bar-striped", percentage < 100);
             progress.classList.toggle("progress-bar-animated", percentage < 100);
-            percentLabel.textContent = `${percentage}%`;
         }
     }
     function uploadFile(file, endpoint, description) {
@@ -137,12 +134,10 @@
             }
             appendBackendMessages(job.messages);
             offset = job.next;
-            if (description.toLowerCase().includes("bom")) {
-                for (const message of job.messages) {
-                    const stage = bestTrackRefreshStage(message);
-                    if (stage)
-                        refreshStage = stage;
-                }
+            for (const message of job.messages) {
+                const stage = uploadProgressStage(message, description);
+                if (stage)
+                    refreshStage = stage;
             }
             if (job.status === "completed") {
                 const interpolationError = (_a = job.result) === null || _a === void 0 ? void 0 : _a.interpolation_error;
@@ -150,7 +145,7 @@
                     ? "Step 5 of 5 · Complete"
                     : interpolationError
                         ? "Upload complete with warning"
-                        : "Backend processing complete", interpolationError
+                        : "Step 5 of 5 · Complete", interpolationError
                     ? `${filename}: uploaded successfully, but interpolation was skipped: ${interpolationError}`
                     : `${filename}: ${description} processing completed successfully.`, 100);
                 return;
@@ -198,22 +193,58 @@
         }
         throw new Error("The generation job exceeded the 30-minute polling limit. Check the backend logs and try again.");
     }
-    function bestTrackRefreshStage(message) {
+    function uploadProgressStage(message, description) {
         const normalized = message.toLowerCase();
-        if (normalized.startsWith("starting bom best-track refresh")) {
-            return { label: "Step 1 of 5 · Starting refresh", percentage: 10 };
+        if (description.toLowerCase().includes("bom")) {
+            if (normalized.startsWith("starting bom best-track refresh")) {
+                return { label: "Step 1 of 5 · Preparing refresh", percentage: 10 };
+            }
+            if (normalized.startsWith("downloading current bom best-track csv")) {
+                return { label: "Step 2 of 5 · Downloading best-track data from BOM", percentage: 25 };
+            }
+            if (normalized.startsWith("downloaded ")) {
+                return { label: "Step 2 of 5 · Downloading best-track data from BOM", percentage: 40 };
+            }
+            if (normalized.startsWith("validating downloaded best-track csv")) {
+                return { label: "Step 3 of 5 · Validating the downloaded CSV", percentage: 50 };
+            }
+            if (normalized.startsWith("=== database ingest: best-track observations ===")) {
+                return { label: "Step 4 of 5 · Importing best-track observations", percentage: 65 };
+            }
+            if (normalized.startsWith("database best-track ingest:")) {
+                return { label: "Step 4 of 5 · Best-track observations imported", percentage: 75 };
+            }
+            if (normalized.startsWith("=== database interpolation ===")) {
+                return { label: "Step 5 of 5 · Interpolating track positions and wind radii", percentage: 85 };
+            }
+            if (normalized.startsWith("database interpolation:")) {
+                return { label: "Step 5 of 5 · Interpolated track saved", percentage: 95 };
+            }
+            return null;
         }
-        if (normalized.startsWith("downloading current bom best-track csv")) {
-            return { label: "Step 2 of 5 · Downloading from BOM", percentage: 20 };
+        if (normalized.startsWith("starting gml archive processing")) {
+            return { label: "Step 1 of 5 · Preparing GML archive", percentage: 10 };
         }
-        if (normalized.startsWith("validating downloaded best-track csv")) {
-            return { label: "Step 3 of 5 · Validating CSV", percentage: 30 };
+        if (normalized.startsWith("step 1 of 5")) {
+            return { label: "Step 1 of 5 · Extracting GML archive", percentage: 20 };
         }
-        if (normalized.startsWith("=== database ingest: best-track observations ===")) {
-            return { label: "Step 4 of 5 · Ingesting and interpolating", percentage: 75 };
+        if (normalized.startsWith("extracted ")) {
+            return { label: "Step 2 of 5 · Checking extracted GML files", percentage: 30 };
         }
-        if (normalized.startsWith("=== database interpolation ===")) {
-            return { label: "Step 4 of 5 · Ingesting and interpolating", percentage: 75 };
+        if (normalized.startsWith("step 3 of 5")) {
+            return { label: "Step 3 of 5 · Generating viewer datasets", percentage: 45 };
+        }
+        if (normalized.startsWith("converting gml bulletins")) {
+            return { label: "Step 3 of 5 · Converting GML to JSON and GeoJSON", percentage: 55 };
+        }
+        if (normalized.startsWith("static datasets ready:")) {
+            return { label: "Step 4 of 5 · Loading bulletins into the database", percentage: 75 };
+        }
+        if (normalized.startsWith("step 4 of 5")) {
+            return { label: "Step 4 of 5 · Loading bulletins into the database", percentage: 80 };
+        }
+        if (normalized.startsWith("database gml ingest:")) {
+            return { label: "Step 5 of 5 · Saving complete", percentage: 95 };
         }
         return null;
     }
