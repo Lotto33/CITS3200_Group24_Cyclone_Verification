@@ -44,10 +44,14 @@ def test_table_b_omits_only_provably_unobservable_rows(monkeypatch):
             "MN_RADIUS_HF_WIND": [30.0, 30.0],
         }
     )
-    monkeypatch.setattr(
-        "app.gen_cont_tables.calculate_geodesic_distance_km", lambda *args: 250.0
-    )
-    monkeypatch.setattr("app.gen_cont_tables.get_bearing", lambda *args: 0.0)
+    class FakeGeod:
+        # Fixed 250 km at bearing 0, whatever the inputs.
+        @staticmethod
+        def inv(lon1, lat1, lon2, lat2):
+            n = np.shape(lon1)
+            return np.zeros(n), np.zeros(n), np.full(n, 250_000.0)
+
+    monkeypatch.setattr("app.gen_cont_tables.geod", FakeGeod)
 
     result = generate_table_b("TEST", locations, track=track)
 

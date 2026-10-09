@@ -6,6 +6,7 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
 from pyproj import Geod
 from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
@@ -341,6 +342,27 @@ def signed_distance_to_polygon_km(point, polygon_union) -> float:
     return -dist_km if polygon_union.contains(point) else dist_km
 
 
+def signed_distance_to_polygon_km_array(
+    lon: np.ndarray, lat: np.ndarray, polygon_union
+) -> np.ndarray:
+    """Vectorised signed_distance_to_polygon_km for many points at once.
+
+    Same result as calling the scalar version per point: geodesic km to the
+    nearest boundary point, negative inside the polygon, NaN if
+    polygon_union is None.
+    """
+    if polygon_union is None:
+        return np.full(len(lon), np.nan)
+    points = shapely.points(lon, lat)
+    # shortest_line runs from the first geometry to the second, so its first
+    # vertex is the nearest point on the boundary (what nearest_points gives).
+    nearest = shapely.get_point(shapely.shortest_line(polygon_union.boundary, points), 0)
+    _, _, dist_m = geod.inv(lon, lat, shapely.get_x(nearest), shapely.get_y(nearest))
+    dist_km = np.asarray(dist_m) / 1000.0
+    shapely.prepare(polygon_union)
+    return np.where(shapely.contains(polygon_union, points), -dist_km, dist_km)
+
+
 def _valid_polygonal(geom):
     """Repair a self-intersecting polygon, keeping only its areal parts.
 
@@ -644,7 +666,15 @@ def generate_table_a(
     print(f"\n=== Table A: forecast watch/warning areas for {disturbance_id} ===")
     if locations is None:
         locations = load_locations()
-    rows = []
+    frames: list[pd.DataFrame] = []
+    loc_lon = locations.geometry.x.to_numpy(float)
+    loc_lat = locations.geometry.y.to_numpy(float)
+    loc_names = locations["name"].to_numpy()
+    loc_is_coastal = (
+        np.asarray(locations["is_coastal"], dtype=bool)
+        if "is_coastal" in locations.columns
+        else np.zeros(len(locations), dtype=bool)
+    )
     if forecasts is not None:
         available_times = sorted(forecasts)
     elif fcast_times is not None:
@@ -696,78 +726,178 @@ def generate_table_a(
             f"[table_a]   -> {len(watch_geoms)} watch polygon(s), {len(warning_geoms)} warning polygon(s)"
         )
 
-        kept = 0
-        for _, loc in locations.iterrows():
-            point = loc.geometry
-            dist_watch = signed_distance_to_polygon_km(point, watch_union)
-            dist_warning = signed_distance_to_polygon_km(point, warning_union)
+        dist_watch = signed_distance_to_polygon_km_array(loc_lon, loc_lat, watch_union)
+        dist_warning = signed_distance_to_polygon_km_array(loc_lon, loc_lat, warning_union)
 
-            candidate_distances = [d for d in (dist_watch, dist_warning) if pd.notna(d)]
-            if not candidate_distances or min(candidate_distances) >= relevance_km:
-                continue  # more than relevance_km from any watch/warning area (or neither exists) -- not relevant here
+        # Relevant only if the nearest watch OR warning area is under
+        # relevance_km (NaN, i.e. no such area, never qualifies).
+        with np.errstate(invalid="ignore"):
+            relevant = np.fmin(dist_watch, dist_warning) < relevance_km
 
-            # Coastal coverage uses the nearest boundary distance to any watch/warning polygon.
-            # This is intentionally different from the relevance_km gate above: the 300 km check
-            # decides whether a town appears in the table at all, while the 20 km buffer decides
-            # whether a coastal town is treated as covered when it sits just outside the polygon.
-            is_coastal = bool(loc.get("is_coastal", False)) and buffer_applies
-            if is_coastal:
-                # a coastal town should never be classified as both Watch and Warning at once. Warning takes
-                # priority if the town is within coastal_buffer_km of the
-                # warning polygon (this also covers strict containment, since
-                # being inside gives a distance <= 0, which is always within
-                # the buffer), it's Warning only. Watch is only checked if
-                # that Warning condition doesn't hold.
-                warning = bool(
-                    pd.notna(dist_warning) and dist_warning <= coastal_buffer_km
+            has_watch = ~np.isnan(dist_watch)
+            has_warning = ~np.isnan(dist_warning)
+            # Coastal buffer: Warning takes priority, Watch only if not Warning.
+            coastal_warning = has_warning & (dist_warning <= coastal_buffer_km)
+            coastal_watch = ~coastal_warning & has_watch & (dist_watch <= coastal_buffer_km)
+            strict_watch = has_watch & (dist_watch <= 0)
+            strict_warning = has_warning & (dist_warning <= 0)
+        use_buffer = loc_is_coastal & buffer_applies
+        watch = np.where(use_buffer, coastal_watch, strict_watch)
+        warning = np.where(use_buffer, coastal_warning, strict_warning)
+
+        kept = int(relevant.sum())
+        if kept:
+            frames.append(
+                pd.DataFrame(
+                    {
+                        "Disturbance ID": disturbance_id,
+                        "Base time": base_time_dt,
+                        "Location": loc_names[relevant],
+                        "Distance to watch": dist_watch[relevant],
+                        "Distance to warning": dist_warning[relevant],
+                        "Watch": watch[relevant],
+                        "Warning": warning[relevant],
+                    }
                 )
-                watch = bool(
-                    not warning
-                    and pd.notna(dist_watch)
-                    and dist_watch <= coastal_buffer_km
-                )
-            else:
-                # Non-coastal towns (or coastal towns on/after the buffer
-                # cutoff date): strict polygon containment only, evaluated
-                # independently -- both can legitimately be True if the town
-                # is genuinely inside two overlapping polygons.
-                watch = bool(pd.notna(dist_watch) and dist_watch <= 0)
-                warning = bool(pd.notna(dist_warning) and dist_warning <= 0)
-
-            rows.append(
-                {
-                    "Disturbance ID": disturbance_id,
-                    "Base time": base_time_dt,
-                    "Location": loc["name"],
-                    "Distance to watch": dist_watch,
-                    "Distance to warning": dist_warning,
-                    "Watch": watch,
-                    "Warning": warning,
-                    # contains() (via signed_distance_to_polygon_km's use of polygon_union.contains)
-                    # is strict -- a location sitting exactly on a polygon's boundary line
-                    # (vanishingly unlikely with real coordinates, but technically possible)
-                    # would come out as outside with distance 0, not inside. Not worth
-                    # changing unless it actually comes up.
-                }
             )
-            kept += 1
         print(
             f"[table_a]   -> {kept} location(s) within {relevance_km}km (of {len(locations)} total)"
         )
-    result = pd.DataFrame(
-        rows,
-        columns=[
-            "Disturbance ID",
-            "Base time",
-            "Location",
-            "Distance to watch",
-            "Distance to warning",
-            "Watch",
-            "Warning",
-        ],
+    table_a_columns = [
+        "Disturbance ID",
+        "Base time",
+        "Location",
+        "Distance to watch",
+        "Distance to warning",
+        "Watch",
+        "Warning",
+    ]
+    result = (
+        pd.concat(frames, ignore_index=True)[table_a_columns]
+        if frames
+        else pd.DataFrame(columns=table_a_columns)
     )
     print(f"[table_a] Done: {len(result)} row(s)")
     return result
+
+
+TABLE_B_COLUMNS = [
+    "Disturbance ID",
+    "Location",
+    "Time",
+    "Analysis Uncertainty",
+    "Distance to gale",
+    "Distance to storm",
+    "Distance to hurricane",
+]
+# Cap on (steps x locations) cells per vectorised batch, to bound memory.
+_TABLE_B_CHUNK_CELLS = 400_000
+_QUADRANT_SUFFIXES = ("SECNE", "SECSE", "SECSW", "SECNW")
+
+
+def _quadrant_radius_array(
+    steps: pd.DataFrame, prefix: str, bearing: np.ndarray
+) -> np.ndarray:
+    """Vectorised get_quadrant_radius: (n_steps, n_locations) radii in km.
+
+    Same rule as the scalar version: the quadrant value if > 0, else the mean
+    radius if > 0, else NaN. `bearing` has shape (n_steps, n_locations).
+    """
+    n = len(steps)
+
+    def column(name: str) -> np.ndarray:
+        if name in steps.columns:
+            values = pd.to_numeric(steps[name], errors="coerce").to_numpy(float)
+        else:
+            values = np.full(n, np.nan)
+        return values.reshape(n, 1)
+
+    quadrant_index = np.minimum((bearing // 90).astype(int), 3)
+    sector_values = np.stack(
+        [np.broadcast_to(column(f"{prefix}_{s}"), bearing.shape) for s in _QUADRANT_SUFFIXES]
+    )
+    sector = np.take_along_axis(sector_values, quadrant_index[None], axis=0)[0]
+    mean = np.broadcast_to(column(f"{prefix}_WIND"), bearing.shape)
+    # NaN > 0 is False, so missing values fall through like pd.notna() did.
+    return np.where(
+        sector > 0, sector, np.where(mean > 0, mean, np.nan)
+    )
+
+
+def _table_b_rows(
+    disturbance_id: str, track: pd.DataFrame, locations: gpd.GeoDataFrame
+) -> tuple[pd.DataFrame, int]:
+    """Table B rows for every (track step, location) pair, vectorised.
+
+    Geodesic distance/bearing come from one batched Geod.inv call per chunk of
+    steps rather than one call per step x location. Output order matches the
+    original loop: step-major, then location order.
+    """
+    track = track[track["LAT"].notna() & track["LON"].notna()].reset_index(drop=True)
+    n_locations = len(locations)
+    if track.empty or n_locations == 0:
+        return pd.DataFrame(columns=TABLE_B_COLUMNS), 0
+
+    loc_lat = locations.geometry.y.to_numpy(float)
+    loc_lon = locations.geometry.x.to_numpy(float)
+    loc_names = locations["name"].to_numpy()
+    uncertainty = (
+        pd.to_numeric(track["POSITION_UNCERTAINTY"], errors="coerce").to_numpy(float)
+        if "POSITION_UNCERTAINTY" in track.columns
+        else np.full(len(track), np.nan)
+    )
+
+    chunk_steps = max(1, _TABLE_B_CHUNK_CELLS // n_locations)
+    frames = []
+    cutoff_rows = 0
+    n_steps = len(track)
+    for start in range(0, n_steps, chunk_steps):
+        steps = track.iloc[start : start + chunk_steps]
+        m = len(steps)
+        print(f"[table_b] processing time steps {start + 1}-{start + m}/{n_steps}")
+        cyc_lat = np.repeat(steps["LAT"].to_numpy(float), n_locations)
+        cyc_lon = np.repeat(steps["LON"].to_numpy(float), n_locations)
+        azimuth, _, dist_m = geod.inv(
+            cyc_lon, cyc_lat, np.tile(loc_lon, m), np.tile(loc_lat, m)
+        )
+        shape = (m, n_locations)
+        dist_center_km = np.asarray(dist_m).reshape(shape) / 1000.0
+        bearing = np.asarray(azimuth).reshape(shape) % 360
+
+        dist_gale = dist_center_km - _quadrant_radius_array(steps, "MN_RADIUS_GF", bearing)
+        dist_storm = dist_center_km - _quadrant_radius_array(steps, "MN_RADIUS_SF", bearing)
+        dist_hurricane = dist_center_km - _quadrant_radius_array(steps, "MN_RADIUS_HF", bearing)
+
+        # _beyond_observation_cutoff, vectorised: drop if no gale radius, or
+        # the gale distance exceeds max(100 km, finite uncertainty).
+        cutoff_km = np.full(m, DISTANCE_CUTOFF_MIN_KM)
+        unc = uncertainty[start : start + m]
+        finite = np.isfinite(unc)
+        cutoff_km[finite] = np.maximum(cutoff_km[finite], unc[finite])
+        with np.errstate(invalid="ignore"):
+            drop = ~np.isfinite(dist_gale) | (dist_gale > cutoff_km[:, None])
+        cutoff_rows += int(drop.sum())
+        keep = ~drop
+        step_idx, loc_idx = np.nonzero(keep)  # row-major: step-major, then location
+        if step_idx.size == 0:
+            continue
+        frames.append(
+            pd.DataFrame(
+                {
+                    "Disturbance ID": disturbance_id,
+                    "Location": loc_names[loc_idx],
+                    "Time": steps["TM"].to_numpy()[step_idx],
+                    "Analysis Uncertainty": unc[step_idx],
+                    "Distance to gale": dist_gale[keep],
+                    "Distance to storm": dist_storm[keep],
+                    "Distance to hurricane": dist_hurricane[keep],
+                }
+            )
+        )
+    if not frames:
+        return pd.DataFrame(columns=TABLE_B_COLUMNS), cutoff_rows
+    return pd.concat(frames, ignore_index=True)[TABLE_B_COLUMNS], cutoff_rows
+
 
 
 def generate_table_b(
@@ -796,8 +926,6 @@ def generate_table_b(
     if locations is None:
         locations = load_locations()
 
-    rows = []
-    cutoff_rows = 0
     df = track if track is not None else load_best_track(disturbance_id)
     if track is not None or _best_track_is_preprocessed():
         print(
@@ -816,60 +944,7 @@ def generate_table_b(
     else:
         interp_df = interpolate_best_track(df, step_minutes=step_minutes)
 
-    n_steps = len(interp_df)
-    for i, (_, step) in enumerate(interp_df.iterrows(), start=1):
-        if i == 1 or i == n_steps or i % 25 == 0:
-            print(f"[table_b] processing time step {i}/{n_steps} ({step.get('TM')})")
-        cyc_lat, cyc_lon = step["LAT"], step["LON"]
-        if pd.isna(cyc_lat) or pd.isna(cyc_lon):
-            continue
-
-        for _, loc in locations.iterrows():
-            loc_lat, loc_lon = loc.geometry.y, loc.geometry.x
-            dist_center_km = calculate_geodesic_distance_km(
-                cyc_lat, cyc_lon, loc_lat, loc_lon
-            )
-
-            bearing = get_bearing(cyc_lat, cyc_lon, loc_lat, loc_lon)
-
-            # TODO CHECK IS THIS CORRECT BELOW THESE NEXT SEVEN LINES
-            gale_radius_km = get_quadrant_radius(step, "MN_RADIUS_GF", bearing)
-            storm_radius_km = get_quadrant_radius(step, "MN_RADIUS_SF", bearing)
-            hurricane_radius_km = get_quadrant_radius(step, "MN_RADIUS_HF", bearing)
-
-            dist_gale_km = dist_center_km - gale_radius_km
-            dist_storm_km = dist_center_km - storm_radius_km
-            dist_hurricane_km = dist_center_km - hurricane_radius_km
-
-            uncertainty_km = step.get("POSITION_UNCERTAINTY", np.nan)
-            if _beyond_observation_cutoff(uncertainty_km, dist_gale_km):
-                cutoff_rows += 1
-                continue
-
-            rows.append(
-                {
-                    "Disturbance ID": disturbance_id,
-                    "Location": loc["name"],
-                    "Time": step["TM"],
-                    "Analysis Uncertainty": uncertainty_km,
-                    "Distance to gale": dist_gale_km,
-                    "Distance to storm": dist_storm_km,
-                    "Distance to hurricane": dist_hurricane_km,
-                }
-            )
-
-    result = pd.DataFrame(
-        rows,
-        columns=[
-            "Disturbance ID",
-            "Location",
-            "Time",
-            "Analysis Uncertainty",
-            "Distance to gale",
-            "Distance to storm",
-            "Distance to hurricane",
-        ],
-    )
+    result, cutoff_rows = _table_b_rows(disturbance_id, interp_df, locations)
     print(
         f"[table_b] Done: {len(result)} row(s); "
         f"{cutoff_rows} beyond the max(100 km, position uncertainty) cutoff omitted"
@@ -957,20 +1032,17 @@ def generate_table_c(
             f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: {len(window_df)} best-track row(s) in window"
         )
 
-        for _, loc in locations.iterrows():
-            loc_name = loc["name"]
-            loc_subset = window_df[window_df["Location"] == loc_name]
-            observed = (
-                bool((loc_subset[distance_column] <= 0).any())
-                if not loc_subset.empty
-                else False
-            )
+        # One pass over the window instead of a filter per location.
+        observed_locations = set(
+            window_df.loc[window_df[distance_column] <= 0, "Location"]
+        )
+        for loc_name in locations["name"]:
             rows.append(
                 {
                     "Disturbance ID": disturbance_id,
                     "Base time": base_time,
-                    "Location": loc["name"],
-                    "Observed": observed,
+                    "Location": loc_name,
+                    "Observed": loc_name in observed_locations,
                 }
             )
     result = pd.DataFrame(
@@ -1009,7 +1081,11 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame, forecast_leve
     # cyclone season (e.g. Season="2025-26") without needing a separate
     # season lookup table. State is intentionally not retained in Table D;
     # state filtering happens before Table A is generated.
-    merged_table["Season"] = merged_table["Base time"].apply(derive_season)
+    # Season depends only on Base time, and there are few distinct base times.
+    season_by_base_time = {
+        t: derive_season(t) for t in merged_table["Base time"].unique()
+    }
+    merged_table["Season"] = merged_table["Base time"].map(season_by_base_time)
     result_columns = [
         "Disturbance ID",
         "Base time",
