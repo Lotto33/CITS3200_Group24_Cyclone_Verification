@@ -15,6 +15,7 @@
     let states = [];
     let latestFiles = [];
     const filesByInstance = new Map();
+    const combinedFilesByInstance = new Map();
     const initializedInstances = new WeakSet();
     if (!tableInstances || !firstInstance)
         return;
@@ -454,10 +455,10 @@
         }
         return rows;
     }
-    function renderCsv(panel, texts) {
+    function combineCsvTexts(texts) {
         const parsedFiles = texts.map(csvRows).filter((rows) => rows.length > 0);
         if (!parsedFiles.length)
-            return;
+            return "";
         const headers = parsedFiles[0][0];
         const dataRows = parsedFiles.flatMap((rows) => {
             const header = rows[0];
@@ -466,18 +467,28 @@
             }
             return rows.slice(1);
         });
+        return [headers, ...dataRows]
+            .map((row) => row.map((value) => /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value).join(","))
+            .join("\r\n");
+    }
+    function renderCsv(panel, texts) {
+        const combined = combineCsvTexts(texts);
+        const rows = csvRows(combined);
+        if (!rows.length)
+            return;
         const table = document.createElement("table");
         table.className = "contingency-table api-result-table";
         const caption = document.createElement("caption");
-        caption.textContent = `Combined rows from ${parsedFiles.length} generated CSV file${parsedFiles.length === 1 ? "" : "s"}`;
+        const sourceCount = texts.filter((text) => csvRows(text).length > 0).length;
+        caption.textContent = `Combined rows from ${sourceCount} generated CSV file${sourceCount === 1 ? "" : "s"}`;
         table.appendChild(caption);
         const thead = document.createElement("thead");
         const headRow = document.createElement("tr");
-        headers.forEach((value) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = value; headRow.appendChild(th); });
+        rows[0].forEach((value) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = value; headRow.appendChild(th); });
         thead.appendChild(headRow);
         table.appendChild(thead);
         const body = document.createElement("tbody");
-        dataRows.forEach((values) => {
+        rows.slice(1).forEach((values) => {
             const tr = document.createElement("tr");
             values.forEach((value, index) => {
                 const cell = document.createElement(index === 0 ? "th" : "td");
@@ -560,13 +571,24 @@
         anchor.click();
         URL.revokeObjectURL(url);
     }
+    function downloadCsvContent(filename, content) {
+        const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        URL.revokeObjectURL(url);
+    }
     async function showRunFiles(instance, files, ids, stats, baseTimeHours) {
         var _a;
         const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids, baseTimeHours));
         const dates = candidates.map((name) => { var _a; return ((_a = name.match(/date-(\d{8})/)) === null || _a === void 0 ? void 0 : _a[1]) || ""; }).sort();
         const latestDate = dates[dates.length - 1] || "";
         latestFiles = candidates.filter((name) => !latestDate || name.includes(`date-${latestDate}`));
-        filesByInstance.set(instance.dataset.instance || "1", latestFiles);
+        const instanceKey = instance.dataset.instance || "1";
+        filesByInstance.set(instanceKey, latestFiles);
+        const combinedDownloads = [];
         const panelMap = {
             table_a: "#panel-area-1", table_b: "#panel-track-1", table_c: "#panel-wind-1", table_d: "#panel-warning-1",
         };
@@ -581,6 +603,12 @@
                             throw new Error(`Could not load ${file} (HTTP ${response.status})`);
                         return response.text();
                     }));
+                    if (matchingFiles.length > 1 && ["table_a", "table_b", "table_c"].includes(suffix)) {
+                        combinedDownloads.push({
+                            filename: `combined_${suffix}_${latestDate}.csv`,
+                            content: combineCsvTexts(texts),
+                        });
+                    }
                     (_a = panel.querySelector(".layer-note")) === null || _a === void 0 ? void 0 : _a.remove();
                     renderCsv(panel, texts);
                 }
@@ -589,13 +617,14 @@
                 }
             }
         }
+        combinedFilesByInstance.set(instanceKey, combinedDownloads);
         const matrixPanel = resetPanel(instance, `#panel-summary-${instance.dataset.instance}`, "Summary for generated contingency tables.");
         if (matrixPanel)
             renderSummary(matrixPanel, stats);
         const downloadBox = document.createElement("div");
         downloadBox.className = "results-downloads";
         const title = document.createElement("h3");
-        title.textContent = "Download generated CSV files";
+        title.textContent = "Download individual CSVs and existing combined Table D";
         downloadBox.appendChild(title);
         const list = document.createElement("ul");
         latestFiles.forEach((name) => {
@@ -624,6 +653,22 @@
             list.appendChild(li);
         }
         downloadBox.appendChild(list);
+        if (combinedDownloads.length) {
+            const combinedTitle = document.createElement("h3");
+            combinedTitle.textContent = "Download combined Tables A–C";
+            downloadBox.appendChild(combinedTitle);
+            const combinedList = document.createElement("ul");
+            combinedDownloads.forEach(({ filename, content }) => {
+                const li = document.createElement("li");
+                const button = document.createElement("button");
+                button.type = "button";
+                button.textContent = `Download ${filename}`;
+                button.addEventListener("click", () => downloadCsvContent(filename, content));
+                li.appendChild(button);
+                combinedList.appendChild(li);
+            });
+            downloadBox.appendChild(combinedList);
+        }
         const target = matrixPanel || instance;
         target.appendChild(downloadBox);
     }
@@ -679,7 +724,9 @@
             return;
         }
         const button = instance.querySelector(".generate-table");
-        filesByInstance.delete(instance.dataset.instance || "1");
+        const instanceKey = instance.dataset.instance || "1";
+        filesByInstance.delete(instanceKey);
+        combinedFilesByInstance.delete(instanceKey);
         if (button)
             button.disabled = true;
         instanceStatus(instance, `Generating ${jobs.length} table request(s)…`);
@@ -798,6 +845,7 @@
         clone.querySelectorAll(".api-result-table").forEach((output) => output.remove());
         clone.querySelectorAll(".metrics").forEach((output) => output.remove());
         filesByInstance.delete(String(number));
+        combinedFilesByInstance.delete(String(number));
         tableInstances.appendChild(clone);
         initializeInstance(clone);
         updateTableControls();
@@ -810,8 +858,10 @@
         const button = target.closest(".remove-instance");
         if (button && !button.disabled) {
             const instance = button.closest(".table-instance");
-            if (instance === null || instance === void 0 ? void 0 : instance.dataset.instance)
+            if (instance === null || instance === void 0 ? void 0 : instance.dataset.instance) {
                 filesByInstance.delete(instance.dataset.instance);
+                combinedFilesByInstance.delete(instance.dataset.instance);
+            }
             instance === null || instance === void 0 ? void 0 : instance.remove();
             updateTableControls();
             updateContext();
@@ -878,11 +928,13 @@
         }
         const button = byId("downloadContingencyBtn");
         button.disabled = true;
-        status(`Downloading ${filenames.length} contingency CSV file(s)…`);
+        const combinedFiles = [...combinedFilesByInstance.values()].flat();
+        status(`Downloading ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s)…`);
         try {
             for (const filename of filenames)
                 await downloadFile(filename);
-            status(`Downloaded ${filenames.length} contingency CSV file(s).`);
+            combinedFiles.forEach(({ filename, content }) => downloadCsvContent(filename, content));
+            status(`Downloaded ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s).`);
         }
         catch (error) {
             status(`Contingency-table download failed: ${error.message}`, true);
@@ -898,8 +950,12 @@
         for (const key of filesByInstance.keys())
             if (key !== "1")
                 filesByInstance.delete(key);
+        for (const key of combinedFilesByInstance.keys())
+            if (key !== "1")
+                combinedFilesByInstance.delete(key);
         populateInstanceFilters(firstInstance);
         filesByInstance.delete("1");
+        combinedFilesByInstance.delete("1");
         restorePanelPlaceholders(firstInstance);
         firstInstance.querySelectorAll(".table-panel").forEach((panel, index) => { panel.hidden = index !== 0; });
         firstInstance.querySelectorAll(".tab-button").forEach((tab, index) => {
