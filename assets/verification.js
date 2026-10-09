@@ -454,19 +454,30 @@
         }
         return rows;
     }
-    function renderCsv(panel, text) {
-        const rows = csvRows(text);
-        if (!rows.length)
+    function renderCsv(panel, texts) {
+        const parsedFiles = texts.map(csvRows).filter((rows) => rows.length > 0);
+        if (!parsedFiles.length)
             return;
+        const headers = parsedFiles[0][0];
+        const dataRows = parsedFiles.flatMap((rows) => {
+            const header = rows[0];
+            if (header.length !== headers.length || header.some((value, index) => value !== headers[index])) {
+                throw new Error("Generated CSV files for this table have different columns and cannot be combined.");
+            }
+            return rows.slice(1);
+        });
         const table = document.createElement("table");
         table.className = "contingency-table api-result-table";
+        const caption = document.createElement("caption");
+        caption.textContent = `Combined rows from ${parsedFiles.length} generated CSV file${parsedFiles.length === 1 ? "" : "s"}`;
+        table.appendChild(caption);
         const thead = document.createElement("thead");
         const headRow = document.createElement("tr");
-        rows[0].forEach((value) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = value; headRow.appendChild(th); });
+        headers.forEach((value) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = value; headRow.appendChild(th); });
         thead.appendChild(headRow);
         table.appendChild(thead);
         const body = document.createElement("tbody");
-        rows.slice(1).forEach((values) => {
+        dataRows.forEach((values) => {
             const tr = document.createElement("tr");
             values.forEach((value, index) => {
                 const cell = document.createElement(index === 0 ? "th" : "td");
@@ -561,14 +572,17 @@
         };
         for (const [suffix, baseSelector] of Object.entries(panelMap)) {
             const panel = resetPanel(instance, baseSelector.replace(/-1$/, `-${instance.dataset.instance}`), `No ${suffix.replace("table_", "Table ").toUpperCase()} CSV returned for this selection.`);
-            const file = latestFiles.find((name) => name.endsWith(`_${suffix}.csv`));
-            if (panel && file) {
+            const matchingFiles = latestFiles.filter((name) => !name.startsWith("combined_") && name.endsWith(`_${suffix}.csv`));
+            if (panel && matchingFiles.length) {
                 try {
-                    const response = await fetch(`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`);
-                    if (!response.ok)
-                        throw new Error(`Could not load ${file} (HTTP ${response.status})`);
+                    const texts = await Promise.all(matchingFiles.map(async (file) => {
+                        const response = await fetch(`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`);
+                        if (!response.ok)
+                            throw new Error(`Could not load ${file} (HTTP ${response.status})`);
+                        return response.text();
+                    }));
                     (_a = panel.querySelector(".layer-note")) === null || _a === void 0 ? void 0 : _a.remove();
-                    renderCsv(panel, await response.text());
+                    renderCsv(panel, texts);
                 }
                 catch (error) {
                     instanceStatus(instance, error.message, true);
