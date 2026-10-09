@@ -169,6 +169,35 @@
         }
         throw new Error("The upload job exceeded the 30-minute polling limit. Check the backend logs and try again.");
     }
+    async function waitForContingencyJob(instance, jobId, requestNumber, requestCount) {
+        let offset = 0;
+        const deadline = Date.now() + 30 * 60 * 1000;
+        while (Date.now() < deadline) {
+            let job;
+            try {
+                job = await requestJson(`/contingency-tables/jobs/${encodeURIComponent(jobId)}?since=${offset}`);
+            }
+            catch (error) {
+                const requestError = error;
+                if (requestError.status === 404) {
+                    throw new Error("The generation job is no longer available. The server may have restarted; please run it again.");
+                }
+                throw error;
+            }
+            offset = job.next;
+            if (job.status === "completed") {
+                if (!job.result)
+                    throw new Error("The generation job completed without returning table results.");
+                return job.result;
+            }
+            if (job.status === "failed")
+                throw new Error(job.error || "Contingency-table generation failed.");
+            const latestMessage = job.messages[job.messages.length - 1] || "Starting table generation…";
+            instanceStatus(instance, `Generating request ${requestNumber} of ${requestCount} (${job.status}) — ${latestMessage}`);
+            await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        }
+        throw new Error("The generation job exceeded the 30-minute polling limit. Check the backend logs and try again.");
+    }
     function bestTrackRefreshStage(message) {
         const normalized = message.toLowerCase();
         if (normalized.startsWith("starting bom best-track refresh")) {
@@ -610,12 +639,15 @@
             button.disabled = true;
         instanceStatus(instance, `Generating ${jobs.length} table request(s)…`);
         try {
-            // Multiple seasons/states are expanded to the backend's singular filters.
+            // The API runs each expensive request as a background job so the browser
+            // never holds Azure's front-end connection open for the full calculation.
             const results = [];
-            for (const body of jobs) {
-                results.push(await requestJson("/contingency-tables/", {
+            for (const [index, body] of jobs.entries()) {
+                instanceStatus(instance, `Starting table request ${index + 1} of ${jobs.length}…`);
+                const accepted = await requestJson("/contingency-tables/", {
                     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-                }));
+                });
+                results.push(await waitForContingencyJob(instance, accepted.job_id, index + 1, jobs.length));
             }
             const combined = results.reduce((sum, result) => ({
                 hit: sum.hit + result.stats.hit, false_alarm: sum.false_alarm + result.stats.false_alarm,
