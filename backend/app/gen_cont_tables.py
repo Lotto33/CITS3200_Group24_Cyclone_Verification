@@ -6,6 +6,7 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
 from pyproj import Geod
 from shapely.geometry import LineString
 from shapely.geometry import shape as shapely_shape
@@ -340,6 +341,27 @@ def signed_distance_to_polygon_km(point, polygon_union) -> float:
     return -dist_km if polygon_union.contains(point) else dist_km
 
 
+def signed_distance_to_polygon_km_array(
+    lon: np.ndarray, lat: np.ndarray, polygon_union
+) -> np.ndarray:
+    """Vectorised signed_distance_to_polygon_km for many points at once.
+
+    Same result as calling the scalar version per point: geodesic km to the
+    nearest boundary point, negative inside the polygon, NaN if
+    polygon_union is None.
+    """
+    if polygon_union is None:
+        return np.full(len(lon), np.nan)
+    points = shapely.points(lon, lat)
+    # shortest_line runs from the first geometry to the second, so its first
+    # vertex is the nearest point on the boundary (what nearest_points gives).
+    nearest = shapely.get_point(shapely.shortest_line(polygon_union.boundary, points), 0)
+    _, _, dist_m = geod.inv(lon, lat, shapely.get_x(nearest), shapely.get_y(nearest))
+    dist_km = np.asarray(dist_m) / 1000.0
+    shapely.prepare(polygon_union)
+    return np.where(shapely.contains(polygon_union, points), -dist_km, dist_km)
+
+
 def _valid_polygonal(geom):
     """Repair a self-intersecting polygon, keeping only its areal parts.
 
@@ -643,7 +665,15 @@ def generate_table_a(
     print(f"\n=== Table A: forecast watch/warning areas for {disturbance_id} ===")
     if locations is None:
         locations = load_locations()
-    rows = []
+    frames: list[pd.DataFrame] = []
+    loc_lon = locations.geometry.x.to_numpy(float)
+    loc_lat = locations.geometry.y.to_numpy(float)
+    loc_names = locations["name"].to_numpy()
+    loc_is_coastal = (
+        np.asarray(locations["is_coastal"], dtype=bool)
+        if "is_coastal" in locations.columns
+        else np.zeros(len(locations), dtype=bool)
+    )
     if forecasts is not None:
         available_times = sorted(forecasts)
     elif fcast_times is not None:
@@ -695,75 +725,56 @@ def generate_table_a(
             f"[table_a]   -> {len(watch_geoms)} watch polygon(s), {len(warning_geoms)} warning polygon(s)"
         )
 
-        kept = 0
-        for _, loc in locations.iterrows():
-            point = loc.geometry
-            dist_watch = signed_distance_to_polygon_km(point, watch_union)
-            dist_warning = signed_distance_to_polygon_km(point, warning_union)
+        dist_watch = signed_distance_to_polygon_km_array(loc_lon, loc_lat, watch_union)
+        dist_warning = signed_distance_to_polygon_km_array(loc_lon, loc_lat, warning_union)
 
-            candidate_distances = [d for d in (dist_watch, dist_warning) if pd.notna(d)]
-            if not candidate_distances or min(candidate_distances) >= relevance_km:
-                continue  # more than relevance_km from any watch/warning area (or neither exists) -- not relevant here
+        # Relevant only if the nearest watch OR warning area is under
+        # relevance_km (NaN, i.e. no such area, never qualifies).
+        with np.errstate(invalid="ignore"):
+            relevant = np.fmin(dist_watch, dist_warning) < relevance_km
 
-            # Coastal coverage uses the nearest boundary distance to any watch/warning polygon.
-            # This is intentionally different from the relevance_km gate above: the 300 km check
-            # decides whether a town appears in the table at all, while the 20 km buffer decides
-            # whether a coastal town is treated as covered when it sits just outside the polygon.
-            is_coastal = bool(loc.get("is_coastal", False)) and buffer_applies
-            if is_coastal:
-                # a coastal town should never be classified as both Watch and Warning at once. Warning takes
-                # priority if the town is within coastal_buffer_km of the
-                # warning polygon (this also covers strict containment, since
-                # being inside gives a distance <= 0, which is always within
-                # the buffer), it's Warning only. Watch is only checked if
-                # that Warning condition doesn't hold.
-                warning = bool(
-                    pd.notna(dist_warning) and dist_warning <= coastal_buffer_km
+            has_watch = ~np.isnan(dist_watch)
+            has_warning = ~np.isnan(dist_warning)
+            # Coastal buffer: Warning takes priority, Watch only if not Warning.
+            coastal_warning = has_warning & (dist_warning <= coastal_buffer_km)
+            coastal_watch = ~coastal_warning & has_watch & (dist_watch <= coastal_buffer_km)
+            strict_watch = has_watch & (dist_watch <= 0)
+            strict_warning = has_warning & (dist_warning <= 0)
+        use_buffer = loc_is_coastal & buffer_applies
+        watch = np.where(use_buffer, coastal_watch, strict_watch)
+        warning = np.where(use_buffer, coastal_warning, strict_warning)
+
+        kept = int(relevant.sum())
+        if kept:
+            frames.append(
+                pd.DataFrame(
+                    {
+                        "Disturbance ID": disturbance_id,
+                        "Base time": base_time_dt,
+                        "Location": loc_names[relevant],
+                        "Distance to watch": dist_watch[relevant],
+                        "Distance to warning": dist_warning[relevant],
+                        "Watch": watch[relevant],
+                        "Warning": warning[relevant],
+                    }
                 )
-                watch = bool(
-                    not warning
-                    and pd.notna(dist_watch)
-                    and dist_watch <= coastal_buffer_km
-                )
-            else:
-                # Non-coastal towns (or coastal towns on/after the buffer
-                # cutoff date): strict polygon containment only, evaluated
-                # independently -- both can legitimately be True if the town
-                # is genuinely inside two overlapping polygons.
-                watch = bool(pd.notna(dist_watch) and dist_watch <= 0)
-                warning = bool(pd.notna(dist_warning) and dist_warning <= 0)
-
-            rows.append(
-                {
-                    "Disturbance ID": disturbance_id,
-                    "Base time": base_time_dt,
-                    "Location": loc["name"],
-                    "Distance to watch": dist_watch,
-                    "Distance to warning": dist_warning,
-                    "Watch": watch,
-                    "Warning": warning,
-                    # contains() (via signed_distance_to_polygon_km's use of polygon_union.contains)
-                    # is strict -- a location sitting exactly on a polygon's boundary line
-                    # (vanishingly unlikely with real coordinates, but technically possible)
-                    # would come out as outside with distance 0, not inside. Not worth
-                    # changing unless it actually comes up.
-                }
             )
-            kept += 1
         print(
             f"[table_a]   -> {kept} location(s) within {relevance_km}km (of {len(locations)} total)"
         )
-    result = pd.DataFrame(
-        rows,
-        columns=[
-            "Disturbance ID",
-            "Base time",
-            "Location",
-            "Distance to watch",
-            "Distance to warning",
-            "Watch",
-            "Warning",
-        ],
+    table_a_columns = [
+        "Disturbance ID",
+        "Base time",
+        "Location",
+        "Distance to watch",
+        "Distance to warning",
+        "Watch",
+        "Warning",
+    ]
+    result = (
+        pd.concat(frames, ignore_index=True)[table_a_columns]
+        if frames
+        else pd.DataFrame(columns=table_a_columns)
     )
     print(f"[table_a] Done: {len(result)} row(s)")
     return result
@@ -1069,7 +1080,11 @@ def generate_table_d(table_a: pd.DataFrame, table_c: pd.DataFrame, forecast_leve
     # cyclone season (e.g. Season="2025-26") without needing a separate
     # season lookup table. State is intentionally not retained in Table D;
     # state filtering happens before Table A is generated.
-    merged_table["Season"] = merged_table["Base time"].apply(derive_season)
+    # Season depends only on Base time, and there are few distinct base times.
+    season_by_base_time = {
+        t: derive_season(t) for t in merged_table["Base time"].unique()
+    }
+    merged_table["Season"] = merged_table["Base time"].map(season_by_base_time)
     result_columns = [
         "Disturbance ID",
         "Base time",
