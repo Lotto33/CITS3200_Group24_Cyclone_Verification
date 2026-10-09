@@ -769,6 +769,125 @@ def generate_table_a(
     return result
 
 
+TABLE_B_COLUMNS = [
+    "Disturbance ID",
+    "Location",
+    "Time",
+    "Analysis Uncertainty",
+    "Distance to gale",
+    "Distance to storm",
+    "Distance to hurricane",
+]
+# Cap on (steps x locations) cells per vectorised batch, to bound memory.
+_TABLE_B_CHUNK_CELLS = 400_000
+_QUADRANT_SUFFIXES = ("SECNE", "SECSE", "SECSW", "SECNW")
+
+
+def _quadrant_radius_array(
+    steps: pd.DataFrame, prefix: str, bearing: np.ndarray
+) -> np.ndarray:
+    """Vectorised get_quadrant_radius: (n_steps, n_locations) radii in km.
+
+    Same rule as the scalar version: the quadrant value if > 0, else the mean
+    radius if > 0, else NaN. `bearing` has shape (n_steps, n_locations).
+    """
+    n = len(steps)
+
+    def column(name: str) -> np.ndarray:
+        if name in steps.columns:
+            values = pd.to_numeric(steps[name], errors="coerce").to_numpy(float)
+        else:
+            values = np.full(n, np.nan)
+        return values.reshape(n, 1)
+
+    quadrant_index = np.minimum((bearing // 90).astype(int), 3)
+    sector_values = np.stack(
+        [np.broadcast_to(column(f"{prefix}_{s}"), bearing.shape) for s in _QUADRANT_SUFFIXES]
+    )
+    sector = np.take_along_axis(sector_values, quadrant_index[None], axis=0)[0]
+    mean = np.broadcast_to(column(f"{prefix}_WIND"), bearing.shape)
+    # NaN > 0 is False, so missing values fall through like pd.notna() did.
+    return np.where(
+        sector > 0, sector, np.where(mean > 0, mean, np.nan)
+    )
+
+
+def _table_b_rows(
+    disturbance_id: str, track: pd.DataFrame, locations: gpd.GeoDataFrame
+) -> tuple[pd.DataFrame, int]:
+    """Table B rows for every (track step, location) pair, vectorised.
+
+    Geodesic distance/bearing come from one batched Geod.inv call per chunk of
+    steps rather than one call per step x location. Output order matches the
+    original loop: step-major, then location order.
+    """
+    track = track[track["LAT"].notna() & track["LON"].notna()].reset_index(drop=True)
+    n_locations = len(locations)
+    if track.empty or n_locations == 0:
+        return pd.DataFrame(columns=TABLE_B_COLUMNS), 0
+
+    loc_lat = locations.geometry.y.to_numpy(float)
+    loc_lon = locations.geometry.x.to_numpy(float)
+    loc_names = locations["name"].to_numpy()
+    uncertainty = (
+        pd.to_numeric(track["POSITION_UNCERTAINTY"], errors="coerce").to_numpy(float)
+        if "POSITION_UNCERTAINTY" in track.columns
+        else np.full(len(track), np.nan)
+    )
+
+    chunk_steps = max(1, _TABLE_B_CHUNK_CELLS // n_locations)
+    frames = []
+    cutoff_rows = 0
+    n_steps = len(track)
+    for start in range(0, n_steps, chunk_steps):
+        steps = track.iloc[start : start + chunk_steps]
+        m = len(steps)
+        print(f"[table_b] processing time steps {start + 1}-{start + m}/{n_steps}")
+        cyc_lat = np.repeat(steps["LAT"].to_numpy(float), n_locations)
+        cyc_lon = np.repeat(steps["LON"].to_numpy(float), n_locations)
+        azimuth, _, dist_m = geod.inv(
+            cyc_lon, cyc_lat, np.tile(loc_lon, m), np.tile(loc_lat, m)
+        )
+        shape = (m, n_locations)
+        dist_center_km = np.asarray(dist_m).reshape(shape) / 1000.0
+        bearing = np.asarray(azimuth).reshape(shape) % 360
+
+        dist_gale = dist_center_km - _quadrant_radius_array(steps, "MN_RADIUS_GF", bearing)
+        dist_storm = dist_center_km - _quadrant_radius_array(steps, "MN_RADIUS_SF", bearing)
+        dist_hurricane = dist_center_km - _quadrant_radius_array(steps, "MN_RADIUS_HF", bearing)
+
+        # _beyond_observation_cutoff, vectorised: drop if no gale radius, or
+        # the gale distance exceeds max(100 km, finite uncertainty).
+        cutoff_km = np.full(m, DISTANCE_CUTOFF_MIN_KM)
+        unc = uncertainty[start : start + m]
+        finite = np.isfinite(unc)
+        cutoff_km[finite] = np.maximum(cutoff_km[finite], unc[finite])
+        with np.errstate(invalid="ignore"):
+            drop = ~np.isfinite(dist_gale) | (dist_gale > cutoff_km[:, None])
+        cutoff_rows += int(drop.sum())
+        keep = ~drop
+        step_idx, loc_idx = np.nonzero(keep)  # row-major: step-major, then location
+        if step_idx.size == 0:
+            continue
+        frames.append(
+            pd.DataFrame(
+                {
+                    "Disturbance ID": disturbance_id,
+                    "Location": loc_names[loc_idx],
+                    "Time": steps["TM"].to_numpy()[step_idx],
+                    "Analysis Uncertainty": unc[step_idx],
+                    "Distance to gale": dist_gale[keep],
+                    "Distance to storm": dist_storm[keep],
+                    "Distance to hurricane": dist_hurricane[keep],
+                }
+            )
+        )
+    if not frames:
+        return pd.DataFrame(columns=TABLE_B_COLUMNS), cutoff_rows
+    return pd.concat(frames, ignore_index=True)[TABLE_B_COLUMNS], cutoff_rows
+
+
+
 def generate_table_b(
     disturbance_id: str,
     locations: gpd.GeoDataFrame | None,
@@ -795,8 +914,6 @@ def generate_table_b(
     if locations is None:
         locations = load_locations()
 
-    rows = []
-    cutoff_rows = 0
     df = track if track is not None else load_best_track(disturbance_id)
     if track is not None or _best_track_is_preprocessed():
         print(
@@ -815,60 +932,7 @@ def generate_table_b(
     else:
         interp_df = interpolate_best_track(df, step_minutes=step_minutes)
 
-    n_steps = len(interp_df)
-    for i, (_, step) in enumerate(interp_df.iterrows(), start=1):
-        if i == 1 or i == n_steps or i % 25 == 0:
-            print(f"[table_b] processing time step {i}/{n_steps} ({step.get('TM')})")
-        cyc_lat, cyc_lon = step["LAT"], step["LON"]
-        if pd.isna(cyc_lat) or pd.isna(cyc_lon):
-            continue
-
-        for _, loc in locations.iterrows():
-            loc_lat, loc_lon = loc.geometry.y, loc.geometry.x
-            dist_center_km = calculate_geodesic_distance_km(
-                cyc_lat, cyc_lon, loc_lat, loc_lon
-            )
-
-            bearing = get_bearing(cyc_lat, cyc_lon, loc_lat, loc_lon)
-
-            # TODO CHECK IS THIS CORRECT BELOW THESE NEXT SEVEN LINES
-            gale_radius_km = get_quadrant_radius(step, "MN_RADIUS_GF", bearing)
-            storm_radius_km = get_quadrant_radius(step, "MN_RADIUS_SF", bearing)
-            hurricane_radius_km = get_quadrant_radius(step, "MN_RADIUS_HF", bearing)
-
-            dist_gale_km = dist_center_km - gale_radius_km
-            dist_storm_km = dist_center_km - storm_radius_km
-            dist_hurricane_km = dist_center_km - hurricane_radius_km
-
-            uncertainty_km = step.get("POSITION_UNCERTAINTY", np.nan)
-            if _beyond_observation_cutoff(uncertainty_km, dist_gale_km):
-                cutoff_rows += 1
-                continue
-
-            rows.append(
-                {
-                    "Disturbance ID": disturbance_id,
-                    "Location": loc["name"],
-                    "Time": step["TM"],
-                    "Analysis Uncertainty": uncertainty_km,
-                    "Distance to gale": dist_gale_km,
-                    "Distance to storm": dist_storm_km,
-                    "Distance to hurricane": dist_hurricane_km,
-                }
-            )
-
-    result = pd.DataFrame(
-        rows,
-        columns=[
-            "Disturbance ID",
-            "Location",
-            "Time",
-            "Analysis Uncertainty",
-            "Distance to gale",
-            "Distance to storm",
-            "Distance to hurricane",
-        ],
-    )
+    result, cutoff_rows = _table_b_rows(disturbance_id, interp_df, locations)
     print(
         f"[table_b] Done: {len(result)} row(s); "
         f"{cutoff_rows} beyond the max(100 km, position uncertainty) cutoff omitted"
@@ -956,20 +1020,17 @@ def generate_table_c(
             f"[table_c] ({i}/{len(fcast_times)}) base time {fcast_time}: {len(window_df)} best-track row(s) in window"
         )
 
-        for _, loc in locations.iterrows():
-            loc_name = loc["name"]
-            loc_subset = window_df[window_df["Location"] == loc_name]
-            observed = (
-                bool((loc_subset[distance_column] <= 0).any())
-                if not loc_subset.empty
-                else False
-            )
+        # One pass over the window instead of a filter per location.
+        observed_locations = set(
+            window_df.loc[window_df[distance_column] <= 0, "Location"]
+        )
+        for loc_name in locations["name"]:
             rows.append(
                 {
                     "Disturbance ID": disturbance_id,
                     "Base time": base_time,
-                    "Location": loc["name"],
-                    "Observed": observed,
+                    "Location": loc_name,
+                    "Observed": loc_name in observed_locations,
                 }
             )
     result = pd.DataFrame(
