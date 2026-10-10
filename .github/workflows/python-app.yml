@@ -38,8 +38,8 @@ jobs:
       run: |
         pytest
 
-  frontend-format:
-    name: Frontend format (Prettier)
+  frontend-lint:
+    name: Frontend lint and format (Biome)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -55,8 +55,8 @@ jobs:
         cache-dependency-path: frontend/package-lock.json
     - name: Install dependencies
       run: npm ci
-    - name: Check formatting with Prettier
-      run: npm run format:check
+    - name: Check formatting and lint with Biome
+      run: npm run lint
     - name: Check compiled assets/verification.js is up to date
       run: |
         npm run build

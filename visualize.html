@@ -1,16 +1,16 @@
 <!doctype html>
 <html lang="en">
 	<head>
-		<meta charset="UTF-8" />
+		<meta charset="UTF-8">
 		<title>BOM Cyclone GML Visualizer</title>
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<link
 			rel="stylesheet"
 			href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
 			integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
 			crossorigin=""
-		/>
-		<link rel="stylesheet" href="assets/visualize.css" />
+		>
+		<link rel="stylesheet" href="assets/visualize.css">
 	</head>
 	<body>
 		<button
@@ -62,17 +62,17 @@
 						+ Add cyclone
 					</button>
 					<div class="layer-row">
-						<input type="checkbox" id="compare-gale" checked />
+						<input type="checkbox" id="compare-gale" checked>
 						<span class="swatch" style="background: #ff9ee0"></span>
 						Gale-force area (34 kn)
 					</div>
 					<div class="layer-row">
-						<input type="checkbox" id="compare-storm" />
+						<input type="checkbox" id="compare-storm">
 						<span class="swatch" style="background: #ff3fb4"></span>
 						Storm-force area (48 kn)
 					</div>
 					<div class="layer-row">
-						<input type="checkbox" id="compare-hurricane" />
+						<input type="checkbox" id="compare-hurricane">
 						<span class="swatch" style="background: #c4007a"></span>
 						Hurricane-force area (64 kn)
 					</div>
@@ -97,7 +97,7 @@
 								value="0"
 								step="1"
 								style="flex: 1"
-							/>
+							>
 							<button
 								id="compareNextBtn"
 								class="icon"
@@ -126,6 +126,7 @@
 					</div>
 
 					<div class="field upload-field">
+						<!-- biome-ignore lint/a11y/noLabelWithoutControl: heading for the button group below -->
 						<label>Dataset uploads</label>
 						<div class="upload-actions">
 							<button id="uploadGmlBtn" type="button">
@@ -136,7 +137,7 @@
 								type="file"
 								accept=".zip"
 								hidden
-							/>
+							>
 							<button id="refreshBestTrackBtn" type="button">
 								Refresh best track from BOM
 							</button>
@@ -154,6 +155,7 @@
 						>
 						<div class="slider-row">
 							<button
+								type="button"
 								id="prevBtn"
 								class="icon"
 								title="Previous bulletin"
@@ -168,8 +170,9 @@
 								value="0"
 								step="1"
 								style="flex: 1"
-							/>
+							>
 							<button
+								type="button"
 								id="nextBtn"
 								class="icon"
 								title="Next bulletin"
@@ -177,6 +180,7 @@
 								▶
 							</button>
 							<button
+								type="button"
 								id="playBtn"
 								class="icon"
 								title="Play through bulletins"
@@ -190,7 +194,7 @@
 					<fieldset>
 						<legend>Layers</legend>
 						<div class="layer-row">
-							<input type="checkbox" id="layer-tracks" checked />
+							<input type="checkbox" id="layer-tracks" checked>
 							<span
 								class="swatch"
 								style="background: #4fa8ff"
@@ -212,7 +216,7 @@
 							Observed (dashed)
 						</div>
 						<div class="layer-row">
-							<input type="checkbox" id="layer-fixes" checked />
+							<input type="checkbox" id="layer-fixes" checked>
 							<span
 								class="swatch"
 								style="background: #ffd24f"
@@ -220,11 +224,7 @@
 							Fixes (position points)
 						</div>
 						<div class="layer-row">
-							<input
-								type="checkbox"
-								id="layer-windArea"
-								checked
-							/>
+							<input type="checkbox" id="layer-windArea" checked>
 							<span
 								class="swatch"
 								style="background: #ff5d5d"
@@ -250,7 +250,7 @@
 								type="checkbox"
 								id="layer-forecastArea"
 								checked
-							/>
+							>
 							<span
 								class="swatch"
 								style="background: #b06bff"
@@ -262,7 +262,7 @@
 								type="checkbox"
 								id="layer-warningArea"
 								checked
-							/>
+							>
 							<span
 								class="swatch"
 								style="background: #ff7a00"
@@ -270,11 +270,7 @@
 							Warning area
 						</div>
 						<div class="layer-row">
-							<input
-								type="checkbox"
-								id="layer-watchArea"
-								checked
-							/>
+							<input type="checkbox" id="layer-watchArea" checked>
 							<span
 								class="swatch"
 								style="background: #ffe14f"
@@ -282,7 +278,7 @@
 							Watch area
 						</div>
 						<div class="layer-row">
-							<input type="checkbox" id="layer-allBulletins" />
+							<input type="checkbox" id="layer-allBulletins">
 							<span
 								class="swatch"
 								style="background: #8892a6"
@@ -290,11 +286,7 @@
 							Show all bulletins' tracks (ghost trails)
 						</div>
 						<div class="layer-row">
-							<input
-								type="checkbox"
-								id="layer-bestTrack"
-								checked
-							/>
+							<input type="checkbox" id="layer-bestTrack" checked>
 							<span
 								class="swatch"
 								style="background: #2fd4d9"
@@ -302,7 +294,7 @@
 							Best track (interpolated grid, or raw fixes)
 						</div>
 						<div class="layer-row">
-							<input type="checkbox" id="layer-btGale" checked />
+							<input type="checkbox" id="layer-btGale" checked>
 							<span
 								class="swatch"
 								style="background: #ff9ee0"
@@ -310,7 +302,7 @@
 							Best track gale-force area (34 kn)
 						</div>
 						<div class="layer-row">
-							<input type="checkbox" id="layer-btStorm" checked />
+							<input type="checkbox" id="layer-btStorm" checked>
 							<span
 								class="swatch"
 								style="background: #ff3fb4"
@@ -322,7 +314,7 @@
 								type="checkbox"
 								id="layer-btHurricane"
 								checked
-							/>
+							>
 							<span
 								class="swatch"
 								style="background: #c4007a"
@@ -334,7 +326,7 @@
 								type="checkbox"
 								id="layer-btGaleWindow"
 								checked
-							/>
+							>
 							<span
 								class="swatch"
 								style="background: #3ddc84"
@@ -351,7 +343,7 @@
 								step="1"
 								value="0"
 								style="width: 56px"
-							/>
+							>
 							to T+<input
 								type="number"
 								id="galeTo"
@@ -360,11 +352,11 @@
 								step="1"
 								value="48"
 								style="width: 56px"
-							/>
+							>
 							h
 						</div>
 						<div class="layer-row">
-							<input type="checkbox" id="layer-towns" checked />
+							<input type="checkbox" id="layer-towns" checked>
 							<span
 								class="swatch"
 								style="background: #cfd8e6"

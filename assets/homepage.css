@@ -34,7 +34,7 @@ main {
 	margin: 0 0 18px;
 	color: var(--cyan);
 	font:
-		700 12px/1.2 "Segoe UI",
+		700 12px / 1.2 "Segoe UI",
 		sans-serif;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
@@ -51,7 +51,7 @@ p {
 	margin: 24px 0 36px;
 	color: var(--muted);
 	font:
-		16px/1.6 "Segoe UI",
+		16px / 1.6 "Segoe UI",
 		sans-serif;
 }
 .actions {

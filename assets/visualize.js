@@ -245,9 +245,9 @@
 			renderCompareSelectors();
 		}
 	});
-	Object.values(els.compareLevels).forEach((box) =>
-		box.addEventListener("change", () => updateCompareSlider(false)),
-	);
+	Object.values(els.compareLevels).forEach((box) => {
+		box.addEventListener("change", () => updateCompareSlider(false));
+	});
 	els.compareSlider.addEventListener("input", () => drawCompareAreas());
 	els.comparePrev.addEventListener("click", () => stepCompareSlider(-1));
 	els.compareNext.addEventListener("click", () => stepCompareSlider(1));
@@ -1048,8 +1048,7 @@
 			weight: 2,
 			dashArray: "6,4",
 			smoothFactor: 0,
-		})
-			.bindPopup(`<b>${name ? `${name} — ` : "Best track — "}${style.label}</b><br>
+		}).bindPopup(`<b>${name ? `${name} — ` : "Best track — "}${style.label}</b><br>
       Time: ${fmtTime(p.time)}${p.interpolated ? " (interpolated)" : ""}<br>
       NE ${km(r.ne)}, SE ${km(r.se)}, SW ${km(r.sw)}, NW ${km(r.nw)}<br>
       Mean ${km(r.mean)}`);
@@ -1294,8 +1293,7 @@
 					weight: 1.5,
 					fillColor: categoryColor(fix.category),
 					fillOpacity: 0.95,
-				})
-					.bindPopup(`<b>${fix.fixType || "Fix"}</b> (${fix.symbol || "?"})<br>
+				}).bindPopup(`<b>${fix.fixType || "Fix"}</b> (${fix.symbol || "?"})<br>
           Category: ${fix.category ?? "—"}<br>Time: ${fmtTime(fix.fixTime)}<br>
           Offset: ${fix.timeOffset ?? "0"}h`);
 				marker.addTo(bulletinLayer);
@@ -1334,7 +1332,9 @@
 				})
 					.bindPopup(popup)
 					.addTo(bulletinLayer);
-				latlngRings.forEach((ring) => bounds.push(...ring));
+				latlngRings.forEach((ring) => {
+					bounds.push(...ring);
+				});
 			});
 		});
 		drawBestTrack(bounds, b);
@@ -1416,12 +1416,12 @@
 		}
 	});
 	els.play.addEventListener("click", togglePlay);
-	Object.values(els.layers).forEach((cb) =>
-		cb.addEventListener("change", () => renderBulletin(false)),
-	);
-	[els.galeFrom, els.galeTo].forEach((inp) =>
-		inp.addEventListener("change", () => renderBulletin(false)),
-	);
+	Object.values(els.layers).forEach((cb) => {
+		cb.addEventListener("change", () => renderBulletin(false));
+	});
+	[els.galeFrom, els.galeTo].forEach((inp) => {
+		inp.addEventListener("change", () => renderBulletin(false));
+	});
 	els.towns.addEventListener("change", drawTowns);
 	// Marker thinning depends on screen spacing, so it is redone on every zoom.
 	map.on("zoomend", drawBestTrackMarkers);

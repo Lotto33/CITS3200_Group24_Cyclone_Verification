@@ -554,13 +554,13 @@
 			`#panel-area-${number}`,
 			"Generate tables to load Table A from the API.",
 		);
-		["track", "wind", "warning"].forEach((panel) =>
+		["track", "wind", "warning"].forEach((panel) => {
 			resetPanel(
 				instance,
 				`#panel-${panel}-${number}`,
 				`Generate tables to load Table ${panel.toUpperCase()} from the API.`,
-			),
-		);
+			);
+		});
 		resetPanel(
 			instance,
 			`#panel-summary-${number}`,
@@ -1046,11 +1046,9 @@
 				);
 				select.addEventListener("change", updateContext);
 			});
-		instance
-			.querySelectorAll(".base-time-hour")
-			.forEach((input) =>
-				input.addEventListener("change", updateContext),
-			);
+		instance.querySelectorAll(".base-time-hour").forEach((input) => {
+			input.addEventListener("change", updateContext);
+		});
 		(_a = instance.querySelector(".generate-table")) === null ||
 		_a === void 0
 			? void 0
@@ -1110,13 +1108,15 @@
 			output.textContent = "";
 			output.classList.remove("error");
 		});
-		clone
-			.querySelectorAll(".results-downloads")
-			.forEach((output) => output.remove());
-		clone
-			.querySelectorAll(".api-result-table")
-			.forEach((output) => output.remove());
-		clone.querySelectorAll(".metrics").forEach((output) => output.remove());
+		clone.querySelectorAll(".results-downloads").forEach((output) => {
+			output.remove();
+		});
+		clone.querySelectorAll(".api-result-table").forEach((output) => {
+			output.remove();
+		});
+		clone.querySelectorAll(".metrics").forEach((output) => {
+			output.remove();
+		});
 		filesByInstance.delete(String(number));
 		tableInstances.appendChild(clone);
 		initializeInstance(clone);
