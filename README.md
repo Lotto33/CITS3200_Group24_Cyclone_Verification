@@ -106,6 +106,10 @@ npm run build           # only if you changed verification.ts
 
 These files are kept on LF line endings (see `.gitattributes`).
 
+Merging an older branch into the linted `main` produces many formatting
+conflicts; see [docs/merging-after-biome.md](docs/merging-after-biome.md) for
+the quick way to resolve them.
+
 ## Visualizing the BOM cyclone GML data
 
 `data/NT_GMLs`, `data/QLD_GMLs`, `data/WA_GMLs` contain ~3,450 individual BOM
