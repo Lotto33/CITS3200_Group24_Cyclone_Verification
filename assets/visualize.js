@@ -894,7 +894,7 @@
 
 	function parseUtc(t) {
 		if (!t) return NaN;
-		return Date.parse(t.includes("T") ? t : t.replace(" ", "T") + "Z");
+		return Date.parse(t.includes("T") ? t : `${t.replace(" ", "T")}Z`);
 	}
 
 	// The best-track point closest in time to `timeIso`, but only if it is
