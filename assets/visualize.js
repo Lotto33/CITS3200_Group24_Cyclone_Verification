@@ -505,7 +505,7 @@
       });
       L.circleMarker([p.coord[1], p.coord[0]], {
         radius: 5, color: "#111826", weight: 1, fillColor: color, fillOpacity: 1,
-      }).bindPopup(`<b>${name}</b><br>Time: ${fmtTime(p.time)}<br>Max wind: ${p.windSpeed ?? "—"} kn`)
+      }).bindPopup(`<b>${name}</b><br>Time: ${fmtTime(p.time)}<br>${bestTrackPointDetails(p)}Max wind: ${p.windSpeed ?? "—"} kn`)
         .addTo(compareAreaLayer);
     });
     const total = Number(els.compareSlider.max) + 1;
@@ -617,6 +617,25 @@
     return ms === null || ms === undefined ? null : Math.round(ms * 1.943844);
   }
 
+  // Australian tropical cyclone category from max wind in knots (BoM scale).
+  // Best-track data stores no category, so it is derived; null below Cat 1.
+  function categoryFromKnots(kn) {
+    if (kn === null || kn === undefined) return null;
+    if (kn >= 108) return 5;
+    if (kn >= 86) return 4;
+    if (kn >= 64) return 3;
+    if (kn >= 48) return 2;
+    if (kn >= 34) return 1;
+    return null;
+  }
+
+  function bestTrackPointDetails(p) {
+    const [lon, lat] = p.coord;
+    const cat = categoryFromKnots(p.windSpeed);
+    return `Lat/Lon: ${lat.toFixed(2)}, ${lon.toFixed(2)}<br>
+        Category: ${cat ?? "—"}<br>`;
+  }
+
   async function loadInterpolatedTrack(distId) {
     // 404 here is routine: unknown disturbance, or no interpolation run yet.
     const res = await fetch(`${API_BASE}/disturbances/${encodeURIComponent(distId)}/interpolated-track`);
@@ -646,7 +665,8 @@
     const res = await fetch(`data/best_track/${encodeURIComponent(distId)}.json`);
     if (!res.ok) return null;
     const data = await res.json();
-    const points = (data.points || []).map(p => ({ ...p, interpolated: false }));
+    // BoM's MAX_WIND_SPD is m/s (as the API serves it); the popups are in knots.
+    const points = (data.points || []).map(p => ({ ...p, windSpeed: msToKnots(p.windSpeed), interpolated: false }));
     if (!points.length) return null;
     return { ...data, source: "observed", points };
   }
@@ -873,11 +893,12 @@
       const [lon, lat] = p.coord;
       const isAnchor = !p.interpolated;
       L.circleMarker([lat, lon], {
-        radius: isAnchor ? 3 : 1.5,
-        color: "#111826", weight: isAnchor ? 1 : 0,
-        fillColor: "#2fd4d9", fillOpacity: isAnchor ? 0.95 : 0.55,
+        radius: isAnchor ? 7 : 3.5,
+        color: "#111826", weight: 1,
+        fillColor: "#2fd4d9", fillOpacity: isAnchor ? 0.95 : 0.7,
       }).bindPopup(`<b>${isAnchor ? "Best track fix" : "Interpolated point"}</b><br>
         Time: ${fmtTime(p.time)}<br>
+        ${bestTrackPointDetails(p)}
         ${p.pressure === null || p.pressure === undefined ? "" : `Pressure: ${p.pressure} hPa<br>`}
         Max wind: ${p.windSpeed ?? "—"} kn`).addTo(bestTrackLayer);
     });
