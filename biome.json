@@ -1,0 +1,37 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+	"files": {
+		"includes": [
+			"assets/**",
+			"*.html",
+			"frontend/src/**",
+			"frontend/package.json",
+			"frontend/tsconfig.json"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"indentWidth": 4,
+		"lineEnding": "lf"
+	},
+	"html": { "formatter": { "enabled": true } },
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"complexity": {
+				"noImportantStyles": "off",
+				"useArrowFunction": "off"
+			},
+			"suspicious": { "noRedundantUseStrict": "off" }
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["assets/verification.js"],
+			"linter": { "enabled": false }
+		}
+	]
+}

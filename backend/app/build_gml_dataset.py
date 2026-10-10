@@ -345,7 +345,7 @@ def build(data_dir, out_dir, geojson_out_dir, best_track_csv=None):
 
         cyclone_entries = []
         for dist_id, bulletins in sorted(significant_by_dist_id.items()):
-            bulletins.sort(key=lambda b: b["issueTime"] or "")
+            bulletins.sort(key=lambda b: (b["fcastTime"] or "", b["issueTime"] or ""))
             out_path = os.path.join(region_out_dir, f"{dist_id}.json")
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(bulletins, f)

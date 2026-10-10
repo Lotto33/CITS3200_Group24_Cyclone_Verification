@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -87,33 +87,124 @@
         <button class="generate-table" type="button">Generate / refresh tables</button>
         <span class="instance-status" role="status" aria-live="polite"></span>
       </div>
-
-      <div class="table-tabs" role="tablist" aria-label="Verification tables">
-        <button class="tab-button active" id="tab-area-1" type="button" role="tab" aria-selected="true" aria-controls="panel-area-1">Table A: Forecast table</button>
-        <button class="tab-button" id="tab-track-1" type="button" role="tab" aria-selected="false" aria-controls="panel-track-1" tabindex="-1">Table B: Observations</button>
-        <button class="tab-button" id="tab-wind-1" type="button" role="tab" aria-selected="false" aria-controls="panel-wind-1" tabindex="-1">Table C: Filtered observations</button>
-        <button class="tab-button" id="tab-warning-1" type="button" role="tab" aria-selected="false" aria-controls="panel-warning-1" tabindex="-1">Table D: Final forecast vs observations</button>
-        <button class="tab-button" id="tab-summary-1" type="button" role="tab" aria-selected="false" aria-controls="panel-summary-1" tabindex="-1">Contingency matrix</button>
+      <div
+        class="table-tabs"
+        role="tablist"
+        aria-label="Verification tables"
+      >
+        <button
+          class="tab-button active"
+          id="tab-area-1"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="panel-area-1"
+        >
+          Table A: Forecast table
+        </button>
+        <button
+          class="tab-button"
+          id="tab-track-1"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-track-1"
+          tabindex="-1"
+        >
+          Table B: Observations
+        </button>
+        <button
+          class="tab-button"
+          id="tab-wind-1"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-wind-1"
+          tabindex="-1"
+        >
+          Table C: Filtered observations
+        </button>
+        <button
+          class="tab-button"
+          id="tab-warning-1"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-warning-1"
+          tabindex="-1"
+        >
+          Table D: Final forecast vs observations
+        </button>
+        <button
+          class="tab-button"
+          id="tab-summary-1"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-summary-1"
+          tabindex="-1"
+        >
+          Contingency matrix
+        </button>
       </div>
 
-      <section class="table-panel active" id="panel-area-1" role="tabpanel" aria-labelledby="tab-area-1">
-        <p class="layer-note">Generate tables to load Table A from the API.</p>
+      <section
+        class="table-panel active"
+        id="panel-area-1"
+        role="tabpanel"
+        aria-labelledby="tab-area-1"
+      >
+        <p class="layer-note">
+          Generate tables to load Table A from the API.
+        </p>
       </section>
 
-      <section class="table-panel" id="panel-track-1" role="tabpanel" aria-labelledby="tab-track-1" hidden>
-        <p class="layer-note">Generate tables to load Table B from the API.</p>
+      <section
+        class="table-panel"
+        id="panel-track-1"
+        role="tabpanel"
+        aria-labelledby="tab-track-1"
+        hidden
+      >
+        <p class="layer-note">
+          Generate tables to load Table B from the API.
+        </p>
       </section>
 
-      <section class="table-panel" id="panel-wind-1" role="tabpanel" aria-labelledby="tab-wind-1" hidden>
-        <p class="layer-note">Generate tables to load Table C from the API.</p>
+      <section
+        class="table-panel"
+        id="panel-wind-1"
+        role="tabpanel"
+        aria-labelledby="tab-wind-1"
+        hidden
+      >
+        <p class="layer-note">
+          Generate tables to load Table C from the API.
+        </p>
       </section>
 
-      <section class="table-panel" id="panel-warning-1" role="tabpanel" aria-labelledby="tab-warning-1" hidden>
-        <p class="layer-note">Generate tables to load Table D from the API.</p>
+      <section
+        class="table-panel"
+        id="panel-warning-1"
+        role="tabpanel"
+        aria-labelledby="tab-warning-1"
+        hidden
+      >
+        <p class="layer-note">
+          Generate tables to load Table D from the API.
+        </p>
       </section>
 
-      <section class="table-panel" id="panel-summary-1" role="tabpanel" aria-labelledby="tab-summary-1" hidden>
-        <p class="layer-note">Generate tables to load the combined contingency matrix and skill scores.</p>
+      <section
+        class="table-panel"
+        id="panel-summary-1"
+        role="tabpanel"
+        aria-labelledby="tab-summary-1"
+        hidden
+      >
+        <p class="layer-note">
+          Generate tables to load the combined contingency matrix and skill scores.
+        </p>
       </section>
     </section>
   </div>

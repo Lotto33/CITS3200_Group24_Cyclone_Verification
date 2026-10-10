@@ -67,7 +67,10 @@ from app.services.loaders.towns import resolve_town_ids
 log = logging.getLogger(__name__)
 
 _SUFFIX_RE = re.compile(
-    r"^(?P<dist>.+?)_(?P<kind>table_[abcd]|contingency_summary|contingency_matrix)\.csv$"
+    r"^(?P<dist>.+?)"
+    r"(?:_(?:season|state|base-times|level|hours)-[^_]+)*"
+    r"(?:_date-\d{8})?"
+    r"_(?P<kind>table_[abcd]|contingency_summary|contingency_matrix)\.csv$"
 )
 
 CHILD_MODELS = (
