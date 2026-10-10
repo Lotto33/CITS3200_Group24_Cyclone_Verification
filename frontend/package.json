@@ -4,10 +4,14 @@
 	"version": "1.0.0",
 	"description": "TypeScript sources for the verification.html contingency-table page. Compiles to ../assets/verification.js, which is what the FastAPI app actually serves.",
 	"scripts": {
-		"build": "tsc",
-		"watch": "tsc --watch"
+		"build": "tsc && npm run format:build",
+		"watch": "tsc --watch",
+		"format": "prettier --write \"../assets/**/*.{js,css}\" \"../*.html\" \"src/**/*.ts\" package.json tsconfig.json",
+		"format:check": "prettier --check \"../assets/**/*.{js,css}\" \"../*.html\" \"src/**/*.ts\" package.json tsconfig.json",
+		"format:build": "prettier --write ../assets/verification.js"
 	},
 	"devDependencies": {
+		"prettier": "3.9.9",
 		"typescript": "^5.5.4"
 	}
 }

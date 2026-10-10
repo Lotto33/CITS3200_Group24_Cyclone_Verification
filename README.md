@@ -84,7 +84,23 @@ npm run build     # or: npm run watch
 ```
 
 The compiled `assets/verification.js` is committed, so this step is only
-needed when changing `frontend/src/verification.ts`.
+needed when changing `frontend/src/verification.ts`. `npm run build` also
+formats the compiled file with Prettier.
+
+### Frontend formatting
+
+All frontend code (`assets/*.js`, `assets/*.css`, the `*.html` pages and
+`frontend/src/*.ts`) is formatted with [Prettier](https://prettier.io/)
+(tabs, tab width 4; see `.prettierrc.json`). CI fails if any of it is not
+formatted, or if `assets/verification.js` no longer matches what
+`frontend/src/verification.ts` compiles to. Before pushing:
+
+```bash
+cd frontend
+npm install
+npm run format          # fix formatting (use `npm run format:check` to only check)
+npm run build           # only if you changed verification.ts
+```
 
 ## Visualizing the BOM cyclone GML data
 
