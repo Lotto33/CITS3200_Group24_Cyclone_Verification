@@ -1,0 +1,10 @@
+# All .sh files in this repository must use Linux LF endings
+*.sh text eol=lf
+
+# Frontend files are checked by Biome, which expects LF on every OS
+assets/** text eol=lf
+*.html text eol=lf
+biome.json text eol=lf
+frontend/package.json text eol=lf
+frontend/tsconfig.json text eol=lf
+frontend/src/** text eol=lf
