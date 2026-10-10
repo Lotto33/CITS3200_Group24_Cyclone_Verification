@@ -223,7 +223,7 @@
 				distId: bulletin?.distId || els.cyclone.value,
 				distName: bulletin?.distName,
 				bulletin: bulletin
-					? `${currentIdx + 1}/${currentBulletins.length} — ${fmtTime(bulletin.fcastTime)}`
+					? `${currentIdx + 1}/${currentBulletins.length} — Base: ${fmtTime(bulletin.fcastTime)} | Issued: ${fmtTime(bulletin.issueTime)}`
 					: null,
 			}),
 		);
@@ -1251,7 +1251,7 @@
 		els.prev.disabled = currentIdx === 0;
 		els.next.disabled = currentIdx === currentBulletins.length - 1;
 		els.slider.value = currentIdx;
-		els.label.innerHTML = `Bulletin <b>${currentIdx + 1}/${currentBulletins.length}</b> — ${fmtTime(b.fcastTime)}`;
+		els.label.innerHTML = `Bulletin <b>${currentIdx + 1}/${currentBulletins.length}</b> — Base: ${fmtTime(b.fcastTime)} | Issued: ${fmtTime(b.issueTime)}`;
 		els.info.innerHTML = `<b>${b.distName || ""}</b> (${b.distId})<br>
       Source: ${b.source}<br>Time: ${fmtTime(b.fcastTime)}<br>
       Issued: ${fmtTime(b.issueTime)}<br>Expiry: ${b.expiryHrs || "?"} hrs<br>

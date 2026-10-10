@@ -13,13 +13,14 @@ from shapely.geometry import shape as shapely_shape
 from shapely.ops import nearest_points, unary_union
 from shapely.validation import make_valid
 
+from app.core.config import settings
+
 geod = Geod(ellps="WGS84")
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-GEOJSON_DIR = PROJECT_ROOT / "data" / "geojson"
-BEST_TRACK_CSV = PROJECT_ROOT / "data" / "best_track.csv"
+GEOJSON_DIR = settings.GEOJSON_DIR
+BEST_TRACK_CSV = settings.DATA_DIR / "best_track.csv"
 BEST_TRACK_INTERPOLATED_CSV = (
-    PROJECT_ROOT / "data" / "processed" / "best_track_interpolated.csv"
+    settings.DATA_DIR / "processed" / "best_track_interpolated.csv"
 )
 # Location/state source for Table A. The TC Locations sheet is authoritative;
 # data/towns.csv is not read by this pipeline (and is currently an Excel
@@ -243,20 +244,41 @@ def load_locations() -> gpd.GeoDataFrame:
     print(f"[locations] {len(df)} usable location(s)")
 
     if COASTAL_ORDER_COLUMN in df.columns:
-        is_coastal = df[COASTAL_ORDER_COLUMN].notna()
-        print(
-            f"[locations] {int(is_coastal.sum())} coastal location(s) (have a {COASTAL_ORDER_COLUMN!r} value)"
-        )
+        df["_is_coastal_row"] = df[COASTAL_ORDER_COLUMN].notna()
+
     else:
         print(
             f"[locations] WARNING: column {COASTAL_ORDER_COLUMN!r} not found in the TC Locations sheet -- "
             f"treating every location as non-coastal, so the coastal buffer will never apply. "
             f"Available columns: {list(df.columns)}"
         )
-        is_coastal = pd.Series(False, index=df.index)
+        df["_is_coastal_row"] = False
+
+    n_before = len(df)
+    grouped = df.groupby(["Name", "State"], as_index=False).agg(
+        Latitude=("Latitude", "first"),
+        Longitude=("Longitude", "first"),
+        is_coastal=("_is_coastal_row", "any"),
+    )
+    n_dedup = n_before - len(grouped)
+    if n_dedup:
+        print(
+            f"[locations] Collapsed {n_dedup} duplicate (Name, State) row(s)"
+            f"(six known QLD locations appear twice in the sheet, once per town group)"
+        )
+    print(f"[locations] {len(grouped)} distinct location(s)")    
+    print(
+        f"[locations] {int(grouped['is_coastal'].sum())} coastal location(s)"
+        f"(have a {COASTAL_ORDER_COLUMN} value on at least one row in the TC Locations sheet)"
+    )
+        
     return gpd.GeoDataFrame(
-        {"name": df["Name"], "state": df["State"], "is_coastal": is_coastal},
-        geometry=gpd.points_from_xy(df["Longitude"], df["Latitude"]),
+        {
+            "name": grouped["Name"], 
+            "state": grouped["State"], 
+            "is_coastal": grouped["is_coastal"]
+        },
+        geometry=gpd.points_from_xy(grouped["Longitude"], grouped["Latitude"]),
         crs="EPSG:4283",
     )
 
