@@ -178,6 +178,7 @@
 	const bulletinLayer = L.layerGroup().addTo(map);
 	const ghostLayer = L.layerGroup().addTo(map);
 	const bestTrackLayer = L.layerGroup().addTo(map);
+	const bestTrackMarkerLayer = L.layerGroup().addTo(map);
 	const comparisonLayer = L.layerGroup().addTo(map);
 	const compareAreaLayer = L.layerGroup().addTo(map);
 	const townsLayer = L.layerGroup().addTo(map);
@@ -527,6 +528,7 @@
 		bulletinLayer.clearLayers();
 		ghostLayer.clearLayers();
 		bestTrackLayer.clearLayers();
+		bestTrackMarkerLayer.clearLayers();
 		townsLayer.clearLayers();
 		compareAreaLayer.clearLayers();
 		renderCompareSelectors();
@@ -997,11 +999,12 @@
 		});
 	}
 
-	// Past this many points, the interpolated grid is drawn as the line plus its
-	// 6-hourly anchors only. Every 15-minute step gets its own circleMarker
-	// below that, which is what makes the grid inspectable rather than a
-	// featureless polyline; thousands of them just make panning stutter.
-	const MAX_INTERPOLATED_MARKERS = 1200;
+	// Best-track markers are thinned by screen distance, not by point count: a
+	// point is only drawn if it sits at least this many pixels from every marker
+	// already drawn. Zoomed out the 15-minute grid collapses to a readable
+	// dotted track; zoomed in, every point comes back. Anchors (BOM fixes) claim
+	// their spots first, so a fix is never hidden behind an interpolated point.
+	const MARKER_MIN_SPACING_PX = 12;
 
 	// Wind areas for the best-track point nearest the bulletin's forecast base
 	// time, so they move with the bulletin slider. Drawn first so the track line
@@ -1140,6 +1143,7 @@
 
 	function drawBestTrack(bounds, bulletin) {
 		bestTrackLayer.clearLayers();
+		bestTrackMarkerLayer.clearLayers();
 		if (!currentBestTrack) return;
 		const points = currentBestTrack.points || [];
 		if (points.length < 2) return;
@@ -1147,8 +1151,6 @@
 		const interpolated = currentBestTrack.source === "interpolated";
 		const step = interpolated ? trackStepMinutes(points) : null;
 		const anchors = points.filter((p) => !p.interpolated);
-		const showEveryPoint =
-			!interpolated || points.length <= MAX_INTERPOLATED_MARKERS;
 
 		// The wind areas have their own checkboxes, so they draw whether or not
 		// the track line itself is shown.
@@ -1171,7 +1173,50 @@
 			)
 			.addTo(bestTrackLayer);
 
-		(showEveryPoint ? points : anchors).forEach((p) => {
+		drawBestTrackMarkers();
+
+		bounds.push(...latlngs);
+	}
+
+	// Fix / interpolated-point markers for the current zoom. Kept in their own
+	// layer so a zoom redraws only these, not the wind areas or the gale union.
+	function drawBestTrackMarkers() {
+		bestTrackMarkerLayer.clearLayers();
+		if (comparisonMode || !currentBestTrack || !els.layers.bestTrack.checked)
+			return;
+		const points = currentBestTrack.points || [];
+		if (points.length < 2) return;
+
+		// Spatial hash with cells one spacing wide: a candidate only has to be
+		// checked against the 3x3 cells around it, so thinning stays linear.
+		const zoom = map.getZoom();
+		const cells = new Map();
+		const isFree = (pt) => {
+			const cx = Math.floor(pt.x / MARKER_MIN_SPACING_PX);
+			const cy = Math.floor(pt.y / MARKER_MIN_SPACING_PX);
+			for (let dx = -1; dx <= 1; dx++) {
+				for (let dy = -1; dy <= 1; dy++) {
+					const near = cells.get(`${cx + dx},${cy + dy}`);
+					if (near?.some((q) => pt.distanceTo(q) < MARKER_MIN_SPACING_PX))
+						return false;
+				}
+			}
+			const key = `${cx},${cy}`;
+			if (!cells.has(key)) cells.set(key, []);
+			cells.get(key).push(pt);
+			return true;
+		};
+		const pick = (isAnchor) =>
+			points.filter(
+				(p) =>
+					!p.interpolated === isAnchor &&
+					isFree(map.project([p.coord[1], p.coord[0]], zoom)),
+			);
+		const anchors = pick(true);
+		const between = pick(false);
+
+		// Interpolated points go down first so the larger fixes sit on top.
+		[...between, ...anchors].forEach((p) => {
 			const [lon, lat] = p.coord;
 			const isAnchor = !p.interpolated;
 			L.circleMarker([lat, lon], {
@@ -1188,10 +1233,8 @@
         ${p.pressure === null || p.pressure === undefined ? "" : `Pressure: ${p.pressure} hPa<br>`}
         Max wind: ${p.windSpeed ?? "—"} kn`,
 				)
-				.addTo(bestTrackLayer);
+				.addTo(bestTrackMarkerLayer);
 		});
-
-		bounds.push(...latlngs);
 	}
 
 	function renderBulletin(fitBounds) {
@@ -1372,6 +1415,8 @@
 		inp.addEventListener("change", () => renderBulletin(false)),
 	);
 	els.towns.addEventListener("change", drawTowns);
+	// Marker thinning depends on screen spacing, so it is redone on every zoom.
+	map.on("zoomend", drawBestTrackMarkers);
 
 	initBasemap();
 	loadTowns();
