@@ -88,7 +88,31 @@ npm run build     # or: npm run watch
 ```
 
 The compiled `assets/verification.js` is committed, so this step is only
-needed when changing `frontend/src/verification.ts`.
+needed when changing `frontend/src/verification.ts`. `npm run build` also
+formats the compiled file with Biome.
+
+### Frontend lint and formatting
+
+All frontend code (`assets/*.js`, `assets/*.css`, the `*.html` pages and
+`frontend/src/*.ts`) is formatted and linted with [Biome](https://biomejs.dev/)
+(tabs, width 4; see `biome.json`). CI fails on any Biome error, or if
+`assets/verification.js` no longer matches what `frontend/src/verification.ts`
+compiles to. Warnings are reported but do not fail CI. The compiled
+`assets/verification.js` is formatted but not linted. Before pushing:
+
+```bash
+cd frontend
+npm install
+npm run format          # fix formatting and safe lint issues in place
+npm run lint            # same check CI runs; changes nothing
+npm run build           # only if you changed verification.ts
+```
+
+These files are kept on LF line endings (see `.gitattributes`).
+
+Merging an older branch into the linted `main` produces many formatting
+conflicts; see [docs/merging-after-biome.md](docs/merging-after-biome.md) for
+the quick way to resolve them.
 
 ## Visualizing the BOM cyclone GML data
 

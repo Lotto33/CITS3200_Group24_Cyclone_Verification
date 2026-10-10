@@ -5,7 +5,7 @@ from zipfile import ZipFile
 
 import pandas as pd
 
-from app.api.v1.endpoints import datasets
+from app.api.v1.endpoints import contingency, datasets
 from app.services import upload_jobs
 
 
@@ -105,6 +105,45 @@ def test_refresh_best_track_route_returns_job(client, monkeypatch):
     response = client.post("/api/v1/datasets/refresh-best-track")
     assert response.status_code == 200
     assert response.json()["job_id"]
+
+
+def test_contingency_generation_runs_as_a_pollable_job(client, monkeypatch):
+    expected = {
+        "status": "success",
+        "disturbance_ids": ["AU202526_34U"],
+        "stats": {
+            "hit": 1,
+            "false_alarm": 2,
+            "miss": 3,
+            "correct_negative": 4,
+            "total": 10,
+        },
+        "files": {},
+    }
+
+    def generate(request):
+        print("Generating requested cyclone tables")
+        return expected
+
+    monkeypatch.setattr(contingency.contingency_service, "generate_tables", generate)
+    response = client.post(
+        "/api/v1/contingency-tables/",
+        json={"disturbance_ids": ["AU202526_34U"]},
+    )
+
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    job = wait_for_job(job_id)
+    assert job["status"] == "completed"
+    assert job["result"] == expected
+    assert "Generating requested cyclone tables" in job["messages"]
+
+
+def test_contingency_generation_rejects_missing_selection(client):
+    response = client.post("/api/v1/contingency-tables/", json={})
+
+    assert response.status_code == 400
+    assert "disturbance ID or a season" in response.json()["detail"]
 
 
 def test_failed_job_reports_error_and_removes_temp_file(client, monkeypatch):

@@ -12,6 +12,7 @@ def test_required_api_routes_are_in_openapi():
         "/api/v1/datasets/jobs/{job_id}",
         "/api/v1/datasets/interpolate-best-track",
         "/api/v1/contingency-tables/",
+        "/api/v1/contingency-tables/jobs/{job_id}",
         "/api/v1/contingency-tables/files/{filename}",
         "/api/v1/diagnostics/near-polygon-distances",
         "/api/v1/cyclones/",

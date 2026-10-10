@@ -7,8 +7,14 @@
 	--orange: #ffad57;
 }
 
-* { box-sizing: border-box; }
-html, body { min-height: 100%; margin: 0; }
+* {
+	box-sizing: border-box;
+}
+html,
+body {
+	min-height: 100%;
+	margin: 0;
+}
 body {
 	display: grid;
 	place-items: center;
@@ -27,7 +33,9 @@ main {
 .eyebrow {
 	margin: 0 0 18px;
 	color: var(--cyan);
-	font: 700 12px/1.2 "Segoe UI", sans-serif;
+	font:
+		700 12px / 1.2 "Segoe UI",
+		sans-serif;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 }
@@ -42,7 +50,9 @@ p {
 	max-width: 520px;
 	margin: 24px 0 36px;
 	color: var(--muted);
-	font: 16px/1.6 "Segoe UI", sans-serif;
+	font:
+		16px / 1.6 "Segoe UI",
+		sans-serif;
 }
 .actions {
 	display: grid;
@@ -55,7 +65,9 @@ a {
 	border: 1px solid var(--line);
 	color: var(--ink);
 	text-decoration: none;
-	font: 700 14px "Segoe UI", sans-serif;
+	font:
+		700 14px "Segoe UI",
+		sans-serif;
 }
 a span {
 	display: block;
@@ -64,9 +76,14 @@ a span {
 	font-size: 12px;
 	font-weight: 400;
 }
-a:first-child { border-color: var(--cyan); }
-a:last-child { border-color: var(--orange); }
-a:hover, a:focus-visible {
+a:first-child {
+	border-color: var(--cyan);
+}
+a:last-child {
+	border-color: var(--orange);
+}
+a:hover,
+a:focus-visible {
 	background: rgba(255, 255, 255, 0.08);
 	outline: none;
 }
@@ -74,8 +91,12 @@ a:hover, a:focus-visible {
 	min-height: 20px;
 	margin: 18px 0 0;
 	color: var(--muted);
-	font: 12px "Segoe UI", sans-serif;
+	font:
+		12px "Segoe UI",
+		sans-serif;
 }
 @media (max-width: 560px) {
-	.actions { grid-template-columns: 1fr; }
+	.actions {
+		grid-template-columns: 1fr;
+	}
 }
