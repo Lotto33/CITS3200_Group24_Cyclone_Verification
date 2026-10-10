@@ -15,6 +15,10 @@
   };
   const WIND_AREA_COLORS = { Current: "#ff5d5d", Forecast: "#4fa8ff" };
 
+  // Observed (analysis) tcTrack in each bulletin comes from a secondary source
+  // in the GML and doesn't match the best track, so only the forecast track is drawn
+  const isShownTrack = track => track.trackType !== "Observed";
+
   // Best-track wind areas: gale / storm / hurricane force, drawn from the
   // interpolated quadrant radii. Colours are kept apart from the bulletin
   // area colours above: a pink-to-magenta ramp (no other layer uses pink) with
@@ -723,11 +727,11 @@
     ghostLayer.clearLayers();
     if (!els.layers.allBulletins.checked) return;
     currentBulletins.forEach((b, i) => {
-      (b.tracks || []).forEach(track => {
+      (b.tracks || []).filter(isShownTrack).forEach(track => {
         if (track.coords.length < 2) return;
         L.polyline(toLatLngs(track.coords), {
           color: i === currentIdx ? "transparent" : "#8892a6",
-          weight: 1, opacity: 0.35, dashArray: track.trackType === "Observed" ? "3,4" : null,
+          weight: 1, opacity: 0.35,
         }).addTo(ghostLayer);
       });
     });
@@ -892,13 +896,14 @@
     const label = els.layers.fixes.closest(".layer-row");
     if (label) {
       label.style.opacity = tracksOn ? "" : "0.45";
-      label.title = tracksOn ? "" : "Fixes are only shown when Tracks is enabled";
+      label.title = tracksOn ? "" : "Fixes are only shown when Forecast track is enabled";
     }
   }
 
   // A fix is drawn only if a track line of its type is drawn through it.
   // The current fix is where the observed and forecast tracks meet, so it
   // stays as long as any track is drawn. Unknown fix types are treated the same way.
+  // Since the Observed track is no longer drawn, Observed fixes are dropped too.
   function fixHasTrack(fix, drawnTrackTypes) {
     if (!drawnTrackTypes.size) return false;
     if (fix.fixType === "Observed" || fix.fixType === "Forecast") return drawnTrackTypes.has(fix.fixType);
@@ -924,19 +929,19 @@
     els.info.innerHTML = `<b>${b.distName || ""}</b> (${b.distId})<br>
       Source: ${b.source}<br>Forecast base time: ${fmtTime(b.fcastTime)}<br>
       Issue time: ${fmtTime(b.issueTime)}<br>Expiry: ${b.expiryHrs || "?"} hrs<br>
-      Tracks: ${b.tracks.length}, Fixes: ${b.fixes.length}, Areas: ${b.areas.length}<br>
+      Tracks: ${b.tracks.filter(isShownTrack).length}, Fixes: ${b.fixes.length}, Areas: ${b.areas.length}<br>
       Best track: ${bestTrackSummary()}`;
 
     const bounds = [];
     const drawnTrackTypes = new Set();
     if (els.layers.tracks.checked) {
-      b.tracks.forEach(track => {
+      b.tracks.filter(isShownTrack).forEach(track => {
         if (track.coords.length < 2) return;
         drawnTrackTypes.add(track.trackType);
         const latlngs = toLatLngs(track.coords);
         L.polyline(latlngs, {
           color: track.trackType === "Forecast" ? "#4fa8ff" : "#ffd24f",
-          weight: 3, opacity: 0.9, dashArray: track.trackType === "Observed" ? "6,5" : null,
+          weight: 3, opacity: 0.9,
         }).bindPopup(`<b>${track.trackType || "Track"}</b><br>${fmtTime(track.startTime)} → ${fmtTime(track.endTime)}`)
           .addTo(bulletinLayer);
         bounds.push(...latlngs);
