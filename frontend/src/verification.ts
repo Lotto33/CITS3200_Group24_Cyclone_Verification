@@ -526,13 +526,19 @@
     table.appendChild(thead);
     const body = document.createElement("tbody");
     const timeColumns = rows[0].map((header, index) => /\btime\b/i.test(header) ? index : -1).filter((index) => index >= 0);
+    const distanceColumns = rows[0].map((header, index) => /\bdistance\b/i.test(header) ? index : -1).filter((index) => index >= 0);
     rows.slice(1).forEach((values) => {
       const tr = document.createElement("tr");
       values.forEach((value, index) => {
         const cell = document.createElement(index === 0 ? "th" : "td");
         if (index === 0) (cell as HTMLTableCellElement).scope = "row";
         const formatTime = (window as unknown as { formatCycloneTime: (value: string) => string }).formatCycloneTime;
-        cell.textContent = timeColumns.includes(index) ? formatTime(value) : value;
+        const numericDistance = distanceColumns.includes(index) && value.trim() !== "" ? Number(value) : Number.NaN;
+        cell.textContent = timeColumns.includes(index)
+          ? formatTime(value)
+          : Number.isFinite(numericDistance)
+            ? String(Math.round(numericDistance))
+            : value;
         tr.appendChild(cell);
       });
       body.appendChild(tr);
