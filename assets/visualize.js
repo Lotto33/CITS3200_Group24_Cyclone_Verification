@@ -26,8 +26,8 @@
   };
 
   // Observed gale area over a window after the bulletin's base time, set by the
-  // From / To inputs (default 24-48 h, the Watch range gen_cont_tables.py scores
-  // Table C against with --x-hours 24 --y-hours 48).
+  // From / To inputs (default 0-48 h: from the bulletin base time to the end of
+  // the Watch range gen_cont_tables.py scores Table C against).
   const GALE_WINDOW = { color: "#3ddc84", fillOpacity: 0.14 };
   const GALE_WINDOW_MAX_H = 60;
 
@@ -805,7 +805,7 @@
   function galeWindowHours() {
     let startH = Math.round(Number(els.galeFrom.value));
     let endH = Math.round(Number(els.galeTo.value));
-    if (!Number.isFinite(startH)) startH = 24;
+    if (!Number.isFinite(startH)) startH = 0;
     if (!Number.isFinite(endH)) endH = 48;
     startH = Math.min(Math.max(startH, 0), GALE_WINDOW_MAX_H - 1);
     endH = Math.min(Math.max(endH, startH + 1), GALE_WINDOW_MAX_H);
