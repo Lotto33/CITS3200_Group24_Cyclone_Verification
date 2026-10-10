@@ -23,7 +23,6 @@
 			fillColor: "#b06bff",
 			fillOpacity: 0.08,
 			weight: 1.5,
-			layerKey: "forecastArea",
 		},
 		tcWarningArea: {
 			color: "#ff7a00",
@@ -41,6 +40,13 @@
 		},
 	};
 	const WIND_AREA_COLORS = { Current: "#ff5d5d", Forecast: "#4fa8ff" };
+	const FORECAST_AREA_COLORS = [
+		"#b06bff",
+		"#4fc3f7",
+		"#ff9f43",
+		"#3ddc84",
+		"#ff5d5d",
+	];
 
 	// Best-track wind areas: gale / storm / hurricane force, drawn from the
 	// interpolated quadrant radii. Colours are kept apart from the bulletin
@@ -87,6 +93,9 @@
 		refreshBestTrackBtn: document.getElementById("refreshBestTrackBtn"),
 		gmlUploadInput: document.getElementById("gmlUploadInput"),
 		categoryLegend: document.getElementById("categoryLegend"),
+		forecastAreaControls: document.getElementById(
+			"forecastAreaControls",
+		),
 		// Towns are static, so this checkbox is deliberately kept out of
 		// els.layers -- everything in there is wired to renderBulletin().
 		towns: document.getElementById("layer-towns"),
@@ -95,7 +104,6 @@
 			tracks: document.getElementById("layer-tracks"),
 			fixes: document.getElementById("layer-fixes"),
 			windArea: document.getElementById("layer-windArea"),
-			forecastArea: document.getElementById("layer-forecastArea"),
 			warningArea: document.getElementById("layer-warningArea"),
 			watchArea: document.getElementById("layer-watchArea"),
 			allBulletins: document.getElementById("layer-allBulletins"),
@@ -125,6 +133,7 @@
 		comparePrev: document.getElementById("comparePrevBtn"),
 		compareNext: document.getElementById("compareNextBtn"),
 	};
+	const forecastAreaLayers = new Map();
 
 	Object.entries(CATEGORY_COLORS).forEach(([cat, color]) => {
 		const chip = document.createElement("span");
@@ -354,6 +363,87 @@
 		return CATEGORY_COLORS[String(cat).trim()] || DEFAULT_CATEGORY_COLOR;
 	}
 
+	function forecastAreaExtentKey(extent) {
+		return extent || "Unknown extent";
+	}
+
+	function forecastAreaColor(extent) {
+		const hours = Number.parseInt(extent?.match(/\d+/)?.[0] || "", 10);
+		if (Number.isFinite(hours)) {
+			const knownHours = [24, 48, 72, 120];
+			const knownIndex = knownHours.indexOf(hours);
+			if (knownIndex !== -1)
+				return FORECAST_AREA_COLORS[knownIndex % FORECAST_AREA_COLORS.length];
+		}
+		return FORECAST_AREA_COLORS[
+			Math.abs([...forecastAreaExtentKey(extent)].reduce(
+				(hash, char) => (hash * 31 + char.charCodeAt(0)) | 0,
+				0,
+			)) % FORECAST_AREA_COLORS.length
+		];
+	}
+
+	function forecastAreaStyle(extent) {
+		const color = forecastAreaColor(extent);
+		return {
+			...AREA_STYLE.tcForecastArea,
+			color,
+			fillColor: color,
+		};
+	}
+
+	function updateForecastAreaControls() {
+		const extents = new Set(
+			currentBulletins.flatMap((bulletin) =>
+				(bulletin.areas || [])
+					.filter((area) => area.kind === "tcForecastArea")
+					.map((area) => forecastAreaExtentKey(area.extent)),
+			),
+		);
+		const previousChecked = new Map(
+			[...forecastAreaLayers].map(([extent, checkbox]) => [
+				extent,
+				checkbox.checked,
+			]),
+		);
+		forecastAreaLayers.clear();
+		els.forecastAreaControls.replaceChildren();
+
+		[...extents]
+			.sort((a, b) => {
+				const aHours = Number.parseInt(a.match(/\d+/)?.[0] || "", 10);
+				const bHours = Number.parseInt(b.match(/\d+/)?.[0] || "", 10);
+				return (
+					(Number.isFinite(aHours) ? aHours : Infinity) -
+						(Number.isFinite(bHours) ? bHours : Infinity) ||
+					a.localeCompare(b)
+				);
+			})
+			.forEach((extent) => {
+				const row = document.createElement("div");
+				row.className = "layer-subrow";
+				const checkbox = document.createElement("input");
+				checkbox.type = "checkbox";
+				checkbox.id = `layer-forecastArea-${extent
+					.toLowerCase()
+					.replace(/[^a-z0-9]+/g, "-")
+					.replace(/^-|-$/g, "")}`;
+				checkbox.checked = previousChecked.get(extent) ?? true;
+				const swatch = document.createElement("span");
+				swatch.className = "swatch";
+				swatch.style.background = forecastAreaColor(extent);
+				const label = document.createElement("label");
+				label.htmlFor = checkbox.id;
+				label.textContent = extent;
+				row.append(checkbox, swatch, label);
+				els.forecastAreaControls.append(row);
+				forecastAreaLayers.set(extent, checkbox);
+				checkbox.addEventListener("change", () =>
+					renderBulletin(false),
+				);
+			});
+	}
+
 	function fmtTime(t) {
 		return t ? t.replace("T", " ").replace("Z", " UTC") : "—";
 	}
@@ -473,6 +563,7 @@
 				new Option("No cyclones available", ""),
 			);
 			currentBulletins = [];
+			updateForecastAreaControls();
 			renderBulletin();
 		}
 	}
@@ -940,6 +1031,7 @@
 		const distId = els.cyclone.value;
 		if (!distId) {
 			currentBulletins = [];
+			updateForecastAreaControls();
 			renderBulletin();
 			return;
 		}
@@ -965,9 +1057,11 @@
 						(a.source || "").localeCompare(b.source || "") ||
 						(a.issueTime || "").localeCompare(b.issueTime || ""),
 				);
+			updateForecastAreaControls();
 			setStatus("");
 		} catch (err) {
 			currentBulletins = [];
+			updateForecastAreaControls();
 			setStatus(
 				`Could not load data (are you running a local server? see README) — ${err.message}`,
 				true,
@@ -1306,20 +1400,26 @@
 				area.kind === "tcWindArea"
 					? WIND_AREA_COLORS[area.fixType]
 					: null;
-			const style = windAreaColor
+			const style = area.kind === "tcForecastArea"
+				? forecastAreaStyle(area.extent)
+				: windAreaColor
 				? {
 						...baseStyle,
 						color: windAreaColor,
 						fillColor: windAreaColor,
 					}
 				: baseStyle;
-			if (!style || !els.layers[style.layerKey].checked) return;
+			const layerCheckbox =
+				area.kind === "tcForecastArea"
+					? forecastAreaLayers.get(forecastAreaExtentKey(area.extent))
+					: els.layers[style?.layerKey];
+			if (!style || !layerCheckbox?.checked) return;
 			const popup = `<b>${area.kind}</b><br>
         ${area.areaType ? `Area type: ${area.areaType}<br>` : ""}
         ${area.extent ? `Extent: ${area.extent}<br>` : ""}
         ${area.windType ? `Wind type: ${area.windType}<br>` : ""}
         ${area.marineType ? `Marine type: ${area.marineType}<br>` : ""}
-        ${area.fixType ? `Fix type: ${area.fixType}<br>` : ""}
+        ${area.fixType ? `Fix type: ${area.fixType === "Current" ? "Analysis" : area.fixType}<br>` : ""}
         ${area.fixTime ? `Fix time: ${fmtTime(area.fixTime)}` : ""}`;
 			area.polygons.forEach((rings) => {
 				const latlngRings = rings.map(toLatLngs);
