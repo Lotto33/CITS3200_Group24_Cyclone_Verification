@@ -611,6 +611,9 @@
             return "contingency_matrix";
         return null;
     }
+    function normalizeDownloadSearchText(value) {
+        return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+    }
     async function showRunFiles(instance, files, ids, stats, baseTimeHours) {
         var _a, _b;
         const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids, baseTimeHours));
@@ -709,9 +712,9 @@
         downloadBox.append(list, resultCount);
         function renderFilteredDownloads() {
             filterState.query = search.value;
-            const query = filterState.query.trim().toLowerCase();
+            const query = normalizeDownloadSearchText(filterState.query);
             const visible = entries.filter((entry) => filterState.types.has(entry.type)
-                && entry.filename.toLowerCase().includes(query));
+                && normalizeDownloadSearchText(entry.filename).includes(query));
             list.replaceChildren();
             visible.forEach((entry) => {
                 const li = document.createElement("li");

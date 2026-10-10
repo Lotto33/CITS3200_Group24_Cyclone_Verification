@@ -647,6 +647,10 @@
     return null;
   }
 
+  function normalizeDownloadSearchText(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
   async function showRunFiles(instance: HTMLElement, files: Record<string, string>, ids: string[], stats: Stats, baseTimeHours: number[]): Promise<void> {
     const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids, baseTimeHours));
     const dates = candidates.map((name) => name.match(/date-(\d{8})/)?.[1] || "").sort();
@@ -735,9 +739,9 @@
     downloadBox.append(list, resultCount);
     function renderFilteredDownloads(): void {
       filterState.query = search.value;
-      const query = filterState.query.trim().toLowerCase();
+      const query = normalizeDownloadSearchText(filterState.query);
       const visible = entries.filter((entry) => filterState.types.has(entry.type)
-        && entry.filename.toLowerCase().includes(query));
+        && normalizeDownloadSearchText(entry.filename).includes(query));
       list.replaceChildren();
       visible.forEach((entry) => {
         const li = document.createElement("li");
