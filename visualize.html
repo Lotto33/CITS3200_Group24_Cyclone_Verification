@@ -1,144 +1,412 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>BOM Cyclone GML Visualizer</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<link rel="stylesheet" href="assets/visualize.css">
-</head>
-<body>
+	<head>
+		<meta charset="UTF-8" />
+		<title>BOM Cyclone GML Visualizer</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link
+			rel="stylesheet"
+			href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+			integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+			crossorigin=""
+		/>
+		<link rel="stylesheet" href="assets/visualize.css" />
+	</head>
+	<body>
+		<button
+			id="optionsToggle"
+			type="button"
+			aria-label="Toggle visualizer options"
+			title="Toggle visualizer options"
+		>
+			Visualizer Options <span aria-hidden="true">◀</span>
+		</button>
 
-<button id="optionsToggle" type="button" aria-label="Toggle visualizer options" title="Toggle visualizer options">
-  Visualizer Options <span aria-hidden="true">◀</span>
-</button>
+		<div id="visualizerShell">
+			<div id="sidebar">
+				<div>
+					<h1>BOM Cyclone GML Visualizer</h1>
+					<p class="subtitle">
+						Browse historical BOM tropical cyclone GML bulletins on
+						a map.
+					</p>
+				</div>
 
-<div id="visualizerShell">
-<div id="sidebar">
-  <div>
-    <h1>BOM Cyclone GML Visualizer</h1>
-    <p class="subtitle">Browse historical BOM tropical cyclone GML bulletins on a map.</p>
-  </div>
+				<button id="compareToggle" type="button">
+					Compare best tracks
+				</button>
 
-  <button id="compareToggle" type="button">Compare best tracks</button>
+				<div id="comparePanel" class="compare-panel" hidden>
+					<div class="compare-heading">
+						<div>
+							<h2>Best track comparison</h2>
+							<p class="subtitle">
+								Compare up to five cyclones on the map.
+							</p>
+						</div>
+						<button
+							id="compareClose"
+							class="icon"
+							type="button"
+							title="Return to visualizer"
+						>
+							×
+						</button>
+					</div>
+					<div id="compareSelectors"></div>
+					<button
+						id="addCompareCyclone"
+						class="secondary-button"
+						type="button"
+					>
+						+ Add cyclone
+					</button>
+					<div class="layer-row">
+						<input type="checkbox" id="compare-gale" checked />
+						<span class="swatch" style="background: #ff9ee0"></span>
+						Gale-force area (34 kn)
+					</div>
+					<div class="layer-row">
+						<input type="checkbox" id="compare-storm" />
+						<span class="swatch" style="background: #ff3fb4"></span>
+						Storm-force area (48 kn)
+					</div>
+					<div class="layer-row">
+						<input type="checkbox" id="compare-hurricane" />
+						<span class="swatch" style="background: #c4007a"></span>
+						Hurricane-force area (64 kn)
+					</div>
+					<div id="compareTimeBar" class="field">
+						<label for="compareSlider"
+							>Wind-radii analysis point</label
+						>
+						<div class="slider-row">
+							<button
+								id="comparePrevBtn"
+								class="icon"
+								type="button"
+								title="Earlier"
+							>
+								◀
+							</button>
+							<input
+								type="range"
+								id="compareSlider"
+								min="0"
+								max="0"
+								value="0"
+								step="1"
+								style="flex: 1"
+							/>
+							<button
+								id="compareNextBtn"
+								class="icon"
+								type="button"
+								title="Later"
+							>
+								▶
+							</button>
+						</div>
+						<div
+							id="compareTimeLabel"
+							style="white-space: pre-line"
+						>
+							—
+						</div>
+					</div>
+					<div id="compareStatus" class="layer-note"></div>
+				</div>
 
-  <div id="comparePanel" class="compare-panel" hidden>
-    <div class="compare-heading">
-      <div>
-        <h2>Best track comparison</h2>
-        <p class="subtitle">Compare up to five cyclones on the map.</p>
-      </div>
-      <button id="compareClose" class="icon" type="button" title="Return to visualizer">×</button>
-    </div>
-    <div id="compareSelectors"></div>
-    <button id="addCompareCyclone" class="secondary-button" type="button">+ Add cyclone</button>
-    <div class="layer-row"><input type="checkbox" id="compare-gale" checked>
-      <span class="swatch" style="background:#ff9ee0"></span> Gale-force area (34 kn)</div>
-    <div class="layer-row"><input type="checkbox" id="compare-storm">
-      <span class="swatch" style="background:#ff3fb4"></span> Storm-force area (48 kn)</div>
-    <div class="layer-row"><input type="checkbox" id="compare-hurricane">
-      <span class="swatch" style="background:#c4007a"></span> Hurricane-force area (64 kn)</div>
-    <div id="compareTimeBar" class="field">
-      <label for="compareSlider">Wind-radii analysis point</label>
-      <div class="slider-row">
-        <button id="comparePrevBtn" class="icon" type="button" title="Earlier">◀</button>
-        <input type="range" id="compareSlider" min="0" max="0" value="0" step="1" style="flex:1">
-        <button id="compareNextBtn" class="icon" type="button" title="Later">▶</button>
-      </div>
-      <div id="compareTimeLabel" style="white-space:pre-line">—</div>
-    </div>
-    <div id="compareStatus" class="layer-note"></div>
-  </div>
+				<div id="standardControls">
+					<div class="field">
+						<label for="cycloneSelect"
+							>Cyclone / event (distId) — ★ has best track</label
+						>
+						<select id="cycloneSelect"></select>
+					</div>
 
-  <div id="standardControls">
-  <div class="field">
-    <label for="cycloneSelect">Cyclone / event (distId) — ★ has best track</label>
-    <select id="cycloneSelect"></select>
-  </div>
+					<div class="field upload-field">
+						<label>Dataset uploads</label>
+						<div class="upload-actions">
+							<button id="uploadGmlBtn" type="button">
+								Upload GML archive
+							</button>
+							<input
+								id="gmlUploadInput"
+								type="file"
+								accept=".zip"
+								hidden
+							/>
+							<button id="refreshBestTrackBtn" type="button">
+								Refresh best track from BOM
+							</button>
+						</div>
+						<div
+							id="uploadStatus"
+							class="upload-status"
+							aria-live="polite"
+						></div>
+					</div>
 
-  <div class="field upload-field">
-    <label>Dataset uploads</label>
-    <div class="upload-actions">
-      <button id="uploadGmlBtn" type="button">Upload GML archive</button>
-      <input id="gmlUploadInput" type="file" accept=".zip" hidden>
-      <button id="refreshBestTrackBtn" type="button">Refresh best track from BOM</button>
-    </div>
-    <div id="uploadStatus" class="upload-status" aria-live="polite"></div>
-  </div>
+					<div id="bulletinBar" class="field">
+						<label for="bulletinSlider">Bulletin (time)</label>
+						<div class="slider-row">
+							<button
+								id="prevBtn"
+								class="icon"
+								title="Previous bulletin"
+							>
+								◀
+							</button>
+							<input
+								type="range"
+								id="bulletinSlider"
+								min="0"
+								max="0"
+								value="0"
+								step="1"
+								style="flex: 1"
+							/>
+							<button
+								id="nextBtn"
+								class="icon"
+								title="Next bulletin"
+							>
+								▶
+							</button>
+							<button
+								id="playBtn"
+								class="icon"
+								title="Play through bulletins"
+							>
+								⏵
+							</button>
+						</div>
+						<div id="bulletinLabel">—</div>
+					</div>
 
-  <div id="bulletinBar" class="field">
-    <label for="bulletinSlider">Bulletin (time)</label>
-    <div class="slider-row">
-      <button id="prevBtn" class="icon" title="Previous bulletin">◀</button>
-      <input type="range" id="bulletinSlider" min="0" max="0" value="0" step="1" style="flex:1">
-      <button id="nextBtn" class="icon" title="Next bulletin">▶</button>
-      <button id="playBtn" class="icon" title="Play through bulletins">⏵</button>
-    </div>
-    <div id="bulletinLabel">—</div>
-  </div>
+					<fieldset>
+						<legend>Layers</legend>
+						<div class="layer-row">
+							<input type="checkbox" id="layer-tracks" checked />
+							<span
+								class="swatch"
+								style="background: #4fa8ff"
+							></span>
+							Tracks (forecast / observed)
+						</div>
+						<div class="layer-subrow">
+							<span
+								class="swatch-line"
+								style="border-color: #4fa8ff"
+							></span>
+							Forecast (solid)
+						</div>
+						<div class="layer-subrow">
+							<span
+								class="swatch-line dashed"
+								style="border-color: #ffd24f"
+							></span>
+							Observed (dashed)
+						</div>
+						<div class="layer-row">
+							<input type="checkbox" id="layer-fixes" checked />
+							<span
+								class="swatch"
+								style="background: #ffd24f"
+							></span>
+							Fixes (position points)
+						</div>
+						<div class="layer-row">
+							<input
+								type="checkbox"
+								id="layer-windArea"
+								checked
+							/>
+							<span
+								class="swatch"
+								style="background: #ff5d5d"
+							></span>
+							Wind area
+						</div>
+						<div class="layer-subrow">
+							<span
+								class="swatch"
+								style="background: #ff5d5d"
+							></span>
+							Current
+						</div>
+						<div class="layer-subrow">
+							<span
+								class="swatch"
+								style="background: #4fa8ff"
+							></span>
+							Forecast
+						</div>
+						<div class="layer-row">
+							<input
+								type="checkbox"
+								id="layer-forecastArea"
+								checked
+							/>
+							<span
+								class="swatch"
+								style="background: #b06bff"
+							></span>
+							Forecast track area
+						</div>
+						<div class="layer-row">
+							<input
+								type="checkbox"
+								id="layer-warningArea"
+								checked
+							/>
+							<span
+								class="swatch"
+								style="background: #ff7a00"
+							></span>
+							Warning area
+						</div>
+						<div class="layer-row">
+							<input
+								type="checkbox"
+								id="layer-watchArea"
+								checked
+							/>
+							<span
+								class="swatch"
+								style="background: #ffe14f"
+							></span>
+							Watch area
+						</div>
+						<div class="layer-row">
+							<input type="checkbox" id="layer-allBulletins" />
+							<span
+								class="swatch"
+								style="background: #8892a6"
+							></span>
+							Show all bulletins' tracks (ghost trails)
+						</div>
+						<div class="layer-row">
+							<input
+								type="checkbox"
+								id="layer-bestTrack"
+								checked
+							/>
+							<span
+								class="swatch"
+								style="background: #2fd4d9"
+							></span>
+							Best track (interpolated grid, or raw fixes)
+						</div>
+						<div class="layer-row">
+							<input type="checkbox" id="layer-btGale" checked />
+							<span
+								class="swatch"
+								style="background: #ff9ee0"
+							></span>
+							Best track gale-force area (34 kn)
+						</div>
+						<div class="layer-row">
+							<input type="checkbox" id="layer-btStorm" checked />
+							<span
+								class="swatch"
+								style="background: #ff3fb4"
+							></span>
+							Best track storm-force area (48 kn)
+						</div>
+						<div class="layer-row">
+							<input
+								type="checkbox"
+								id="layer-btHurricane"
+								checked
+							/>
+							<span
+								class="swatch"
+								style="background: #c4007a"
+							></span>
+							Best track hurricane-force area (64 kn)
+						</div>
+						<div class="layer-row">
+							<input
+								type="checkbox"
+								id="layer-btGaleWindow"
+								checked
+							/>
+							<span
+								class="swatch"
+								style="background: #3ddc84"
+							></span>
+							Observed gale area after bulletin (from best-track
+							area)
+						</div>
+						<div class="layer-subrow">
+							From T+<input
+								type="number"
+								id="galeFrom"
+								min="0"
+								max="59"
+								step="1"
+								value="0"
+								style="width: 56px"
+							/>
+							to T+<input
+								type="number"
+								id="galeTo"
+								min="1"
+								max="60"
+								step="1"
+								value="48"
+								style="width: 56px"
+							/>
+							h
+						</div>
+						<div class="layer-row">
+							<input type="checkbox" id="layer-towns" checked />
+							<span
+								class="swatch"
+								style="background: #cfd8e6"
+							></span>
+							Towns (TC locations)
+						</div>
+						<div class="layer-note" id="townsNote"></div>
+					</fieldset>
 
-  <fieldset>
-    <legend>Layers</legend>
-    <div class="layer-row"><input type="checkbox" id="layer-tracks" checked>
-      <span class="swatch" style="background:#4fa8ff"></span> Tracks (forecast / observed)</div>
-    <div class="layer-subrow"><span class="swatch-line" style="border-color:#4fa8ff"></span> Forecast (solid)</div>
-    <div class="layer-subrow"><span class="swatch-line dashed" style="border-color:#ffd24f"></span> Observed (dashed)</div>
-    <div class="layer-row"><input type="checkbox" id="layer-fixes" checked>
-      <span class="swatch" style="background:#ffd24f"></span> Fixes (position points)</div>
-    <div class="layer-row"><input type="checkbox" id="layer-windArea" checked>
-      <span class="swatch" style="background:#ff5d5d"></span> Wind area</div>
-    <div class="layer-subrow"><span class="swatch" style="background:#ff5d5d"></span> Current</div>
-    <div class="layer-subrow"><span class="swatch" style="background:#4fa8ff"></span> Forecast</div>
-    <div class="layer-row"><input type="checkbox" id="layer-forecastArea" checked>
-      <span class="swatch" style="background:#b06bff"></span> Forecast track area</div>
-    <div class="layer-row"><input type="checkbox" id="layer-warningArea" checked>
-      <span class="swatch" style="background:#ff7a00"></span> Warning area</div>
-    <div class="layer-row"><input type="checkbox" id="layer-watchArea" checked>
-      <span class="swatch" style="background:#ffe14f"></span> Watch area</div>
-    <div class="layer-row"><input type="checkbox" id="layer-allBulletins">
-      <span class="swatch" style="background:#8892a6"></span> Show all bulletins' tracks (ghost trails)</div>
-    <div class="layer-row"><input type="checkbox" id="layer-bestTrack" checked>
-      <span class="swatch" style="background:#2fd4d9"></span> Best track (interpolated grid, or raw fixes)</div>
-    <div class="layer-row"><input type="checkbox" id="layer-btGale" checked>
-      <span class="swatch" style="background:#ff9ee0"></span> Best track gale-force area (34 kn)</div>
-    <div class="layer-row"><input type="checkbox" id="layer-btStorm" checked>
-      <span class="swatch" style="background:#ff3fb4"></span> Best track storm-force area (48 kn)</div>
-    <div class="layer-row"><input type="checkbox" id="layer-btHurricane" checked>
-      <span class="swatch" style="background:#c4007a"></span> Best track hurricane-force area (64 kn)</div>
-    <div class="layer-row"><input type="checkbox" id="layer-btGaleWindow" checked>
-      <span class="swatch" style="background:#3ddc84"></span> Observed gale area after bulletin (from best-track area)</div>
-    <div class="layer-subrow">From T+<input type="number" id="galeFrom" min="0" max="59" step="1" value="0" style="width:56px"> to T+<input type="number" id="galeTo" min="1" max="60" step="1" value="48" style="width:56px"> h</div>
-    <div class="layer-row"><input type="checkbox" id="layer-towns" checked>
-      <span class="swatch" style="background:#cfd8e6"></span> Towns (TC locations)</div>
-    <div class="layer-note" id="townsNote"></div>
-  </fieldset>
+					<fieldset>
+						<legend>Category colour scale</legend>
+						<div class="legend-scale" id="categoryLegend"></div>
+					</fieldset>
 
-  <fieldset>
-    <legend>Category colour scale</legend>
-    <div class="legend-scale" id="categoryLegend"></div>
-  </fieldset>
+					<fieldset>
+						<legend>Bulletin details</legend>
+						<div id="info">Select a cyclone to begin.</div>
+					</fieldset>
 
-  <fieldset>
-    <legend>Bulletin details</legend>
-    <div id="info">Select a cyclone to begin.</div>
-  </fieldset>
+					<div id="status"></div>
+				</div>
+			</div>
 
-  <div id="status"></div>
-  </div>
-</div>
+			<div id="map"></div>
+		</div>
 
-<div id="map"></div>
-</div>
+		<button
+			id="verificationTab"
+			type="button"
+			title="Open verification table"
+		>
+			Open verification table <span aria-hidden="true">→</span>
+		</button>
 
-<button id="verificationTab" type="button" title="Open verification table">
-  Open verification table <span aria-hidden="true">→</span>
-</button>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"
-        integrity="sha384-2gzcIyrtB96QDjrxsFcJ1O461CWiXJ8fiHgIkJLwTgy4WTktHXTOXt4dviXz9Y5Q" crossorigin=""></script>
-<script src="assets/visualize.js"></script>
-</body>
+		<script
+			src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+			integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+			crossorigin=""
+		></script>
+		<script
+			src="https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"
+			integrity="sha384-2gzcIyrtB96QDjrxsFcJ1O461CWiXJ8fiHgIkJLwTgy4WTktHXTOXt4dviXz9Y5Q"
+			crossorigin=""
+		></script>
+		<script src="assets/visualize.js"></script>
+	</body>
 </html>
