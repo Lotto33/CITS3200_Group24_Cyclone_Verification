@@ -1182,7 +1182,11 @@
 	// layer so a zoom redraws only these, not the wind areas or the gale union.
 	function drawBestTrackMarkers() {
 		bestTrackMarkerLayer.clearLayers();
-		if (comparisonMode || !currentBestTrack || !els.layers.bestTrack.checked)
+		if (
+			comparisonMode ||
+			!currentBestTrack ||
+			!els.layers.bestTrack.checked
+		)
 			return;
 		const points = currentBestTrack.points || [];
 		if (points.length < 2) return;
@@ -1197,7 +1201,11 @@
 			for (let dx = -1; dx <= 1; dx++) {
 				for (let dy = -1; dy <= 1; dy++) {
 					const near = cells.get(`${cx + dx},${cy + dy}`);
-					if (near?.some((q) => pt.distanceTo(q) < MARKER_MIN_SPACING_PX))
+					if (
+						near?.some(
+							(q) => pt.distanceTo(q) < MARKER_MIN_SPACING_PX,
+						)
+					)
 						return false;
 				}
 			}
