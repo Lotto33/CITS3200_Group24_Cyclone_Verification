@@ -9,8 +9,8 @@
 
   const AREA_STYLE = {
     tcWindArea: { color: "#8892a6", fillColor: "#8892a6", fillOpacity: 0.12, weight: 1.5, layerKey: "windArea" },
-    tcForecastArea: { color: "#ff9f43", fillColor: "#ff9f43", fillOpacity: 0.08, weight: 1.5, layerKey: "forecastArea" },
-    tcWarningArea: { color: "#b06bff", fillColor: "#b06bff", fillOpacity: 0.12, weight: 1.5, layerKey: "warningArea" },
+    tcForecastArea: { color: "#b06bff", fillColor: "#b06bff", fillOpacity: 0.08, weight: 1.5, layerKey: "forecastArea" },
+    tcWarningArea: { color: "#ff7a00", fillColor: "#ff7a00", fillOpacity: 0.12, weight: 1.5, layerKey: "warningArea" },
     tcWatchArea: { color: "#ffe14f", fillColor: "#ffe14f", fillOpacity: 0.10, weight: 1.5, layerKey: "watchArea" },
   };
   const WIND_AREA_COLORS = { Current: "#ff5d5d", Forecast: "#4fa8ff" };
