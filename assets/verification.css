@@ -76,6 +76,13 @@ p, caption { color: var(--muted); }
 .instance-status.error { color: #ff7a7a; }
 .results-downloads { margin-top: 18px; }
 .results-downloads h3 { color: var(--muted); font-size: 13px; }
+.download-filter-hint { margin: 4px 0 8px; color: var(--muted); font-size: 12px; }
+.download-search { width: 100%; max-width: 420px; margin: 4px 0 10px; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 13px; }
+.download-search:focus-visible { outline: 2px solid #4fa8ff; outline-offset: 2px; }
+.download-type-filters { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.download-type-filters legend { float: none; width: auto; margin: 0; padding: 0 4px; color: var(--muted); font-size: 12px; }
+.download-type-filters label { display: inline-flex; align-items: center; gap: 5px; color: var(--text); font-size: 12px; cursor: pointer; }
+.download-type-filters input { accent-color: #4fa8ff; }
 .results-downloads ul { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .api-result-table { display: block; max-height: 65vh; overflow: auto; }
 .action-row { display: flex; align-items: center; gap: 16px; margin-top: 20px; flex-wrap: wrap; }

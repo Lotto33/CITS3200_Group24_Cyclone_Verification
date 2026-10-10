@@ -2,6 +2,17 @@
 // The API accepts one state and season per request; selected filters expand into request combinations.
 (function () {
     "use strict";
+    const DOWNLOAD_TYPES = [
+        "table_a", "table_b", "table_c", "table_d", "contingency_summary", "contingency_matrix",
+    ];
+    const DOWNLOAD_TYPE_LABELS = {
+        table_a: "Table A",
+        table_b: "Table B",
+        table_c: "Table C",
+        table_d: "Table D",
+        contingency_summary: "Contingency summary",
+        contingency_matrix: "Contingency matrix",
+    };
     const API_BASE = "/api/v1";
     const ALL_VALUE = "__all__";
     const SUPPORTED_STATES = ["NT", "QLD", "WA"];
@@ -16,6 +27,7 @@
     let latestFiles = [];
     const filesByInstance = new Map();
     const combinedFilesByInstance = new Map();
+    const downloadFiltersByInstance = new Map();
     const initializedInstances = new WeakSet();
     if (!tableInstances || !firstInstance)
         return;
@@ -588,8 +600,19 @@
         anchor.click();
         URL.revokeObjectURL(url);
     }
+    function downloadTypeForFilename(filename) {
+        for (const type of ["table_a", "table_b", "table_c", "table_d"]) {
+            if (filename.endsWith(`_${type}.csv`) || filename.startsWith(`combined_${type}_`))
+                return type;
+        }
+        if (filename.endsWith("_contingency_summary.csv"))
+            return "contingency_summary";
+        if (filename.endsWith("_contingency_matrix.csv"))
+            return "contingency_matrix";
+        return null;
+    }
     async function showRunFiles(instance, files, ids, stats, baseTimeHours) {
-        var _a;
+        var _a, _b;
         const candidates = Object.keys(files).filter((name) => isCurrentRunFile(name, ids, baseTimeHours));
         const dates = candidates.map((name) => { var _a; return ((_a = name.match(/date-(\d{8})/)) === null || _a === void 0 ? void 0 : _a[1]) || ""; }).sort();
         const latestDate = dates[dates.length - 1] || "";
@@ -632,51 +655,92 @@
         const downloadBox = document.createElement("div");
         downloadBox.className = "results-downloads";
         const title = document.createElement("h3");
-        title.textContent = "Download individual CSVs and existing combined Table D";
+        title.textContent = "Download generated CSV files";
         downloadBox.appendChild(title);
-        const list = document.createElement("ul");
-        latestFiles.forEach((name) => {
-            const li = document.createElement("li");
-            const button = document.createElement("button");
-            button.type = "button";
-            button.textContent = `Download ${name}`;
-            button.addEventListener("click", async () => {
-                button.disabled = true;
-                try {
-                    await downloadFile(name);
-                }
-                catch (error) {
-                    instanceStatus(instance, error.message, true);
-                }
-                finally {
-                    button.disabled = false;
-                }
-            });
-            li.appendChild(button);
-            list.appendChild(li);
+        const helper = document.createElement("p");
+        helper.className = "download-filter-hint";
+        helper.textContent = "Filter this list; the Download contingency tables button above still downloads every file.";
+        downloadBox.appendChild(helper);
+        const filterState = (_b = downloadFiltersByInstance.get(instanceKey)) !== null && _b !== void 0 ? _b : {
+            query: "",
+            types: new Set(DOWNLOAD_TYPES),
+        };
+        downloadFiltersByInstance.set(instanceKey, filterState);
+        const entries = latestFiles.flatMap((filename) => {
+            const type = downloadTypeForFilename(filename);
+            return type ? [{ filename, type, download: () => downloadFile(filename) }] : [];
         });
-        if (!latestFiles.length) {
-            const li = document.createElement("li");
-            li.textContent = "No CSV files returned for the current date.";
-            list.appendChild(li);
-        }
-        downloadBox.appendChild(list);
-        if (combinedDownloads.length) {
-            const combinedTitle = document.createElement("h3");
-            combinedTitle.textContent = "Download combined Tables A–C";
-            downloadBox.appendChild(combinedTitle);
-            const combinedList = document.createElement("ul");
-            combinedDownloads.forEach(({ filename, content }) => {
+        combinedDownloads.forEach(({ filename, content }) => {
+            const type = downloadTypeForFilename(filename);
+            if (type)
+                entries.push({ filename, type, download: () => downloadCsvContent(filename, content) });
+        });
+        const search = document.createElement("input");
+        search.type = "search";
+        search.className = "download-search";
+        search.placeholder = "Search generated filenames…";
+        search.setAttribute("aria-label", "Filter generated CSV files by filename");
+        search.value = filterState.query;
+        downloadBox.appendChild(search);
+        const typeFilters = document.createElement("fieldset");
+        typeFilters.className = "download-type-filters";
+        const typeLegend = document.createElement("legend");
+        typeLegend.textContent = "File types";
+        typeFilters.appendChild(typeLegend);
+        DOWNLOAD_TYPES.forEach((type) => {
+            const label = document.createElement("label");
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = filterState.types.has(type);
+            checkbox.addEventListener("change", () => {
+                if (checkbox.checked)
+                    filterState.types.add(type);
+                else
+                    filterState.types.delete(type);
+                renderFilteredDownloads();
+            });
+            label.append(checkbox, ` ${DOWNLOAD_TYPE_LABELS[type]}`);
+            typeFilters.appendChild(label);
+        });
+        downloadBox.appendChild(typeFilters);
+        const list = document.createElement("ul");
+        const resultCount = document.createElement("p");
+        resultCount.className = "download-filter-hint";
+        downloadBox.append(list, resultCount);
+        function renderFilteredDownloads() {
+            filterState.query = search.value;
+            const query = filterState.query.trim().toLowerCase();
+            const visible = entries.filter((entry) => filterState.types.has(entry.type)
+                && entry.filename.toLowerCase().includes(query));
+            list.replaceChildren();
+            visible.forEach((entry) => {
                 const li = document.createElement("li");
                 const button = document.createElement("button");
                 button.type = "button";
-                button.textContent = `Download ${filename}`;
-                button.addEventListener("click", () => downloadCsvContent(filename, content));
+                button.textContent = `Download ${entry.filename}`;
+                button.addEventListener("click", async () => {
+                    button.disabled = true;
+                    try {
+                        await entry.download();
+                    }
+                    catch (error) {
+                        instanceStatus(instance, error.message, true);
+                    }
+                    finally {
+                        button.disabled = false;
+                    }
+                });
                 li.appendChild(button);
-                combinedList.appendChild(li);
+                list.appendChild(li);
             });
-            downloadBox.appendChild(combinedList);
+            resultCount.textContent = visible.length
+                ? `Showing ${visible.length} of ${entries.length} file(s).`
+                : entries.length
+                    ? "No files match the current filter."
+                    : "No CSV files returned for the current date.";
         }
+        search.addEventListener("input", renderFilteredDownloads);
+        renderFilteredDownloads();
         const target = matrixPanel || instance;
         target.appendChild(downloadBox);
     }
@@ -854,6 +918,7 @@
         clone.querySelectorAll(".metrics").forEach((output) => output.remove());
         filesByInstance.delete(String(number));
         combinedFilesByInstance.delete(String(number));
+        downloadFiltersByInstance.delete(String(number));
         tableInstances.appendChild(clone);
         initializeInstance(clone);
         updateTableControls();
@@ -869,6 +934,7 @@
             if (instance === null || instance === void 0 ? void 0 : instance.dataset.instance) {
                 filesByInstance.delete(instance.dataset.instance);
                 combinedFilesByInstance.delete(instance.dataset.instance);
+                downloadFiltersByInstance.delete(instance.dataset.instance);
             }
             instance === null || instance === void 0 ? void 0 : instance.remove();
             updateTableControls();
@@ -961,9 +1027,13 @@
         for (const key of combinedFilesByInstance.keys())
             if (key !== "1")
                 combinedFilesByInstance.delete(key);
+        for (const key of downloadFiltersByInstance.keys())
+            if (key !== "1")
+                downloadFiltersByInstance.delete(key);
         populateInstanceFilters(firstInstance);
         filesByInstance.delete("1");
         combinedFilesByInstance.delete("1");
+        downloadFiltersByInstance.delete("1");
         restorePanelPlaceholders(firstInstance);
         firstInstance.querySelectorAll(".table-panel").forEach((panel, index) => { panel.hidden = index !== 0; });
         firstInstance.querySelectorAll(".tab-button").forEach((tab, index) => {
