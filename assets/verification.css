@@ -54,16 +54,20 @@ p, caption { color: var(--muted); }
 .remove-instance { border: 1px solid #ff7a7a; border-radius: 6px; background: transparent; color: #ff7a7a; padding: 8px 12px; cursor: pointer; font: inherit; font-size: 13px; }
 .remove-instance:hover, .remove-instance:focus-visible { background: #3b2228; }
 .remove-instance:disabled { border-color: var(--border); color: var(--muted); cursor: not-allowed; background: transparent; }
-.filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-.filter-field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; align-items: stretch; }
+.filter-field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 0; }
+.filter-grid:not(.filter-grid-params) .filter-field { display: grid; grid-template-rows: auto 174px; gap: 6px; min-width: 0; }
+.filter-control-box { display: flex; flex-direction: column; width: 100%; height: 174px; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: #0f1522; }
 .filter-field select { width: 100%; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
 .filter-field select:focus-visible { outline: 2px solid #4fa8ff; outline-offset: 2px; }
-.filter-field select[multiple] { min-height: 132px; }
-.filter-field input[type="search"] { width: 100%; margin-bottom: 6px; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
+.filter-grid:not(.filter-grid-params) .filter-control-box select[multiple] { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; padding: 7px 10px; background: transparent; }
+.filter-field input[type="search"] { width: 100%; min-width: 0; height: 40px; min-height: 40px; flex: 0 0 40px; margin: 0; background: #0f1522; color: var(--text); border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 8px 10px; font: inherit; font-size: 13px; }
 .filter-field input[type="search"]:focus-visible { outline: 2px solid #4fa8ff; outline-offset: 2px; }
 .filter-hint { margin: 8px 0 0; font-size: 12px; }
 .filter-field input[type="number"] { width: 100%; background: #0f1522; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font: inherit; font-size: 13px; }
-.filter-grid-params { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
+.filter-grid-params { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
+.filter-grid-params .filter-field { min-width: 0; }
+.filter-grid-params .filter-field select, .filter-grid-params .filter-field input[type="number"] { width: 100%; height: 40px; min-height: 40px; }
 .base-time-filter { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; }
 .base-time-filter legend { padding: 0 6px; color: var(--muted); font-size: 12px; }
 .base-time-filter label { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; cursor: pointer; }
@@ -111,4 +115,4 @@ td { background: var(--panel); }
 .highlight { color: #3ddc84; font-weight: 700; }
 .metrics { display: flex; flex-wrap: wrap; gap: 12px 28px; color: var(--muted); margin-top: 16px; }
 .metrics b { color: var(--text); }
-@media (max-width: 640px) { .verification-page { padding: 20px 12px; overflow-x: auto; } .instance-heading { align-items: flex-start; flex-direction: column; } .filter-grid { grid-template-columns: 1fr; } .contingency-table { min-width: 620px; } }
+@media (max-width: 640px) { .verification-page { padding: 20px 12px; overflow-x: auto; } .instance-heading { align-items: flex-start; flex-direction: column; } .filter-grid { grid-template-columns: minmax(0, 1fr); } .filter-grid:not(.filter-grid-params) .filter-field { grid-template-rows: auto 174px; } .contingency-table { min-width: 620px; } }
