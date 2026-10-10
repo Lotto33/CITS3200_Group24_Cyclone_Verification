@@ -889,7 +889,7 @@
   function syncFixesToggle() {
     const tracksOn = els.layers.tracks.checked;
     els.layers.fixes.disabled = !tracksOn;
-    const label = els.layers.fixes.closest("label");
+    const label = els.layers.fixes.closest(".layer-row");
     if (label) {
       label.style.opacity = tracksOn ? "" : "0.45";
       label.title = tracksOn ? "" : "Fixes are only shown when Tracks is enabled";
