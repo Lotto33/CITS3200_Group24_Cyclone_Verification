@@ -167,7 +167,7 @@
     localStorage.setItem("cycloneVerification", JSON.stringify({
       distId: bulletin?.distId || els.cyclone.value,
       distName: bulletin?.distName,
-      bulletin: bulletin ? `${currentIdx + 1}/${currentBulletins.length} — ${fmtTime(bulletin.issueTime)}` : null,
+      bulletin: bulletin ? `${currentIdx + 1}/${currentBulletins.length} — ${fmtTime(bulletin.fcastTime)}` : null,
     }));
     window.location.href = "verification.html";
   }
@@ -701,8 +701,9 @@
         return res.json();
       }));
       currentBulletins = results.flat().sort((a, b) =>
-        (a.issueTime || "").localeCompare(b.issueTime || "") ||
-        (a.source || "").localeCompare(b.source || "")
+        (a.fcastTime || "").localeCompare(b.fcastTime || "") ||
+        (a.source || "").localeCompare(b.source || "") ||
+        (a.issueTime || "").localeCompare(b.issueTime || "")
       );
       setStatus("");
     } catch (err) {
@@ -898,10 +899,10 @@
     els.prev.disabled = currentIdx === 0;
     els.next.disabled = currentIdx === currentBulletins.length - 1;
     els.slider.value = currentIdx;
-    els.label.innerHTML = `Bulletin <b>${currentIdx + 1}/${currentBulletins.length}</b> — issued ${fmtTime(b.issueTime)}`;
+    els.label.innerHTML = `Bulletin <b>${currentIdx + 1}/${currentBulletins.length}</b> — ${fmtTime(b.fcastTime)}`;
     els.info.innerHTML = `<b>${b.distName || ""}</b> (${b.distId})<br>
-      Source: ${b.source}<br>Forecast base time: ${fmtTime(b.fcastTime)}<br>
-      Issue time: ${fmtTime(b.issueTime)}<br>Expiry: ${b.expiryHrs || "?"} hrs<br>
+      Source: ${b.source}<br>Time: ${fmtTime(b.fcastTime)}<br>
+      Issued: ${fmtTime(b.issueTime)}<br>Expiry: ${b.expiryHrs || "?"} hrs<br>
       Tracks: ${b.tracks.length}, Fixes: ${b.fixes.length}, Areas: ${b.areas.length}<br>
       Best track: ${bestTrackSummary()}`;
 
