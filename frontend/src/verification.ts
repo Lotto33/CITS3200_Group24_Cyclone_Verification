@@ -68,11 +68,23 @@
 		forecast_level: string;
 	}
 	const DOWNLOAD_TYPES = [
-		"table_a", "table_b", "table_c", "table_d", "contingency_summary", "contingency_matrix",
+		"table_a",
+		"table_b",
+		"table_c",
+		"table_d",
+		"contingency_summary",
+		"contingency_matrix",
 	] as const;
-	type DownloadType = typeof DOWNLOAD_TYPES[number];
-	interface DownloadFilterState { query: string; types: Set<DownloadType> }
-	interface DownloadEntry { filename: string; type: DownloadType; download: () => Promise<void> | void }
+	type DownloadType = (typeof DOWNLOAD_TYPES)[number];
+	interface DownloadFilterState {
+		query: string;
+		types: Set<DownloadType>;
+	}
+	interface DownloadEntry {
+		filename: string;
+		type: DownloadType;
+		download: () => Promise<void> | void;
+	}
 	const DOWNLOAD_TYPE_LABELS: Record<DownloadType, string> = {
 		table_a: "Table A",
 		table_b: "Table B",
@@ -97,7 +109,10 @@
 	let states: string[] = [];
 	let latestFiles: string[] = [];
 	const filesByInstance = new Map<string, string[]>();
-	const combinedFilesByInstance = new Map<string, Array<{ filename: string; content: string }>>();
+	const combinedFilesByInstance = new Map<
+		string,
+		Array<{ filename: string; content: string }>
+	>();
 	const downloadFiltersByInstance = new Map<string, DownloadFilterState>();
 	const initializedInstances = new WeakSet<HTMLElement>();
 
@@ -383,38 +398,93 @@
 		const normalized = message.toLowerCase();
 		if (description.toLowerCase().includes("bom")) {
 			if (normalized.startsWith("starting bom best-track refresh")) {
-				return { label: "Step 1 of 5 · Preparing refresh", percentage: 10 };
+				return {
+					label: "Step 1 of 5 · Preparing refresh",
+					percentage: 10,
+				};
 			}
-			if (normalized.startsWith("downloading current bom best-track csv")) {
-				return { label: "Step 2 of 5 · Downloading best-track data from BOM", percentage: 25 };
+			if (
+				normalized.startsWith("downloading current bom best-track csv")
+			) {
+				return {
+					label: "Step 2 of 5 · Downloading best-track data from BOM",
+					percentage: 25,
+				};
 			}
 			if (normalized.startsWith("downloaded ")) {
-				return { label: "Step 2 of 5 · Downloading best-track data from BOM", percentage: 40 };
+				return {
+					label: "Step 2 of 5 · Downloading best-track data from BOM",
+					percentage: 40,
+				};
 			}
 			if (normalized.startsWith("validating downloaded best-track csv")) {
-				return { label: "Step 3 of 5 · Validating the downloaded CSV", percentage: 50 };
+				return {
+					label: "Step 3 of 5 · Validating the downloaded CSV",
+					percentage: 50,
+				};
 			}
-			if (normalized.startsWith("=== database ingest: best-track observations ===")) {
-				return { label: "Step 4 of 5 · Importing best-track observations", percentage: 65 };
+			if (
+				normalized.startsWith(
+					"=== database ingest: best-track observations ===",
+				)
+			) {
+				return {
+					label: "Step 4 of 5 · Importing best-track observations",
+					percentage: 65,
+				};
 			}
 			if (normalized.startsWith("database best-track ingest:")) {
-				return { label: "Step 4 of 5 · Best-track observations imported", percentage: 75 };
+				return {
+					label: "Step 4 of 5 · Best-track observations imported",
+					percentage: 75,
+				};
 			}
 			if (normalized.startsWith("=== database interpolation ===")) {
-				return { label: "Step 5 of 5 · Interpolating track positions and wind radii", percentage: 85 };
+				return {
+					label: "Step 5 of 5 · Interpolating track positions and wind radii",
+					percentage: 85,
+				};
 			}
 			if (normalized.startsWith("database interpolation:")) {
-				return { label: "Step 5 of 5 · Interpolated track saved", percentage: 95 };
+				return {
+					label: "Step 5 of 5 · Interpolated track saved",
+					percentage: 95,
+				};
 			}
 			return null;
 		}
-		if (normalized.startsWith("step 1 of 5")) return { label: "Step 1 of 5 · Extracting GML archive", percentage: 20 };
-		if (normalized.startsWith("extracted ")) return { label: "Step 2 of 5 · Checking extracted GML files", percentage: 30 };
-		if (normalized.startsWith("step 3 of 5")) return { label: "Step 3 of 5 · Generating viewer datasets", percentage: 45 };
-		if (normalized.startsWith("converting gml bulletins")) return { label: "Step 3 of 5 · Converting GML to JSON and GeoJSON", percentage: 55 };
-		if (normalized.startsWith("static viewer datasets generated")) return { label: "Step 4 of 5 · Loading bulletins into the database", percentage: 75 };
-		if (normalized.startsWith("step 4 of 5")) return { label: "Step 4 of 5 · Loading bulletins into the database", percentage: 80 };
-		if (normalized.startsWith("database gml ingest:")) return { label: "Step 5 of 5 · Saving complete", percentage: 95 };
+		if (normalized.startsWith("step 1 of 5"))
+			return {
+				label: "Step 1 of 5 · Extracting GML archive",
+				percentage: 20,
+			};
+		if (normalized.startsWith("extracted "))
+			return {
+				label: "Step 2 of 5 · Checking extracted GML files",
+				percentage: 30,
+			};
+		if (normalized.startsWith("step 3 of 5"))
+			return {
+				label: "Step 3 of 5 · Generating viewer datasets",
+				percentage: 45,
+			};
+		if (normalized.startsWith("converting gml bulletins"))
+			return {
+				label: "Step 3 of 5 · Converting GML to JSON and GeoJSON",
+				percentage: 55,
+			};
+		if (normalized.startsWith("static viewer datasets generated"))
+			return {
+				label: "Step 4 of 5 · Loading bulletins into the database",
+				percentage: 75,
+			};
+		if (normalized.startsWith("step 4 of 5"))
+			return {
+				label: "Step 4 of 5 · Loading bulletins into the database",
+				percentage: 80,
+			};
+		if (normalized.startsWith("database gml ingest:"))
+			return { label: "Step 5 of 5 · Saving complete", percentage: 95 };
 		return null;
 	}
 
@@ -487,8 +557,12 @@
 	): Promise<void> {
 		byId<HTMLOListElement>("uploadBackendMessages").replaceChildren();
 		updateUploadProgress(
-			file ? "Preparing upload" : "Step 1 of 5 · Requesting BOM best track",
-			file ? `${file.name} · ${formatBytes(file.size)} · ${description}` : description,
+			file
+				? "Preparing upload"
+				: "Step 1 of 5 · Requesting BOM best track",
+			file
+				? `${file.name} · ${formatBytes(file.size)} · ${description}`
+				: description,
 			file ? 0 : 10,
 		);
 		await uploadFile(file, endpoint, description);
@@ -807,18 +881,33 @@
 	}
 
 	function combineCsvTexts(texts: string[]): string {
-		const parsedFiles = texts.map(csvRows).filter((rows) => rows.length > 0);
+		const parsedFiles = texts
+			.map(csvRows)
+			.filter((rows) => rows.length > 0);
 		if (!parsedFiles.length) return "";
 		const headers = parsedFiles[0][0];
 		const dataRows = parsedFiles.flatMap((rows) => {
 			const header = rows[0];
-			if (header.length !== headers.length || header.some((value, index) => value !== headers[index])) {
-				throw new Error("Generated CSV files for this table have different columns and cannot be combined.");
+			if (
+				header.length !== headers.length ||
+				header.some((value, index) => value !== headers[index])
+			) {
+				throw new Error(
+					"Generated CSV files for this table have different columns and cannot be combined.",
+				);
 			}
 			return rows.slice(1);
 		});
 		return [headers, ...dataRows]
-			.map((row) => row.map((value) => /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value).join(","))
+			.map((row) =>
+				row
+					.map((value) =>
+						/[",\r\n]/.test(value)
+							? `"${value.replace(/"/g, '""')}"`
+							: value,
+					)
+					.join(","),
+			)
 			.join("\r\n");
 	}
 
@@ -829,7 +918,9 @@
 		const table = document.createElement("table");
 		table.className = "contingency-table api-result-table";
 		const caption = document.createElement("caption");
-		const sourceCount = texts.filter((text) => csvRows(text).length > 0).length;
+		const sourceCount = texts.filter(
+			(text) => csvRows(text).length > 0,
+		).length;
 		caption.textContent = `Combined rows from ${sourceCount} generated CSV file${sourceCount === 1 ? "" : "s"}`;
 		table.appendChild(caption);
 		const thead = document.createElement("thead");
@@ -859,9 +950,10 @@
 						formatCycloneTime: (value: string) => string;
 					}
 				).formatCycloneTime;
-				const numericDistance = distanceColumns.includes(index) && value.trim() !== ""
-					? Number(value)
-					: Number.NaN;
+				const numericDistance =
+					distanceColumns.includes(index) && value.trim() !== ""
+						? Number(value)
+						: Number.NaN;
 				cell.textContent = timeColumns.includes(index)
 					? formatTime(value)
 					: Number.isFinite(numericDistance)
@@ -985,11 +1077,22 @@
 	}
 
 	function downloadTypeForFilename(filename: string): DownloadType | null {
-		for (const type of ["table_a", "table_b", "table_c", "table_d"] as const) {
-			if (filename.endsWith(`_${type}.csv`) || filename.startsWith(`combined_${type}_`)) return type;
+		for (const type of [
+			"table_a",
+			"table_b",
+			"table_c",
+			"table_d",
+		] as const) {
+			if (
+				filename.endsWith(`_${type}.csv`) ||
+				filename.startsWith(`combined_${type}_`)
+			)
+				return type;
 		}
-		if (filename.endsWith("_contingency_summary.csv")) return "contingency_summary";
-		if (filename.endsWith("_contingency_matrix.csv")) return "contingency_matrix";
+		if (filename.endsWith("_contingency_summary.csv"))
+			return "contingency_summary";
+		if (filename.endsWith("_contingency_matrix.csv"))
+			return "contingency_matrix";
 		return null;
 	}
 
@@ -1016,7 +1119,8 @@
 		);
 		const instanceKey = instance.dataset.instance || "1";
 		filesByInstance.set(instanceKey, latestFiles);
-		const combinedDownloads: Array<{ filename: string; content: string }> = [];
+		const combinedDownloads: Array<{ filename: string; content: string }> =
+			[];
 		const panelMap: Record<string, string> = {
 			table_a: "#panel-area-1",
 			table_b: "#panel-track-1",
@@ -1029,20 +1133,29 @@
 				baseSelector.replace(/-1$/, `-${instance.dataset.instance}`),
 				`No ${suffix.replace("table_", "Table ").toUpperCase()} CSV returned for this selection.`,
 			);
-			const matchingFiles = latestFiles.filter((name) =>
-				!name.startsWith("combined_") && name.endsWith(`_${suffix}.csv`),
+			const matchingFiles = latestFiles.filter(
+				(name) =>
+					!name.startsWith("combined_") &&
+					name.endsWith(`_${suffix}.csv`),
 			);
 			if (panel && matchingFiles.length) {
 				try {
-					const texts = await Promise.all(matchingFiles.map(async (file) => {
-						const response = await fetch(
-							`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`,
-						);
-						if (!response.ok)
-							throw new Error(`Could not load ${file} (HTTP ${response.status})`);
-						return response.text();
-					}));
-					if (matchingFiles.length > 1 && ["table_a", "table_b", "table_c"].includes(suffix)) {
+					const texts = await Promise.all(
+						matchingFiles.map(async (file) => {
+							const response = await fetch(
+								`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`,
+							);
+							if (!response.ok)
+								throw new Error(
+									`Could not load ${file} (HTTP ${response.status})`,
+								);
+							return response.text();
+						}),
+					);
+					if (
+						matchingFiles.length > 1 &&
+						["table_a", "table_b", "table_c"].includes(suffix)
+					) {
 						combinedDownloads.push({
 							filename: `combined_${suffix}_${latestDate}.csv`,
 							content: combineCsvTexts(texts),
@@ -1069,7 +1182,8 @@
 		downloadBox.appendChild(title);
 		const helper = document.createElement("p");
 		helper.className = "download-filter-hint";
-		helper.textContent = "Filter this list; the Download contingency tables button above still downloads every file.";
+		helper.textContent =
+			"Filter this list; the Download contingency tables button above still downloads every file.";
 		downloadBox.appendChild(helper);
 		const filterState = downloadFiltersByInstance.get(instanceKey) ?? {
 			query: "",
@@ -1078,17 +1192,27 @@
 		downloadFiltersByInstance.set(instanceKey, filterState);
 		const entries: DownloadEntry[] = latestFiles.flatMap((filename) => {
 			const type = downloadTypeForFilename(filename);
-			return type ? [{ filename, type, download: () => downloadFile(filename) }] : [];
+			return type
+				? [{ filename, type, download: () => downloadFile(filename) }]
+				: [];
 		});
 		combinedDownloads.forEach(({ filename, content }) => {
 			const type = downloadTypeForFilename(filename);
-			if (type) entries.push({ filename, type, download: () => downloadCsvContent(filename, content) });
+			if (type)
+				entries.push({
+					filename,
+					type,
+					download: () => downloadCsvContent(filename, content),
+				});
 		});
 		const search = document.createElement("input");
 		search.type = "search";
 		search.className = "download-search";
 		search.placeholder = "Search generated filenames…";
-		search.setAttribute("aria-label", "Filter generated CSV files by filename");
+		search.setAttribute(
+			"aria-label",
+			"Filter generated CSV files by filename",
+		);
 		search.value = filterState.query;
 		downloadBox.appendChild(search);
 		const typeFilters = document.createElement("fieldset");
@@ -1117,8 +1241,11 @@
 		function renderFilteredDownloads(): void {
 			filterState.query = search.value;
 			const query = normalizeDownloadSearchText(filterState.query);
-			const visible = entries.filter((entry) => filterState.types.has(entry.type)
-				&& normalizeDownloadSearchText(entry.filename).includes(query));
+			const visible = entries.filter(
+				(entry) =>
+					filterState.types.has(entry.type) &&
+					normalizeDownloadSearchText(entry.filename).includes(query),
+			);
 			list.replaceChildren();
 			visible.forEach((entry) => {
 				const li = document.createElement("li");
@@ -1127,9 +1254,17 @@
 				button.textContent = `Download ${entry.filename}`;
 				button.addEventListener("click", async () => {
 					button.disabled = true;
-					try { await entry.download(); }
-					catch (error) { instanceStatus(instance, (error as Error).message, true); }
-					finally { button.disabled = false; }
+					try {
+						await entry.download();
+					} catch (error) {
+						instanceStatus(
+							instance,
+							(error as Error).message,
+							true,
+						);
+					} finally {
+						button.disabled = false;
+					}
 				});
 				li.appendChild(button);
 				list.appendChild(li);
@@ -1411,7 +1546,9 @@
 
 	byId<HTMLButtonElement>("addTableBtn").addEventListener("click", () => {
 		if (tableInstances.children.length >= 5) return;
-		const numbers = [...tableInstances.children].map((child) => Number((child as HTMLElement).dataset.instance));
+		const numbers = [...tableInstances.children].map((child) =>
+			Number((child as HTMLElement).dataset.instance),
+		);
 		const number = Math.max(...numbers) + 1;
 		const clone = firstInstance.cloneNode(true) as HTMLElement;
 		clone.dataset.instance = String(number);
@@ -1530,11 +1667,17 @@
 			}
 			const button = byId<HTMLButtonElement>("downloadContingencyBtn");
 			button.disabled = true;
-			status(`Downloading ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s)…`);
+			status(
+				`Downloading ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s)…`,
+			);
 			try {
 				for (const filename of filenames) await downloadFile(filename);
-				combinedFiles.forEach(({ filename, content }) => downloadCsvContent(filename, content));
-				status(`Downloaded ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s).`);
+				for (const { filename, content } of combinedFiles) {
+					downloadCsvContent(filename, content);
+				}
+				status(
+					`Downloaded ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s).`,
+				);
 			} catch (error) {
 				status(
 					`Contingency-table download failed: ${(error as Error).message}`,

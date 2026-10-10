@@ -1482,9 +1482,9 @@
 		);
 		try {
 			for (const filename of filenames) await downloadFile(filename);
-			combinedFiles.forEach(({ filename, content }) =>
-				downloadCsvContent(filename, content),
-			);
+			for (const { filename, content } of combinedFiles) {
+				downloadCsvContent(filename, content);
+			}
 			status(
 				`Downloaded ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s).`,
 			);
