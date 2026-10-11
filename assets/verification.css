@@ -1082,3 +1082,18 @@ td {
 		min-width: 620px;
 	}
 }
+
+.best-track-warning {
+	margin: 10px 0;
+	padding: 8px 12px;
+	border: 1px solid rgba(248, 113, 113, 0.35);
+	border-radius: 6px;
+	background: rgba(248, 113, 113, 0.06);
+	color: #f87171;
+	font-size: 0.8rem;
+	line-height: 1.4;
+}
+
+.best-track-warning[hidden] {
+	display: none;
+}
