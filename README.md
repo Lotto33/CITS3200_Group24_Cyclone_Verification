@@ -25,11 +25,162 @@ The deliverables are:
 2. A Python codebase that ingests the provided data and outputs verification statistics.
 3. A web app for post processing, applies filtering, create verification contingency tables and metric, and output the data tables as a CSV.
 
+## User Guide
+
+Once the app is running, open its home page and choose **Open visualizer** or
+**Open verification**. The home page checks backend readiness when either
+link is selected; the destination opens in a new tab. The two pages share the
+same backend and cyclone data. You can also move between them using **Open
+verification table** in the visualizer and **← Back to visualizer** on the
+verification page.
+
+### Explore bulletins in the visualizer
+
+![Visualiser Narelle](docs/screenshots/visualizer-narelle.png)
+
+1. Choose a **Cyclone / event (distId)** from the sidebar. The option includes
+   the cyclone name and ID, bulletin count, and first issue time. A `★` means
+   best-track data is available.
+2. Use the **Bulletin (base time / issue time)** slider or the previous/next
+   buttons to step through bulletins. Select **Play through bulletins** to
+   advance automatically; moving the slider or stepping manually stops
+   playback. The map normally zooms to the selected bulletin's features.
+3. Use the **Layers** checkboxes to focus on the information you need:
+   - **Forecast track** and **Fixes (position points)** show the forecast
+     track and its position points. Fixes depend on the forecast-track layer.
+   - **Wind area**, **Warning area**, and **Watch area** show the respective
+     bulletin polygons. Analysis and forecast wind areas use different
+     colours.
+   - **Confidence cones** has a separate toggle for each forecast extent
+     present in the selected cyclone's data.
+   - **Show all bulletins' tracks (ghost trails)** adds faint tracks from
+     other bulletins for context.
+   - **Best track (interpolated grid, or raw fixes)** displays the post-event
+     track when available. Its gale-, storm-, and hurricane-force wind areas
+     (34, 48, and 64 kn) have independent toggles.
+   - **Observed gale area after bulletin** displays best-track gale areas in
+     a time window after the selected bulletin. Set **From T+** and **to T+**
+     to adjust the window in hours (default 0–48; the supported range is
+     0–60 hours).
+   - **Towns (TC locations)** shows the reference towns. Hover over a town
+     marker for its name and click it for its details.
+4. Read **Bulletin details** for the selected bulletin's issue/base times,
+   source, expiry and feature counts. Click map features for additional
+   details where a popup is available. The category colour scale identifies
+   cyclone categories for position fixes.
+
+Use **Visualizer Options** to hide or reopen the sidebar and give the map
+more room. **Open verification table** carries the selected cyclone and
+bulletin context to the verification page, where the cyclone is preselected
+and a table generation is started after the filters load. You can pan and
+zoom the map with the mouse or trackpad. The visualizer tries to show the
+interpolated best track from the API first and can fall back to raw fixes;
+wind-radii areas and comparison areas require available best-track radii.
+
+
+
+### Compare best tracks
+
+![Visualiser Narelle](docs/screenshots/compare_best_track.png)
+
+Select **Compare best tracks** to compare tracks in place of the normal
+bulletin controls. Choose cyclones in the selectors; **+ Add cyclone** adds
+another selector, up to five. Each best track has its own colour. Choose
+which **Gale-force area (34 kn)**, **Storm-force area (48 kn)**, and
+**Hurricane-force area (64 kn)** radii to draw. When an area is selected, use
+the **Wind-radii analysis point** slider or Earlier/Later buttons to step
+through available radii records. A cyclone without radii for the selected
+threshold may not show an area. Select **×** or **Back to visualizer options**
+to leave comparison mode.
+
+### Upload or refresh data
+
+- Select **Upload GML archive** in the visualizer or **Upload GML Archive**
+  on the verification page to submit a `.zip` of GML bulletins. The archive
+  must follow the folder layout described in
+  [Uploading a GML archive](#uploading-a-gml-archive). The page reports
+  processing progress; when it completes, cyclone/filter options reload.
+- Select **Refresh best track from BOM** to request the latest best-track
+  data from the Bureau. The page reports progress while the data is
+  downloaded, validated, imported, and interpolated, then reloads the
+  relevant cyclone or filter data. These actions require a running backend
+  with network access to BOM. They do not automatically regenerate existing
+  verification tables; generate the tables again after refreshing data if
+  you want updated results.
+
+### Generate and review verification tables
+
+![Verification](docs/screenshots/verification.png)
+
+Each **Verification table** section is an independent analysis. Set its
+filters, then select **Generate / refresh tables**:
+
+- **Cyclone**: search by name or ID and select one or more cyclones. If no
+  cyclone is selected, select one or more **Season** values to run a
+  season-wide analysis. The **State / region** and **Season** filters can be
+  combined with cyclone selections.
+- **State / region**, **Season**, and **Cyclone** are multi-select lists.
+  Click options to toggle them; no Cmd/Ctrl-click is needed. Search narrows
+  the cyclone list but keeps already-selected cyclones visible. Choosing an
+  “All” option clears other selections in that list; choosing a specific
+  option clears “All”.
+- Seasons available in the verification page are limited to 2016–17 through
+  2025–26. Selecting both cyclones and seasons limits the run to those
+  cyclones in the selected seasons; the state/region selection is applied to
+  the same run.
+- Choose **Warning (0–24 h)** or **Watch (24–48 h)**. This fills the start/end
+  offsets with that standard window; you can edit the whole-hour offsets
+  yourself as long as the end is later than the start.
+- Choose the forecast **Base times (UTC)** to include: 00:00, 06:00, 12:00,
+  and/or 18:00. At least one base time is required.
+
+The page reports progress and displays results in tabs: **Table A: Forecast
+table**, **Table B: Observations**, **Table C: Filtered observations**,
+**Table D: Final forecast vs observations**, and **Contingency matrix**. The
+matrix tab shows hits, false alarms, misses, correct negatives, totals, and
+the Accuracy, Precision, Recall, F1 score, FAR, CSI, and Bias metrics. If a
+selected cyclone/season has no best-track data, a warning explains that
+observed gales are assumed absent for that verification; take this into
+account when interpreting the scores. In the matrix, a **hit** is a forecast
+and an observed gale, a **false alarm** is a forecast without an observed
+gale, a **miss** is an observed gale without a forecast, and a **correct
+negative** is neither. Accuracy measures all correct classifications;
+Precision measures the share of forecast events that were observed; Recall
+measures the share of observed events that were forecast. F1 combines
+Precision and Recall, FAR is the false-alarm ratio among forecasts, CSI is
+the share of hits among hits/false alarms/misses, and Bias compares forecast
+event frequency with observed event frequency.
+
+Use **+ Add table** to compare up to five different filter sets on one page.
+Each has its own generate button and results. **Remove table** removes an
+additional table; the first table cannot be removed. **Reset** removes extra
+tables and clears the displayed results and download lists (it does not
+delete files already generated by the backend), restoring the first table's
+default warning window and base-time selections.
+If the page was opened from the visualizer, its saved cyclone/season context
+may remain selected after Reset; check the filters before generating again.
+
+### Download results
+
+![Results](docs/screenshots/Narelle_cont_table.png)
+After generating results, use the **Download generated CSV files** section
+below the tables to search filenames, filter by file type, and download an
+individual Table A–D, contingency summary, or contingency matrix file. Where
+multiple cyclone files are combined for display, combined Table A, B, and C
+downloads are also offered. **Download contingency tables** at the top of
+the page downloads the generated files for all table instances; it is not
+limited by the filename/type filters in an individual download list.
+
+The web pages must be opened from the running app (or another HTTP server),
+not directly as `file://` URLs. The verification page, uploads, best-track
+refresh, and API-backed best-track features require the FastAPI backend to be
+running. For setup and run instructions, see [How to Setup and Run](#how-to-setup-and-run).
+
 ## Assumptions
 
 **The list of towns is fixed.** `backend/app/resources/towns.xlsx` is treated as a static reference list that does not change. If it ever does need to change, replace the file in the repository and rebuild everything derived from it (redo all the steps below).
 
-## The backend database and API
+## How to Setup and Run
 
 `backend/` holds a FastAPI service over a relational database of everything in
 `data/`: the BoM best track, the code lookup tables from
