@@ -106,9 +106,9 @@ container and delete `data/cyclone.db*`.
 
 ## Changing the frontend
 
-The image does not run Node. It uses the committed `assets/verification.js`.
+The image does not run Node. It uses the committed `frontend/assets/verification.js`.
 After editing `frontend/src/verification.ts`, run `npm run build` in
-`frontend/` (see the main README), commit the updated `assets/verification.js`,
+`frontend/` (see the main README), commit the updated `frontend/assets/verification.js`,
 then rebuild the image.
 
 ## Troubleshooting

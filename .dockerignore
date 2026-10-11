@@ -9,7 +9,9 @@
 .pytest_cache
 .ruff_cache
 **/node_modules
-frontend
+frontend/src
+frontend/package*.json
+frontend/tsconfig.json
 docs
 scripts
 

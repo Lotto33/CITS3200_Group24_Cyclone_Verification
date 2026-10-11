@@ -15,9 +15,11 @@ from app.api.v1.router import api_router
 from app.core.config import PROJECT_ROOT, settings
 from app.db.session import engine
 
-VIEWER_PAGE = PROJECT_ROOT / "visualize.html"
-VERIFICATION_PAGE = PROJECT_ROOT / "verification.html"
-ASSETS_DIR = PROJECT_ROOT / "assets"
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+HOME_PAGE = FRONTEND_DIR / "homepage.html"
+VIEWER_PAGE = FRONTEND_DIR / "visualize.html"
+VERIFICATION_PAGE = FRONTEND_DIR / "verification.html"
+ASSETS_DIR = FRONTEND_DIR / "assets"
 
 _READINESS_TABLES = (
     "disturbance",
@@ -55,14 +57,14 @@ app.mount(
     name="data",
 )
 
-# The pages' CSS and JS were split out of the HTML into assets/, and both
-# reference it as a relative "assets/..." URL, so it mounts at /assets.
+# The pages' CSS and JS live in frontend/assets/, and the pages reference
+# them as a relative "assets/..." URL, so it mounts at /assets.
 app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 
 @app.get("/", include_in_schema=False)
 def root() -> FileResponse:
-    return FileResponse(PROJECT_ROOT / "homepage.html", media_type="text/html")
+    return FileResponse(HOME_PAGE, media_type="text/html")
 
 
 @app.get("/initialize", tags=["startup"])
