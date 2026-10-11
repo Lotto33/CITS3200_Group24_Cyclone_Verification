@@ -8,7 +8,7 @@
 		region: string | null;
 		season: string | null;
 		has_best_track: boolean;
-    	observation_count: number;
+		observation_count: number;
 	}
 
 	interface Page<T> {
@@ -784,28 +784,29 @@
 
 	function updateBestTrackWarning(instance: HTMLElement): void {
 		const warning = instance.querySelector<HTMLElement>(
-			".best-track-warning"
+			".best-track-warning",
 		);
-		const cycloneSelect = instance.querySelector<HTMLSelectElement>(
-			".cyclone-select"
-		);
-		const seasonSelect = instance.querySelector<HTMLSelectElement>(
-			".season-select"
-		);
+		const cycloneSelect =
+			instance.querySelector<HTMLSelectElement>(".cyclone-select");
+		const seasonSelect =
+			instance.querySelector<HTMLSelectElement>(".season-select");
 
-		if (!warning || !cycloneSelect|| !seasonSelect) return;
+		if (!warning || !cycloneSelect || !seasonSelect) return;
 
 		const selectedIds = selected(cycloneSelect);
 		const selectedSeasons = selected(seasonSelect);
 
 		const missingIds = disturbances
 			.filter((disturbance) => {
-				const isSelected = selectedIds.length > 0
-					? selectedIds.includes(disturbance.disturbance_id) &&
-					(selectedSeasons.length === 0 ||
-					selectedSeasons.includes(disturbance.season ?? ""))
-					: selectedSeasons.length > 0 &&
-					selectedSeasons.includes(disturbance.season ?? "");
+				const isSelected =
+					selectedIds.length > 0
+						? selectedIds.includes(disturbance.disturbance_id) &&
+							(selectedSeasons.length === 0 ||
+								selectedSeasons.includes(
+									disturbance.season ?? "",
+								))
+						: selectedSeasons.length > 0 &&
+							selectedSeasons.includes(disturbance.season ?? "");
 
 				return isSelected && !disturbance.has_best_track;
 			})
