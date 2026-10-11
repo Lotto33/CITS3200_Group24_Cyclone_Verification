@@ -355,7 +355,7 @@
 	}
 
 	function fmtTime(t) {
-		return t ? t.replace("T", " ").replace("Z", " UTC") : "—";
+		return window.formatCycloneTime(t) || "—";
 	}
 
 	// Towns are static reference data: loaded once at startup, drawn once, and

@@ -10,7 +10,7 @@
 		>
 		<link
 			rel="stylesheet"
-			href="assets/verification.css?v=progress-track-fix-20261003"
+			href="assets/verification.css?v=integrated-filter-boxes-20261010"
 		>
 	</head>
 	<body>
@@ -26,12 +26,8 @@
 				</button>
 			</header>
 
-			<!-- biome-ignore lint/a11y/useSemanticElements: a fieldset would change the layout -->
-			<div
-				class="upload-toolbar"
-				role="group"
-				aria-label="Dataset upload controls"
-			>
+			<fieldset class="upload-toolbar">
+				<legend class="visually-hidden">Dataset upload controls</legend>
 				<button id="uploadGmlBtn" type="button">
 					Upload GML Archive
 				</button>
@@ -52,19 +48,15 @@
 				>
 					<div class="upload-progress-heading">
 						<strong id="uploadPhase">Ready</strong>
-						<span id="uploadPercent"></span>
 					</div>
-					<div
-						class="progress upload-progress-track"
-						role="progressbar"
-						aria-label="File upload progress"
-						aria-valuemin="0"
-						aria-valuemax="100"
-					>
-						<!-- biome-ignore lint/a11y/useAriaPropsSupportedByRole: verification.js sets aria-valuenow on this bar -->
+					<div class="progress upload-progress-track">
 						<div
 							id="uploadProgressBar"
 							class="progress-bar progress-bar-striped progress-bar-animated"
+							role="progressbar"
+							aria-label="File upload progress"
+							aria-valuemin="0"
+							aria-valuemax="100"
 							style="width: 0%"
 							aria-valuenow="0"
 						></div>
@@ -80,7 +72,7 @@
 						></ol>
 					</details>
 				</div>
-			</div>
+			</fieldset>
 
 			<div id="tableInstances" aria-live="polite">
 				<section class="table-instance" data-instance="1">
@@ -90,57 +82,59 @@
 							Remove table
 						</button>
 					</div>
-					<!-- biome-ignore lint/a11y/useSemanticElements: a fieldset would change the layout -->
-					<div
-						class="filter-grid"
-						role="group"
-						aria-label="Verification filters"
-					>
+					<fieldset class="filter-grid">
+						<legend class="visually-hidden">
+							Verification filters
+						</legend>
 						<div class="filter-field">
 							<label for="cycloneSelect-1">Cyclone</label>
-							<input
-								id="cycloneSearch-1"
-								class="cyclone-search"
-								type="search"
-								placeholder="Search cyclones by name or ID…"
-								autocomplete="off"
-							>
-							<select
-								id="cycloneSelect-1"
-								class="cyclone-select"
-								multiple
-								size="5"
-							></select>
+							<div class="filter-control-box cyclone-control-box">
+								<input
+									id="cycloneSearch-1"
+									class="cyclone-search"
+									type="search"
+									placeholder="Search cyclones by name or ID…"
+									autocomplete="off"
+								>
+								<select
+									id="cycloneSelect-1"
+									class="cyclone-select"
+									multiple
+									size="5"
+								></select>
+							</div>
 						</div>
 						<div class="filter-field">
 							<label for="stateSelect-1">State / region</label>
-							<select
-								id="stateSelect-1"
-								class="state-select"
-								multiple
-								size="5"
-							></select>
+							<div class="filter-control-box">
+								<select
+									id="stateSelect-1"
+									class="state-select"
+									multiple
+									size="5"
+								></select>
+							</div>
 						</div>
 						<div class="filter-field">
 							<label for="seasonSelect-1">Season</label>
-							<select
-								id="seasonSelect-1"
-								class="season-select"
-								multiple
-								size="5"
-							></select>
+							<div class="filter-control-box">
+								<select
+									id="seasonSelect-1"
+									class="season-select"
+									multiple
+									size="5"
+								></select>
+							</div>
 						</div>
-					</div>
+					</fieldset>
 					<p class="filter-hint">
 						Click options to select several. Choosing an "All"
 						option clears the others.
 					</p>
-					<!-- biome-ignore lint/a11y/useSemanticElements: a fieldset would change the layout -->
-					<div
-						class="filter-grid filter-grid-params"
-						role="group"
-						aria-label="Generation parameters"
-					>
+					<fieldset class="filter-grid filter-grid-params">
+						<legend class="visually-hidden">
+							Generation parameters
+						</legend>
 						<div class="filter-field">
 							<label for="warningLevel-1">Warning level</label>
 							<select id="warningLevel-1" class="warning-level">
@@ -172,7 +166,7 @@
 								value="24"
 							>
 						</div>
-					</div>
+					</fieldset>
 					<fieldset class="base-time-filter">
 						<legend>Base times (UTC)</legend>
 						<label for="baseTime00-1"
@@ -226,7 +220,6 @@
 							aria-live="polite"
 						></span>
 					</div>
-
 					<div
 						class="table-tabs"
 						role="tablist"
@@ -350,8 +343,9 @@
 				</section>
 			</div>
 		</main>
+		<script src="assets/time-format.js?v=hh-mm-display-20261010"></script>
 		<script
-			src="assets/verification.js?v=contingency-background-jobs-20261009"
+			src="assets/verification.js?v=filename-search-normalization-20261010"
 		></script>
 	</body>
 </html>

@@ -67,7 +67,32 @@
 		base_time_hours: number[];
 		forecast_level: string;
 	}
-
+	const DOWNLOAD_TYPES = [
+		"table_a",
+		"table_b",
+		"table_c",
+		"table_d",
+		"contingency_summary",
+		"contingency_matrix",
+	] as const;
+	type DownloadType = (typeof DOWNLOAD_TYPES)[number];
+	interface DownloadFilterState {
+		query: string;
+		types: Set<DownloadType>;
+	}
+	interface DownloadEntry {
+		filename: string;
+		type: DownloadType;
+		download: () => Promise<void> | void;
+	}
+	const DOWNLOAD_TYPE_LABELS: Record<DownloadType, string> = {
+		table_a: "Table A",
+		table_b: "Table B",
+		table_c: "Table C",
+		table_d: "Table D",
+		contingency_summary: "Contingency summary",
+		contingency_matrix: "Contingency matrix",
+	};
 	const API_BASE = "/api/v1";
 	const ALL_VALUE = "__all__";
 	const SUPPORTED_STATES = ["NT", "QLD", "WA"];
@@ -84,6 +109,11 @@
 	let states: string[] = [];
 	let latestFiles: string[] = [];
 	const filesByInstance = new Map<string, string[]>();
+	const combinedFilesByInstance = new Map<
+		string,
+		Array<{ filename: string; content: string }>
+	>();
+	const downloadFiltersByInstance = new Map<string, DownloadFilterState>();
 	const initializedInstances = new WeakSet<HTMLElement>();
 
 	if (!tableInstances || !firstInstance) return;
@@ -107,7 +137,6 @@
 	): void {
 		const container = byId<HTMLDivElement>("uploadProgress");
 		const label = byId<HTMLElement>("uploadPhase");
-		const percentLabel = byId<HTMLSpanElement>("uploadPercent");
 		const progress = byId<HTMLDivElement>("uploadProgressBar");
 		container.hidden = false;
 		label.textContent = phase;
@@ -121,7 +150,6 @@
 				"progress-bar-animated",
 			);
 			progress.classList.add("progress-bar-indeterminate");
-			percentLabel.textContent = "";
 		} else {
 			progress.style.width = `${percentage}%`;
 			progress.setAttribute("aria-valuenow", String(percentage));
@@ -132,7 +160,6 @@
 				"progress-bar-animated",
 				percentage < 100,
 			);
-			percentLabel.textContent = `${percentage}%`;
 		}
 	}
 
@@ -264,11 +291,9 @@
 			}
 			appendBackendMessages(job.messages);
 			offset = job.next;
-			if (description.toLowerCase().includes("bom")) {
-				for (const message of job.messages) {
-					const stage = bestTrackRefreshStage(message);
-					if (stage) refreshStage = stage;
-				}
+			for (const message of job.messages) {
+				const stage = uploadProgressStage(message, description);
+				if (stage) refreshStage = stage;
 			}
 			if (job.status === "completed") {
 				const interpolationError = job.result?.interpolation_error;
@@ -277,7 +302,7 @@
 						? "Step 5 of 5 · Complete"
 						: interpolationError
 							? "Upload complete with warning"
-							: "Backend processing complete",
+							: "Step 5 of 5 · Complete",
 					interpolationError
 						? `${filename}: uploaded successfully, but interpolation was skipped: ${interpolationError}`
 						: `${filename}: ${description} processing completed successfully.`,
@@ -366,38 +391,100 @@
 		);
 	}
 
-	function bestTrackRefreshStage(
+	function uploadProgressStage(
 		message: string,
+		description: string,
 	): { label: string; percentage: number } | null {
 		const normalized = message.toLowerCase();
-		if (normalized.startsWith("starting bom best-track refresh")) {
-			return { label: "Step 1 of 5 · Starting refresh", percentage: 10 };
+		if (description.toLowerCase().includes("bom")) {
+			if (normalized.startsWith("starting bom best-track refresh")) {
+				return {
+					label: "Step 1 of 5 · Preparing refresh",
+					percentage: 10,
+				};
+			}
+			if (
+				normalized.startsWith("downloading current bom best-track csv")
+			) {
+				return {
+					label: "Step 2 of 5 · Downloading best-track data from BOM",
+					percentage: 25,
+				};
+			}
+			if (normalized.startsWith("downloaded ")) {
+				return {
+					label: "Step 2 of 5 · Downloading best-track data from BOM",
+					percentage: 40,
+				};
+			}
+			if (normalized.startsWith("validating downloaded best-track csv")) {
+				return {
+					label: "Step 3 of 5 · Validating the downloaded CSV",
+					percentage: 50,
+				};
+			}
+			if (
+				normalized.startsWith(
+					"=== database ingest: best-track observations ===",
+				)
+			) {
+				return {
+					label: "Step 4 of 5 · Importing best-track observations",
+					percentage: 65,
+				};
+			}
+			if (normalized.startsWith("database best-track ingest:")) {
+				return {
+					label: "Step 4 of 5 · Best-track observations imported",
+					percentage: 75,
+				};
+			}
+			if (normalized.startsWith("=== database interpolation ===")) {
+				return {
+					label: "Step 5 of 5 · Interpolating track positions and wind radii",
+					percentage: 85,
+				};
+			}
+			if (normalized.startsWith("database interpolation:")) {
+				return {
+					label: "Step 5 of 5 · Interpolated track saved",
+					percentage: 95,
+				};
+			}
+			return null;
 		}
-		if (normalized.startsWith("downloading current bom best-track csv")) {
+		if (normalized.startsWith("step 1 of 5"))
 			return {
-				label: "Step 2 of 5 · Downloading from BOM",
+				label: "Step 1 of 5 · Extracting GML archive",
 				percentage: 20,
 			};
-		}
-		if (normalized.startsWith("validating downloaded best-track csv")) {
-			return { label: "Step 3 of 5 · Validating CSV", percentage: 30 };
-		}
-		if (
-			normalized.startsWith(
-				"=== database ingest: best-track observations ===",
-			)
-		) {
+		if (normalized.startsWith("extracted "))
 			return {
-				label: "Step 4 of 5 · Ingesting and interpolating",
+				label: "Step 2 of 5 · Checking extracted GML files",
+				percentage: 30,
+			};
+		if (normalized.startsWith("step 3 of 5"))
+			return {
+				label: "Step 3 of 5 · Generating viewer datasets",
+				percentage: 45,
+			};
+		if (normalized.startsWith("converting gml bulletins"))
+			return {
+				label: "Step 3 of 5 · Converting GML to JSON and GeoJSON",
+				percentage: 55,
+			};
+		if (normalized.startsWith("static viewer datasets generated"))
+			return {
+				label: "Step 4 of 5 · Loading bulletins into the database",
 				percentage: 75,
 			};
-		}
-		if (normalized.startsWith("=== database interpolation ===")) {
+		if (normalized.startsWith("step 4 of 5"))
 			return {
-				label: "Step 4 of 5 · Ingesting and interpolating",
-				percentage: 75,
+				label: "Step 4 of 5 · Loading bulletins into the database",
+				percentage: 80,
 			};
-		}
+		if (normalized.startsWith("database gml ingest:"))
+			return { label: "Step 5 of 5 · Saving complete", percentage: 95 };
 		return null;
 	}
 
@@ -461,6 +548,67 @@
 		document
 			.querySelectorAll<HTMLElement>(".table-instance")
 			.forEach(populateInstanceFilters);
+	}
+
+	async function upload(
+		file: File | null,
+		endpoint: string,
+		description: string,
+	): Promise<void> {
+		byId<HTMLOListElement>("uploadBackendMessages").replaceChildren();
+		updateUploadProgress(
+			file
+				? "Preparing upload"
+				: "Step 1 of 5 · Requesting BOM best track",
+			file
+				? `${file.name} · ${formatBytes(file.size)} · ${description}`
+				: description,
+			file ? 0 : 10,
+		);
+		await uploadFile(file, endpoint, description);
+		updateUploadProgress(
+			"Refreshing cyclone and state filters",
+			`${description} processed. Updating available filter options…`,
+		);
+		await loadFilterOptions();
+		const sourceName = file?.name || "BOM best-track data";
+		updateUploadProgress(
+			"Complete",
+			`${sourceName} processed, and filter options refreshed.`,
+			100,
+		);
+	}
+
+	function wireUpload(
+		inputId: string,
+		buttonId: string,
+		endpoint: string,
+		description: string,
+	): void {
+		const input = byId<HTMLInputElement>(inputId);
+		const button = byId<HTMLButtonElement>(buttonId);
+		button.addEventListener("click", () => input.click());
+		input.addEventListener("change", async () => {
+			const file = input.files?.[0];
+			if (!file) return;
+			const otherButton = byId<HTMLButtonElement>("refreshBestTrackBtn");
+			button.disabled = true;
+			otherButton.disabled = true;
+			try {
+				await upload(file, endpoint, description);
+			} catch (error) {
+				updateUploadProgress(
+					"Upload failed",
+					`${description} upload failed: ${(error as Error).message}`,
+					0,
+				);
+				byId<HTMLDivElement>("uploadStatus").classList.add("error");
+			} finally {
+				input.value = "";
+				button.disabled = false;
+				otherButton.disabled = false;
+			}
+		});
 	}
 
 	function selected(select: HTMLSelectElement): string[] {
@@ -732,11 +880,49 @@
 		return rows;
 	}
 
-	function renderCsv(panel: HTMLElement, text: string): void {
-		const rows = csvRows(text);
+	function combineCsvTexts(texts: string[]): string {
+		const parsedFiles = texts
+			.map(csvRows)
+			.filter((rows) => rows.length > 0);
+		if (!parsedFiles.length) return "";
+		const headers = parsedFiles[0][0];
+		const dataRows = parsedFiles.flatMap((rows) => {
+			const header = rows[0];
+			if (
+				header.length !== headers.length ||
+				header.some((value, index) => value !== headers[index])
+			) {
+				throw new Error(
+					"Generated CSV files for this table have different columns and cannot be combined.",
+				);
+			}
+			return rows.slice(1);
+		});
+		return [headers, ...dataRows]
+			.map((row) =>
+				row
+					.map((value) =>
+						/[",\r\n]/.test(value)
+							? `"${value.replace(/"/g, '""')}"`
+							: value,
+					)
+					.join(","),
+			)
+			.join("\r\n");
+	}
+
+	function renderCsv(panel: HTMLElement, texts: string[]): void {
+		const combined = combineCsvTexts(texts);
+		const rows = csvRows(combined);
 		if (!rows.length) return;
 		const table = document.createElement("table");
 		table.className = "contingency-table api-result-table";
+		const caption = document.createElement("caption");
+		const sourceCount = texts.filter(
+			(text) => csvRows(text).length > 0,
+		).length;
+		caption.textContent = `Combined rows from ${sourceCount} generated CSV file${sourceCount === 1 ? "" : "s"}`;
+		table.appendChild(caption);
 		const thead = document.createElement("thead");
 		const headRow = document.createElement("tr");
 		rows[0].forEach((value) => {
@@ -748,12 +934,31 @@
 		thead.appendChild(headRow);
 		table.appendChild(thead);
 		const body = document.createElement("tbody");
+		const timeColumns = rows[0]
+			.map((header, index) => (/\btime\b/i.test(header) ? index : -1))
+			.filter((index) => index >= 0);
+		const distanceColumns = rows[0]
+			.map((header, index) => (/\bdistance\b/i.test(header) ? index : -1))
+			.filter((index) => index >= 0);
 		rows.slice(1).forEach((values) => {
 			const tr = document.createElement("tr");
 			values.forEach((value, index) => {
 				const cell = document.createElement(index === 0 ? "th" : "td");
 				if (index === 0) (cell as HTMLTableCellElement).scope = "row";
-				cell.textContent = value;
+				const formatTime = (
+					window as unknown as {
+						formatCycloneTime: (value: string) => string;
+					}
+				).formatCycloneTime;
+				const numericDistance =
+					distanceColumns.includes(index) && value.trim() !== ""
+						? Number(value)
+						: Number.NaN;
+				cell.textContent = timeColumns.includes(index)
+					? formatTime(value)
+					: Number.isFinite(numericDistance)
+						? String(Math.round(numericDistance))
+						: value;
 				tr.appendChild(cell);
 			});
 			body.appendChild(tr);
@@ -861,6 +1066,40 @@
 		URL.revokeObjectURL(url);
 	}
 
+	function downloadCsvContent(filename: string, content: string): void {
+		const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = filename;
+		anchor.click();
+		URL.revokeObjectURL(url);
+	}
+
+	function downloadTypeForFilename(filename: string): DownloadType | null {
+		for (const type of [
+			"table_a",
+			"table_b",
+			"table_c",
+			"table_d",
+		] as const) {
+			if (
+				filename.endsWith(`_${type}.csv`) ||
+				filename.startsWith(`combined_${type}_`)
+			)
+				return type;
+		}
+		if (filename.endsWith("_contingency_summary.csv"))
+			return "contingency_summary";
+		if (filename.endsWith("_contingency_matrix.csv"))
+			return "contingency_matrix";
+		return null;
+	}
+
+	function normalizeDownloadSearchText(value: string): string {
+		return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+	}
+
 	async function showRunFiles(
 		instance: HTMLElement,
 		files: Record<string, string>,
@@ -878,7 +1117,10 @@
 		latestFiles = candidates.filter(
 			(name) => !latestDate || name.includes(`date-${latestDate}`),
 		);
-		filesByInstance.set(instance.dataset.instance || "1", latestFiles);
+		const instanceKey = instance.dataset.instance || "1";
+		filesByInstance.set(instanceKey, latestFiles);
+		const combinedDownloads: Array<{ filename: string; content: string }> =
+			[];
 		const panelMap: Record<string, string> = {
 			table_a: "#panel-area-1",
 			table_b: "#panel-track-1",
@@ -891,25 +1133,42 @@
 				baseSelector.replace(/-1$/, `-${instance.dataset.instance}`),
 				`No ${suffix.replace("table_", "Table ").toUpperCase()} CSV returned for this selection.`,
 			);
-			const file = latestFiles.find((name) =>
-				name.endsWith(`_${suffix}.csv`),
+			const matchingFiles = latestFiles.filter(
+				(name) =>
+					!name.startsWith("combined_") &&
+					name.endsWith(`_${suffix}.csv`),
 			);
-			if (panel && file) {
+			if (panel && matchingFiles.length) {
 				try {
-					const response = await fetch(
-						`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`,
+					const texts = await Promise.all(
+						matchingFiles.map(async (file) => {
+							const response = await fetch(
+								`${API_BASE}/contingency-tables/files/${encodeURIComponent(file)}`,
+							);
+							if (!response.ok)
+								throw new Error(
+									`Could not load ${file} (HTTP ${response.status})`,
+								);
+							return response.text();
+						}),
 					);
-					if (!response.ok)
-						throw new Error(
-							`Could not load ${file} (HTTP ${response.status})`,
-						);
+					if (
+						matchingFiles.length > 1 &&
+						["table_a", "table_b", "table_c"].includes(suffix)
+					) {
+						combinedDownloads.push({
+							filename: `combined_${suffix}_${latestDate}.csv`,
+							content: combineCsvTexts(texts),
+						});
+					}
 					panel.querySelector(".layer-note")?.remove();
-					renderCsv(panel, await response.text());
+					renderCsv(panel, texts);
 				} catch (error) {
 					instanceStatus(instance, (error as Error).message, true);
 				}
 			}
 		}
+		combinedFilesByInstance.set(instanceKey, combinedDownloads);
 		const matrixPanel = resetPanel(
 			instance,
 			`#panel-summary-${instance.dataset.instance}`,
@@ -921,31 +1180,103 @@
 		const title = document.createElement("h3");
 		title.textContent = "Download generated CSV files";
 		downloadBox.appendChild(title);
-		const list = document.createElement("ul");
-		latestFiles.forEach((name) => {
-			const li = document.createElement("li");
-			const button = document.createElement("button");
-			button.type = "button";
-			button.textContent = `Download ${name}`;
-			button.addEventListener("click", async () => {
-				button.disabled = true;
-				try {
-					await downloadFile(name);
-				} catch (error) {
-					instanceStatus(instance, (error as Error).message, true);
-				} finally {
-					button.disabled = false;
-				}
-			});
-			li.appendChild(button);
-			list.appendChild(li);
+		const helper = document.createElement("p");
+		helper.className = "download-filter-hint";
+		helper.textContent =
+			"Filter this list; the Download contingency tables button above still downloads every file.";
+		downloadBox.appendChild(helper);
+		const filterState = downloadFiltersByInstance.get(instanceKey) ?? {
+			query: "",
+			types: new Set<DownloadType>(DOWNLOAD_TYPES),
+		};
+		downloadFiltersByInstance.set(instanceKey, filterState);
+		const entries: DownloadEntry[] = latestFiles.flatMap((filename) => {
+			const type = downloadTypeForFilename(filename);
+			return type
+				? [{ filename, type, download: () => downloadFile(filename) }]
+				: [];
 		});
-		if (!latestFiles.length) {
-			const li = document.createElement("li");
-			li.textContent = "No CSV files returned for the current date.";
-			list.appendChild(li);
+		combinedDownloads.forEach(({ filename, content }) => {
+			const type = downloadTypeForFilename(filename);
+			if (type)
+				entries.push({
+					filename,
+					type,
+					download: () => downloadCsvContent(filename, content),
+				});
+		});
+		const search = document.createElement("input");
+		search.type = "search";
+		search.className = "download-search";
+		search.placeholder = "Search generated filenames…";
+		search.setAttribute(
+			"aria-label",
+			"Filter generated CSV files by filename",
+		);
+		search.value = filterState.query;
+		downloadBox.appendChild(search);
+		const typeFilters = document.createElement("fieldset");
+		typeFilters.className = "download-type-filters";
+		const typeLegend = document.createElement("legend");
+		typeLegend.textContent = "File types";
+		typeFilters.appendChild(typeLegend);
+		DOWNLOAD_TYPES.forEach((type) => {
+			const label = document.createElement("label");
+			const checkbox = document.createElement("input");
+			checkbox.type = "checkbox";
+			checkbox.checked = filterState.types.has(type);
+			checkbox.addEventListener("change", () => {
+				if (checkbox.checked) filterState.types.add(type);
+				else filterState.types.delete(type);
+				renderFilteredDownloads();
+			});
+			label.append(checkbox, ` ${DOWNLOAD_TYPE_LABELS[type]}`);
+			typeFilters.appendChild(label);
+		});
+		downloadBox.appendChild(typeFilters);
+		const list = document.createElement("ul");
+		const resultCount = document.createElement("p");
+		resultCount.className = "download-filter-hint";
+		downloadBox.append(list, resultCount);
+		function renderFilteredDownloads(): void {
+			filterState.query = search.value;
+			const query = normalizeDownloadSearchText(filterState.query);
+			const visible = entries.filter(
+				(entry) =>
+					filterState.types.has(entry.type) &&
+					normalizeDownloadSearchText(entry.filename).includes(query),
+			);
+			list.replaceChildren();
+			visible.forEach((entry) => {
+				const li = document.createElement("li");
+				const button = document.createElement("button");
+				button.type = "button";
+				button.textContent = `Download ${entry.filename}`;
+				button.addEventListener("click", async () => {
+					button.disabled = true;
+					try {
+						await entry.download();
+					} catch (error) {
+						instanceStatus(
+							instance,
+							(error as Error).message,
+							true,
+						);
+					} finally {
+						button.disabled = false;
+					}
+				});
+				li.appendChild(button);
+				list.appendChild(li);
+			});
+			resultCount.textContent = visible.length
+				? `Showing ${visible.length} of ${entries.length} file(s).`
+				: entries.length
+					? "No files match the current filter."
+					: "No CSV files returned for the current date.";
 		}
-		downloadBox.appendChild(list);
+		search.addEventListener("input", renderFilteredDownloads);
+		renderFilteredDownloads();
 		const target = matrixPanel || instance;
 		target.appendChild(downloadBox);
 	}
@@ -1046,7 +1377,9 @@
 
 		const button =
 			instance.querySelector<HTMLButtonElement>(".generate-table");
-		filesByInstance.delete(instance.dataset.instance || "1");
+		const instanceKey = instance.dataset.instance || "1";
+		filesByInstance.delete(instanceKey);
+		combinedFilesByInstance.delete(instanceKey);
 		if (button) button.disabled = true;
 		instanceStatus(instance, `Generating ${jobs.length} table request(s)…`);
 		try {
@@ -1266,6 +1599,8 @@
 			output.remove();
 		});
 		filesByInstance.delete(String(number));
+		combinedFilesByInstance.delete(String(number));
+		downloadFiltersByInstance.delete(String(number));
 		tableInstances.appendChild(clone);
 		initializeInstance(clone);
 		updateTableControls();
@@ -1278,71 +1613,16 @@
 		const button = target.closest<HTMLButtonElement>(".remove-instance");
 		if (button && !button.disabled) {
 			const instance = button.closest<HTMLElement>(".table-instance");
-			if (instance?.dataset.instance)
+			if (instance?.dataset.instance) {
 				filesByInstance.delete(instance.dataset.instance);
+				combinedFilesByInstance.delete(instance.dataset.instance);
+				downloadFiltersByInstance.delete(instance.dataset.instance);
+			}
 			instance?.remove();
 			updateTableControls();
 			updateContext();
 		}
 	});
-
-	async function upload(
-		file: File | null,
-		endpoint: string,
-		description: string,
-	): Promise<void> {
-		byId<HTMLOListElement>("uploadBackendMessages").replaceChildren();
-		updateUploadProgress(
-			file
-				? "Preparing upload"
-				: "Step 1 of 5 · Requesting BOM best track",
-			file
-				? `${file.name} · ${formatBytes(file.size)} · ${description}`
-				: description,
-			file ? 0 : 10,
-		);
-		await uploadFile(file, endpoint, description);
-		updateUploadProgress(
-			"Refreshing cyclone and state filters",
-			`${description} processed. Updating available filter options…`,
-		);
-		await loadFilterOptions();
-		const sourceName = file?.name || "BOM best-track data";
-		updateUploadProgress(
-			"Complete",
-			`${sourceName} processed, and filter options refreshed.`,
-			100,
-		);
-	}
-
-	function wireUpload(
-		inputId: string,
-		buttonId: string,
-		endpoint: string,
-		description: string,
-	): void {
-		const input = byId<HTMLInputElement>(inputId);
-		const button = byId<HTMLButtonElement>(buttonId);
-		button.addEventListener("click", () => input.click());
-		input.addEventListener("change", async () => {
-			const file = input.files?.[0];
-			if (!file) return;
-			const otherButton = byId<HTMLButtonElement>("refreshBestTrackBtn");
-			button.disabled = true;
-			otherButton.disabled = true;
-			try {
-				await upload(file, endpoint, description);
-			} catch (error) {
-				const message = `${description} upload failed: ${(error as Error).message}`;
-				updateUploadProgress("Upload failed", message, 0);
-				byId<HTMLDivElement>("uploadStatus").classList.add("error");
-			} finally {
-				input.value = "";
-				button.disabled = false;
-				otherButton.disabled = false;
-			}
-		});
-	}
 
 	byId<HTMLButtonElement>("refreshBestTrackBtn").addEventListener(
 		"click",
@@ -1377,7 +1657,8 @@
 			const filenames = [
 				...new Set([...filesByInstance.values()].flat()),
 			];
-			if (!filenames.length) {
+			const combinedFiles = [...combinedFilesByInstance.values()].flat();
+			if (!filenames.length && !combinedFiles.length) {
 				status(
 					"Generate a contingency table before downloading its CSV files.",
 					true,
@@ -1386,11 +1667,16 @@
 			}
 			const button = byId<HTMLButtonElement>("downloadContingencyBtn");
 			button.disabled = true;
-			status(`Downloading ${filenames.length} contingency CSV file(s)…`);
+			status(
+				`Downloading ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s)…`,
+			);
 			try {
 				for (const filename of filenames) await downloadFile(filename);
+				for (const { filename, content } of combinedFiles) {
+					downloadCsvContent(filename, content);
+				}
 				status(
-					`Downloaded ${filenames.length} contingency CSV file(s).`,
+					`Downloaded ${filenames.length} individual and ${combinedFiles.length} combined contingency CSV file(s).`,
 				);
 			} catch (error) {
 				status(
@@ -1408,8 +1694,14 @@
 			tableInstances.lastElementChild?.remove();
 		for (const key of filesByInstance.keys())
 			if (key !== "1") filesByInstance.delete(key);
+		for (const key of combinedFilesByInstance.keys())
+			if (key !== "1") combinedFilesByInstance.delete(key);
+		for (const key of downloadFiltersByInstance.keys())
+			if (key !== "1") downloadFiltersByInstance.delete(key);
 		populateInstanceFilters(firstInstance);
 		filesByInstance.delete("1");
+		combinedFilesByInstance.delete("1");
+		downloadFiltersByInstance.delete("1");
 		restorePanelPlaceholders(firstInstance);
 		firstInstance
 			.querySelectorAll<HTMLElement>(".table-panel")
@@ -1452,6 +1744,7 @@
 			window.location.href = "visualize.html";
 		},
 	);
+
 	wireUpload("gmlUploadInput", "uploadGmlBtn", "upload", "GML archive");
 	initializeInstance(firstInstance);
 	updateTableControls();

@@ -266,16 +266,16 @@ def load_locations() -> gpd.GeoDataFrame:
             f"[locations] Collapsed {n_dedup} duplicate (Name, State) row(s)"
             f"(six known QLD locations appear twice in the sheet, once per town group)"
         )
-    print(f"[locations] {len(grouped)} distinct location(s)")    
+    print(f"[locations] {len(grouped)} distinct location(s)")
     print(
         f"[locations] {int(grouped['is_coastal'].sum())} coastal location(s)"
         f"(have a {COASTAL_ORDER_COLUMN} value on at least one row in the TC Locations sheet)"
     )
-        
+
     return gpd.GeoDataFrame(
         {
-            "name": grouped["Name"], 
-            "state": grouped["State"], 
+            "name": grouped["Name"],
+            "state": grouped["State"],
             "is_coastal": grouped["is_coastal"]
         },
         geometry=gpd.points_from_xy(grouped["Longitude"], grouped["Latitude"]),
