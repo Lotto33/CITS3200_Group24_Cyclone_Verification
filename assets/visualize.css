@@ -420,3 +420,18 @@ a:visited {
 .leaflet-popup-content b {
 	color: #17233a;
 }
+
+#verificationTab {
+	position: fixed;
+	right: 24px;
+	bottom: 24px;               /* sits just above the Leaflet attribution strip */
+	z-index: 1000;
+	border: 1px solid var(--panel-border);
+	border-radius: 8px;         /* rounded on all corners now that it floats */
+	background: #1f2a3f;
+	color: var(--text);
+	padding: 9px 14px;
+	cursor: pointer;
+	font: inherit;
+	font-size: 12px;
+}
