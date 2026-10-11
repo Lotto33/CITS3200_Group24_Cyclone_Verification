@@ -93,9 +93,7 @@
 		refreshBestTrackBtn: document.getElementById("refreshBestTrackBtn"),
 		gmlUploadInput: document.getElementById("gmlUploadInput"),
 		categoryLegend: document.getElementById("categoryLegend"),
-		forecastAreaControls: document.getElementById(
-			"forecastAreaControls",
-		),
+		forecastAreaControls: document.getElementById("forecastAreaControls"),
 		// Towns are static, so this checkbox is deliberately kept out of
 		// els.layers -- everything in there is wired to renderBulletin().
 		towns: document.getElementById("layer-towns"),
@@ -373,13 +371,17 @@
 			const knownHours = [24, 48, 72, 120];
 			const knownIndex = knownHours.indexOf(hours);
 			if (knownIndex !== -1)
-				return FORECAST_AREA_COLORS[knownIndex % FORECAST_AREA_COLORS.length];
+				return FORECAST_AREA_COLORS[
+					knownIndex % FORECAST_AREA_COLORS.length
+				];
 		}
 		return FORECAST_AREA_COLORS[
-			Math.abs([...forecastAreaExtentKey(extent)].reduce(
-				(hash, char) => (hash * 31 + char.charCodeAt(0)) | 0,
-				0,
-			)) % FORECAST_AREA_COLORS.length
+			Math.abs(
+				[...forecastAreaExtentKey(extent)].reduce(
+					(hash, char) => (hash * 31 + char.charCodeAt(0)) | 0,
+					0,
+				),
+			) % FORECAST_AREA_COLORS.length
 		];
 	}
 
@@ -1400,15 +1402,16 @@
 				area.kind === "tcWindArea"
 					? WIND_AREA_COLORS[area.fixType]
 					: null;
-			const style = area.kind === "tcForecastArea"
-				? forecastAreaStyle(area.extent)
-				: windAreaColor
-				? {
-						...baseStyle,
-						color: windAreaColor,
-						fillColor: windAreaColor,
-					}
-				: baseStyle;
+			const style =
+				area.kind === "tcForecastArea"
+					? forecastAreaStyle(area.extent)
+					: windAreaColor
+						? {
+								...baseStyle,
+								color: windAreaColor,
+								fillColor: windAreaColor,
+							}
+						: baseStyle;
 			const layerCheckbox =
 				area.kind === "tcForecastArea"
 					? forecastAreaLayers.get(forecastAreaExtentKey(area.extent))
