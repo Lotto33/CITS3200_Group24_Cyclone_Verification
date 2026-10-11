@@ -220,8 +220,10 @@ def compute_verification(
 
     Several bulletins can share a (disturbance, fcastTime) when more than one
     regional office issues for a system; their areas are pooled, since a town
-    inside any issued area was forecast. Disturbances with no track points in
-    the interpolation run are skipped rather than scored as all-unobserved.
+    inside any issued area was forecast. Disturbances without any best-track observations are scored using an
+    empty track, so forecast-positive cases are classified as false alarms.
+    Disturbances with existing best-track observations but no interpolated
+    points are skipped and reported as potential processing failures.
 
     Table B (``verification_observed_distance``) is not stored unless
     ``keep_table_b``: it is the per-15-minute distance of every relevant town
@@ -251,7 +253,7 @@ def compute_verification(
     forecasts = _db_forecasts(session)
     tracks = _db_tracks(session, run_id)
     idents = {
-        d.id: d.disturbance_id
+        d.id: d
         for d in session.execute(select(Disturbance)).scalars()
         if d.id in forecasts
     }
@@ -282,16 +284,27 @@ def compute_verification(
     counts: Counter[str] = Counter()
     missing_towns: Counter[str] = Counter()
     scored: set[str] = set()
-    for index, (dist_pk, ident) in enumerate(
-        sorted(idents.items(), key=lambda i: i[1]), 1
+    for index, (dist_pk, disturbance) in enumerate(
+        sorted(idents.items(), key=lambda i: i[1].disturbance_id), 1
     ):
+        ident = disturbance.disturbance_id
         track = tracks.get(dist_pk)
         if track is None:
-            stats.conflicts.append(
-                f"{ident}: no points in interpolation run {run_id}; not scored"
-            )
-            counts["skipped_disturbances"] += 1
-            continue
+            if not disturbance.has_best_track and disturbance.observation_count == 0:
+                # No best-track observations exist for this system.
+                # Allow the generator to classify forecast-positive cases
+                # as false alarms using an explicitly empty track.
+                track = pd.DataFrame(columns=["LAT", "LON"])
+                counts["assumed_unobserved_disturbances"] += 1
+                stats.notes.setdefault("assumed_unobserved_ids", []).append(ident)
+            else:
+                # Best-track observations exist, but interpolation is missing.
+                # Do not incorrectly classify this as a false alarm.
+                stats.conflicts.append(
+                    f"{ident}: no points in interpolation run {run_id}; not scored"
+                )
+                counts["skipped_disturbances"] += 1
+                continue
         log.info("verification: %d/%d %s", index, len(idents), ident)
         # The generator narrates every step on stdout; keep the CLI readable.
         with contextlib.redirect_stdout(io.StringIO()):

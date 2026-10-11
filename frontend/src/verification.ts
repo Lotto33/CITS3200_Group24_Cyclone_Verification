@@ -7,6 +7,8 @@
 		name: string | null;
 		region: string | null;
 		season: string | null;
+		has_best_track: boolean;
+		observation_count: number;
 	}
 
 	interface Page<T> {
@@ -514,7 +516,7 @@
 		const limit = 500;
 		while (true) {
 			const page = await requestJson<Page<Disturbance>>(
-				`/disturbances?limit=${limit}&offset=${offset}`,
+				`/disturbances?has_watch_or_warning=true&limit=${limit}&offset=${offset}`,
 			);
 			result.push(...page.items);
 			offset += page.items.length;
@@ -777,6 +779,49 @@
 				input.value = "";
 			});
 		updateContext();
+		updateBestTrackWarning(instance);
+	}
+
+	function updateBestTrackWarning(instance: HTMLElement): void {
+		const warning = instance.querySelector<HTMLElement>(
+			".best-track-warning",
+		);
+		const cycloneSelect =
+			instance.querySelector<HTMLSelectElement>(".cyclone-select");
+		const seasonSelect =
+			instance.querySelector<HTMLSelectElement>(".season-select");
+
+		if (!warning || !cycloneSelect || !seasonSelect) return;
+
+		const selectedIds = selected(cycloneSelect);
+		const selectedSeasons = selected(seasonSelect);
+
+		const missingIds = disturbances
+			.filter((disturbance) => {
+				const isSelected =
+					selectedIds.length > 0
+						? selectedIds.includes(disturbance.disturbance_id) &&
+							(selectedSeasons.length === 0 ||
+								selectedSeasons.includes(
+									disturbance.season ?? "",
+								))
+						: selectedSeasons.length > 0 &&
+							selectedSeasons.includes(disturbance.season ?? "");
+
+				return isSelected && !disturbance.has_best_track;
+			})
+			.map((disturbance) => disturbance.disturbance_id);
+
+		if (missingIds.length === 0) {
+			warning.hidden = true;
+			warning.textContent = "";
+			return;
+		}
+
+		warning.textContent =
+			`No best-track data available for: ${missingIds.join(", ")}. ` +
+			"Observed gales are assumed absent for verification.";
+		warning.hidden = false;
 	}
 
 	function updateContext(): void {
@@ -1517,7 +1562,16 @@
 						? cycloneSearch
 						: null,
 				);
-				select.addEventListener("change", updateContext);
+				select.addEventListener("change", () => {
+					updateContext();
+
+					if (
+						select.classList.contains("cyclone-select") ||
+						select.classList.contains("season-select")
+					) {
+						updateBestTrackWarning(instance);
+					}
+				});
 			});
 		instance
 			.querySelectorAll<HTMLInputElement>(".base-time-hour")
