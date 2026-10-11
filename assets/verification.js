@@ -247,7 +247,7 @@
             loadDisturbances(),
             requestJson("/towns"),
         ]);
-        disturbances = disturbanceRows.filter((row) => Boolean(row.season) && row.season >= FIRST_SEASON && row.season <= LAST_SEASON);
+        disturbances = disturbanceRows.filter((row) => Boolean(row.season) && row.season >= FIRST_SEASON && row.season <= LAST_SEASON && (row.has_watch == true || row.has_warning == true ));
         states = [...new Set([
                 ...SUPPORTED_STATES,
                 ...townRows.map((town) => town.state).filter(Boolean),
@@ -345,7 +345,7 @@
             return;
         const cycloneOptions = disturbances.slice().sort((a, b) => a.disturbance_id.localeCompare(b.disturbance_id))
             .map((row) => ({ value: row.disturbance_id, label: `${row.name || row.disturbance_id} — ${row.disturbance_id}` }));
-        populateSelect(cycloneSelect, [{ value: ALL_VALUE, label: "Any cyclone (select a season)" }, ...cycloneOptions], instance === firstInstance && savedContext.distId ? [savedContext.distId] : [ALL_VALUE]);
+        populateSelect(cycloneSelect, [{ value: ALL_VALUE, label: "Any cyclone (select a season)"}, ...cycloneOptions], instance === firstInstance && savedContext.distId ? [savedContext.distId]: [ALL_VALUE]);
         populateSelect(stateSelect, [{ value: ALL_VALUE, label: "All states" }, ...states.map((value) => ({ value, label: value }))], [ALL_VALUE]);
         const seasons = [...new Set(disturbances.map((row) => row.season).filter((value) => Boolean(value)))].sort().reverse();
         populateSelect(seasonSelect, [{ value: ALL_VALUE, label: "All seasons" }, ...seasons.map((value) => ({ value, label: value }))], instance === firstInstance && savedContext.season ? [savedContext.season] : [ALL_VALUE]);
