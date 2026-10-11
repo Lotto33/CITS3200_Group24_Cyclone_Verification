@@ -390,8 +390,6 @@ If you only need one of Tables A–D rather than the full run, the individual
 also accepts an already-computed Table B via its `table_b=` parameter to
 avoid rebuilding it (Table B is the most expensive of the four to compute).
 
-#### NOTE THAT RUNNING IT STRAIGHT FROM THE TERMINAL IS FOR TESTING ONLY. TODO: IMPLEMENT FRONTEND TO REQUEST THIS CODE BE RUN.
-
 ### Notes
 
 - `backend/app/gml_to_geojson.py` converts a single GML bulletin's features
