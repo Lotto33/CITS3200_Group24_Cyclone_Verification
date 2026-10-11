@@ -1,0 +1,23 @@
+.git
+.github
+.vscode
+.venv
+.env
+**/.env
+**/__pycache__
+**/*.egg-info
+.pytest_cache
+.ruff_cache
+**/node_modules
+frontend
+docs
+scripts
+
+# Runtime data is mounted as a volume, never baked into the image.
+data
+viz_data
+tmp
+example_data
+**/*.db
+**/*.db-wal
+**/*.db-shm

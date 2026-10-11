@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    image: cyclone-verification
+    ports:
+      - "8000:8000"
+    volumes:
+      # Input data, generated datasets, uploads and the SQLite DB (cyclone.db).
+      - ./data:/app/data
+    # Optional: set CARTO_API_KEY etc. in a .env file next to this one.
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
