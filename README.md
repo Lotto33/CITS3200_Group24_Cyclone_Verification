@@ -37,16 +37,140 @@ The deliverables are:
 the interpolated 15-minute track, and the verification (contingency) results
 computed from them.
 
-```bash
-cd backend
-pip install -e ".[dev]"
-alembic upgrade head        # create the schema (SQLite by default, no setup)
-python -m app.cli all       # seed, ingest and score everything (~12 min)
-python -m app.cli verify    # assert the expected row counts
-uvicorn app.main:app --reload
+The steps below cover both ways to run the application. Choose **Docker** if
+you want the easiest setup, or **without Docker** if you want to run Python
+directly on your computer. You do not need Node.js to run the app; Node is
+only needed when editing the TypeScript source for the verification page.
+
+### Before you start: get the input data
+
+The large BoM data files are not included in a fresh Git checkout. Ask the
+team for the dataset and place it in the repository's `data/` directory with
+this layout (folder names are case-sensitive):
+
+```text
+data/
+├── best_track.csv
+├── NT_GMLs/
+├── QLD_GMLs/
+└── WA_GMLs/
 ```
 
-Then browse http://127.0.0.1:8000/docs.
+The towns workbook is already included at `backend/app/resources/towns.xlsx`. 
+Without the BoM files, the server can still start, but the viewer and verification pages will not have
+the cyclone dataset to show or score.
+
+NOTE: This stage is entirely optional.It is probably easier to skip it and just upload the zip file of the gmls once through the app's user interface. Additionally, the best track can be retireved anytime automatically by the app by pressing the "Refresh best track from BOM" button in the bottom left of the visualiser or top of left of the verification page. 
+
+### Option A: run with Docker
+
+**Requirements:** Docker Desktop (macOS/Windows), or Docker Engine and the
+Compose plugin (Linux). Run these commands from the repository root.
+
+1. Put the input files listed above in `data/`.
+2. Build the image and start the app in the background:
+
+   ```bash
+   docker compose up --build -d
+   ```
+
+   On startup, Docker creates the SQLite database, applies its migrations,
+   and starts the API. The repository's `data/` directory is mounted into the
+   container, so database and generated files persist on your computer.
+3. Build the files used by the map pages:
+
+   ```bash
+   docker compose exec app python backend/app/build_gml_dataset.py
+   docker compose exec app python backend/app/build_towns_dataset.py
+   ```
+
+   The basemap configuration is generated automatically at container
+   startup. These dataset-building commands only need to be repeated if the
+   source data changes.
+4. Load the data into the database and calculate the verification results
+   (the full run takes about 12 minutes):
+
+   ```bash
+   docker compose exec -w /app/backend app python -m app.cli all
+   docker compose exec -w /app/backend app python -m app.cli verify
+   ```
+5. Open the app in your browser:
+
+   | Page | URL |
+   | --- | --- |
+   | Home | <http://localhost:8000/> |
+   | Cyclone map | <http://localhost:8000/visualize.html> |
+   | Verification | <http://localhost:8000/verification.html> |
+   | API documentation | <http://localhost:8000/docs> |
+   | Health check | <http://localhost:8000/health> |
+
+Stop the app with `docker compose down`; your data and database remain in
+`data/`. To follow the logs, run `docker compose logs -f app`. A CARTO API key
+is optional; without it, map tiles display CARTO's watermark. If you create a
+root `.env` for Docker, set `CARTO_API_KEY=...` and
+`DATABASE_URL=sqlite+pysqlite:////app/data/cyclone.db` so the database stays in
+the mounted data directory. See [docs/docker.md](docs/docker.md) for more
+Docker options and troubleshooting.
+
+### Option B: run without Docker
+
+**Requirements:** Python 3.11 or newer. Run the commands from the repository
+root unless a step says otherwise.
+
+1. Put the input files listed in [Before you start](#before-you-start-get-the-input-data)
+   in `data/`.
+2. Create and activate a virtual environment, then install the backend and
+   development dependencies:
+
+   ```bash
+   python3 -m venv backend/.venv
+   source backend/.venv/bin/activate
+   cd backend
+   pip install -e ".[dev]"
+   ```
+
+   On Windows PowerShell, use `py -3 -m venv backend\.venv` and
+   `.\backend\.venv\Scripts\Activate.ps1` instead of the first two lines
+   above, then continue with `cd backend` and `pip install`. SQLite is the
+   default; you do not need to install or configure a separate database.
+3. With the virtual environment still active, return to the repository root
+   (`cd ..`) and build the static data used by the map pages:
+
+   ```bash
+   python backend/app/build_gml_dataset.py
+   python backend/app/build_towns_dataset.py
+   python backend/app/build_map_config.py
+   ```
+
+   The map-config step is optional. To remove the CARTO watermark, copy
+   `.env.example` to `.env` in the repository root and set `CARTO_API_KEY`.
+   Without a key, the map still works but its CARTO tiles are watermarked.
+   See [Data sources](#data-sources) for details about the generated files.
+4. Change back to `backend/` (`cd backend`). Create the database schema,
+   ingest the source data, calculate verification results, and check the
+   result:
+
+   ```bash
+   alembic upgrade head
+   python -m app.cli all
+   python -m app.cli verify
+   ```
+
+   `python -m app.cli all` performs the full ingest and scoring run (about 12
+   minutes on a typical local machine). Keep the virtual environment active.
+5. Still from `backend/`, start the web server:
+
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+
+   Open <http://127.0.0.1:8000/> for the home page or
+   <http://127.0.0.1:8000/docs> for the API documentation. Use the same URLs
+   listed in the Docker option for the map, verification page, and health
+   check. Press **Ctrl+C** in the server terminal to stop it.
+
+For more backend commands and database details, see
+[backend/README.md](backend/README.md).
 
 **Sharing one database.** If `DATABASE_URL` points at the team's server, you
 can run `cli all` without worrying about overwriting anyone else's data:
@@ -71,19 +195,6 @@ see [Data sources](#data-sources) below.
 
 [docs/architecture.md](docs/architecture.md) explains how the two pipelines,
 the backend layers and the viewer's data sources fit together.
-
-### Running with Docker
-
-To run the whole app in a container instead of installing Python locally, put
-your `data/` folder at the repository root and run:
-
-```bash
-docker compose up --build
-```
-
-Then open http://localhost:8000. The database and generated files are kept in
-`./data`, so they persist between runs. See [docs/docker.md](docs/docker.md)
-for loading data, configuration, and troubleshooting.
 
 ## The verification page (`verification.html`)
 
