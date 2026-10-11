@@ -411,7 +411,7 @@
 		const limit = 500;
 		while (true) {
 			const page = await requestJson(
-				`/disturbances?limit=${limit}&offset=${offset}`,
+				`/disturbances?has_watch_or_warning=true&limit=${limit}&offset=${offset}`,
 			);
 			result.push(...page.items);
 			offset += page.items.length;
