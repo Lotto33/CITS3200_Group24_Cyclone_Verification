@@ -12,6 +12,7 @@
 		>
 		<link rel="stylesheet" href="assets/visualize.css">
 	</head>
+
 	<body>
 		<button
 			id="optionsToggle"
@@ -125,30 +126,6 @@
 						<select id="cycloneSelect"></select>
 					</div>
 
-					<div class="field upload-field">
-						<!-- biome-ignore lint/a11y/noLabelWithoutControl: heading for the button group below -->
-						<label>Dataset uploads</label>
-						<div class="upload-actions">
-							<button id="uploadGmlBtn" type="button">
-								Upload GML archive
-							</button>
-							<input
-								id="gmlUploadInput"
-								type="file"
-								accept=".zip"
-								hidden
-							>
-							<button id="refreshBestTrackBtn" type="button">
-								Refresh best track from BOM
-							</button>
-						</div>
-						<div
-							id="uploadStatus"
-							class="upload-status"
-							aria-live="polite"
-						></div>
-					</div>
-
 					<div id="bulletinBar" class="field">
 						<label for="bulletinSlider"
 							>Bulletin (base time / issue time)</label
@@ -199,21 +176,7 @@
 								class="swatch"
 								style="background: #4fa8ff"
 							></span>
-							Tracks (forecast / observed)
-						</div>
-						<div class="layer-subrow">
-							<span
-								class="swatch-line"
-								style="border-color: #4fa8ff"
-							></span>
-							Forecast (solid)
-						</div>
-						<div class="layer-subrow">
-							<span
-								class="swatch-line dashed"
-								style="border-color: #ffd24f"
-							></span>
-							Observed (dashed)
+							Forecast track
 						</div>
 						<div class="layer-row">
 							<input type="checkbox" id="layer-fixes" checked>
@@ -377,6 +340,29 @@
 					</fieldset>
 
 					<div id="status"></div>
+					<div class="field upload-field">
+						<!-- biome-ignore lint/a11y/noLabelWithoutControl: heading for the button group below -->
+						<label>Dataset uploads</label>
+						<div class="upload-actions">
+							<button id="uploadGmlBtn" type="button">
+								Upload GML archive
+							</button>
+							<input
+								id="gmlUploadInput"
+								type="file"
+								accept=".zip"
+								hidden
+							>
+							<button id="refreshBestTrackBtn" type="button">
+								Refresh best track from BOM
+							</button>
+						</div>
+						<div
+							id="uploadStatus"
+							class="upload-status"
+							aria-live="polite"
+						></div>
+					</div>
 				</div>
 			</div>
 

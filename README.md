@@ -25,6 +25,10 @@ The deliverables are:
 2. A Python codebase that ingests the provided data and outputs verification statistics.
 3. A web app for post processing, applies filtering, create verification contingency tables and metric, and output the data tables as a CSV.
 
+## Assumptions
+
+**The list of towns is fixed.** `backend/app/resources/towns.xlsx` is treated as a static reference list that does not change. If it ever does need to change, replace the file in the repository and rebuild everything derived from it (redo all the steps below).
+
 ## The backend database and API
 
 `backend/` holds a FastAPI service over a relational database of everything in
@@ -252,6 +256,17 @@ Any static server on the repository root works too, e.g.
 `python -m http.server 8000` -- the viewer works there, with the best-track
 overlay falling back to the 6-hourly fixes. That is also how to open
 [visualize_ol.html](http://localhost:8000/visualize_ol.html) (OpenLayers).
+
+## Uploading a GML archive
+
+New GML bulletins can be added via the "Upload GML archive" button on both the visualizer and verification page. The archive must be a `.zip` containing exactly three folders, one per state, with `NT`, `QLD` or `WA` (in capitals) in each of the folder names (e.g. `WA_GMLs`). They must be at the top level of the zip, not inside another folder. When unzipped, it should look like this:
+
+```
+archive.zip
+├── NT_GMLs/
+├── QLD_GMLs/
+└── WA_GMLs/
+```
 
 ### Data retention
 

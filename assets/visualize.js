@@ -42,6 +42,10 @@
 	};
 	const WIND_AREA_COLORS = { Current: "#ff5d5d", Forecast: "#4fa8ff" };
 
+	// Observed (analysis) tcTrack in each bulletin comes from a secondary source
+	// in the GML and doesn't match the best track, so only the forecast track is drawn
+	const isShownTrack = (track) => track.trackType !== "Observed";
+
 	// Best-track wind areas: gale / storm / hurricane force, drawn from the
 	// interpolated quadrant radii. Colours are kept apart from the bulletin
 	// area colours above: a pink-to-magenta ramp (no other layer uses pink) with
@@ -987,13 +991,12 @@
 		ghostLayer.clearLayers();
 		if (!els.layers.allBulletins.checked) return;
 		currentBulletins.forEach((b, i) => {
-			(b.tracks || []).forEach((track) => {
+			(b.tracks || []).filter(isShownTrack).forEach((track) => {
 				if (track.coords.length < 2) return;
 				L.polyline(toLatLngs(track.coords), {
 					color: i === currentIdx ? "transparent" : "#8892a6",
 					weight: 1,
 					opacity: 0.35,
-					dashArray: track.trackType === "Observed" ? "3,4" : null,
 				}).addTo(ghostLayer);
 			});
 		});
@@ -1244,7 +1247,33 @@
 		});
 	}
 
+	// Fixes are points on a track, so the Fixes checkbox is only relevant if Tracks is on.
+	// Disabled rather than unchecked so the user's choice comes back when they re-enable Tracks.
+	function syncFixesToggle() {
+		const tracksOn = els.layers.tracks.checked;
+		els.layers.fixes.disabled = !tracksOn;
+		const label = els.layers.fixes.closest(".layer-row");
+		if (label) {
+			label.style.opacity = tracksOn ? "" : "0.45";
+			label.title = tracksOn
+				? ""
+				: "Fixes are only shown when Forecast track is enabled";
+		}
+	}
+
+	// A fix is drawn only if a track line of its type is drawn through it.
+	// The current fix is where the observed and forecast tracks meet, so it
+	// stays as long as any track is drawn. Unknown fix types are treated the same way.
+	// Since the Observed track is no longer drawn, Observed fixes are dropped too.
+	function fixHasTrack(fix, drawnTrackTypes) {
+		if (!drawnTrackTypes.size) return false;
+		if (fix.fixType === "Observed" || fix.fixType === "Forecast")
+			return drawnTrackTypes.has(fix.fixType);
+		return true;
+	}
+
 	function renderBulletin(fitBounds) {
+		syncFixesToggle();
 		bulletinLayer.clearLayers();
 		drawGhostTrails();
 		const b = currentBulletins[currentIdx];
@@ -1262,20 +1291,21 @@
 		els.info.innerHTML = `<b>${b.distName || ""}</b> (${b.distId})<br>
       Source: ${b.source}<br>Time: ${fmtTime(b.fcastTime)}<br>
       Issued: ${fmtTime(b.issueTime)}<br>Expiry: ${b.expiryHrs || "?"} hrs<br>
-      Tracks: ${b.tracks.length}, Fixes: ${b.fixes.length}, Areas: ${b.areas.length}<br>
+      Tracks: ${b.tracks.filter(isShownTrack).length}, Fixes: ${b.fixes.length}, Areas: ${b.areas.length}<br>
       Best track: ${bestTrackSummary()}`;
 
 		const bounds = [];
+		const drawnTrackTypes = new Set();
 		if (els.layers.tracks.checked) {
-			b.tracks.forEach((track) => {
+			b.tracks.filter(isShownTrack).forEach((track) => {
 				if (track.coords.length < 2) return;
+				drawnTrackTypes.add(track.trackType);
 				const latlngs = toLatLngs(track.coords);
 				L.polyline(latlngs, {
 					color:
 						track.trackType === "Forecast" ? "#4fa8ff" : "#ffd24f",
 					weight: 3,
 					opacity: 0.9,
-					dashArray: track.trackType === "Observed" ? "6,5" : null,
 				})
 					.bindPopup(
 						`<b>${track.trackType || "Track"}</b><br>${fmtTime(track.startTime)} → ${fmtTime(track.endTime)}`,
@@ -1284,21 +1314,23 @@
 				bounds.push(...latlngs);
 			});
 		}
-		if (els.layers.fixes.checked) {
-			b.fixes.forEach((fix) => {
-				const [lon, lat] = fix.coord;
-				const marker = L.circleMarker([lat, lon], {
-					radius: fix.fixType === "Current" ? 8 : 6,
-					color: "#111826",
-					weight: 1.5,
-					fillColor: categoryColor(fix.category),
-					fillOpacity: 0.95,
-				}).bindPopup(`<b>${fix.fixType || "Fix"}</b> (${fix.symbol || "?"})<br>
+		if (els.layers.tracks.checked && els.layers.fixes.checked) {
+			b.fixes
+				.filter((fix) => fixHasTrack(fix, drawnTrackTypes))
+				.forEach((fix) => {
+					const [lon, lat] = fix.coord;
+					const marker = L.circleMarker([lat, lon], {
+						radius: fix.fixType === "Current" ? 8 : 6,
+						color: "#111826",
+						weight: 1.5,
+						fillColor: categoryColor(fix.category),
+						fillOpacity: 0.95,
+					}).bindPopup(`<b>${fix.fixType || "Fix"}</b> (${fix.symbol || "?"})<br>
           Category: ${fix.category ?? "—"}<br>Time: ${fmtTime(fix.fixTime)}<br>
           Offset: ${fix.timeOffset ?? "0"}h`);
-				marker.addTo(bulletinLayer);
-				bounds.push([lat, lon]);
-			});
+					marker.addTo(bulletinLayer);
+					bounds.push([lat, lon]);
+				});
 		}
 		(b.areas || []).forEach((area) => {
 			const baseStyle = AREA_STYLE[area.kind];
