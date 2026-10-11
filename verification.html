@@ -1,118 +1,351 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Verification table</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-<link rel="stylesheet" href="assets/verification.css?v=progress-track-fix-20261003">
-</head>
-<body>
-<main class="verification-page">
-  <header>
-    <h1>Watch / Warning Area Verification</h1>
-    <p id="context">Illustrative contingency table for the selected cyclone and bulletin.</p>
-    <button id="backToVisualizer" type="button">← Back to visualizer</button>
-  </header>
+	<head>
+		<meta charset="UTF-8">
+		<title>Verification table</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<link
+			rel="stylesheet"
+			href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+		>
+		<link
+			rel="stylesheet"
+			href="assets/verification.css?v=integrated-filter-boxes-20261010"
+		>
+	</head>
+	<body>
+		<main class="verification-page">
+			<header>
+				<h1>Watch / Warning Area Verification</h1>
+				<p id="context">
+					Illustrative contingency table for the selected cyclone and
+					bulletin.
+				</p>
+				<button id="backToVisualizer" type="button">
+					← Back to visualizer
+				</button>
+			</header>
 
-  <div class="upload-toolbar" aria-label="Dataset upload controls">
-    <button id="uploadGmlBtn" type="button">Upload GML Archive</button>
-    <input id="gmlUploadInput" type="file" accept=".zip" hidden>
-    <button id="refreshBestTrackBtn" type="button">Refresh best track from BOM</button>
-    <button id="downloadContingencyBtn" type="button">Download contingency tables</button>
-    <button id="addTableBtn" type="button">+ Add table</button>
-    <button id="resetBtn" type="button">Reset</button>
-    <div id="uploadProgress" class="upload-progress" aria-live="polite" hidden>
-      <div class="upload-progress-heading">
-        <strong id="uploadPhase">Ready</strong>
-        <span id="uploadPercent"></span>
-      </div>
-      <div class="progress upload-progress-track" role="progressbar" aria-label="File upload progress" aria-valuemin="0" aria-valuemax="100">
-        <div id="uploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%" aria-valuenow="0"></div>
-      </div>
-      <p id="uploadStatus" class="upload-status"></p>
-      <details class="upload-log-details" open>
-        <summary>Backend processing messages</summary>
-        <ol id="uploadBackendMessages" class="upload-backend-messages" role="log" aria-live="polite"></ol>
-      </details>
-    </div>
-  </div>
+			<fieldset class="upload-toolbar">
+				<legend class="visually-hidden">Dataset upload controls</legend>
+				<button id="uploadGmlBtn" type="button">
+					Upload GML Archive
+				</button>
+				<input id="gmlUploadInput" type="file" accept=".zip" hidden>
+				<button id="refreshBestTrackBtn" type="button">
+					Refresh best track from BOM
+				</button>
+				<button id="downloadContingencyBtn" type="button">
+					Download contingency tables
+				</button>
+				<button id="addTableBtn" type="button">+ Add table</button>
+				<button id="resetBtn" type="button">Reset</button>
+				<div
+					id="uploadProgress"
+					class="upload-progress"
+					aria-live="polite"
+					hidden
+				>
+					<div class="upload-progress-heading">
+						<strong id="uploadPhase">Ready</strong>
+					</div>
+					<div class="progress upload-progress-track">
+						<div
+							id="uploadProgressBar"
+							class="progress-bar progress-bar-striped progress-bar-animated"
+							role="progressbar"
+							aria-label="File upload progress"
+							aria-valuemin="0"
+							aria-valuemax="100"
+							style="width: 0%"
+							aria-valuenow="0"
+						></div>
+					</div>
+					<p id="uploadStatus" class="upload-status"></p>
+					<details class="upload-log-details" open>
+						<summary>Backend processing messages</summary>
+						<ol
+							id="uploadBackendMessages"
+							class="upload-backend-messages"
+							role="log"
+							aria-live="polite"
+						></ol>
+					</details>
+				</div>
+			</fieldset>
 
-  <div id="tableInstances" aria-live="polite">
-    <section class="table-instance" data-instance="1">
-      <div class="instance-heading">
-        <h2>Verification table 1</h2>
-        <button class="remove-instance" type="button" disabled>Remove table</button>
-      </div>
-      <div class="filter-grid" aria-label="Verification filters">
-        <div class="filter-field">
-          <label for="cycloneSelect-1">Cyclone</label>
-          <input id="cycloneSearch-1" class="cyclone-search" type="search" placeholder="Search cyclones by name or ID…" autocomplete="off">
-          <select id="cycloneSelect-1" class="cyclone-select" multiple size="5"></select>
-        </div>
-        <div class="filter-field">
-          <label for="stateSelect-1">State / region</label>
-          <select id="stateSelect-1" class="state-select" multiple size="5"></select>
-        </div>
-        <div class="filter-field">
-          <label for="seasonSelect-1">Season</label>
-          <select id="seasonSelect-1" class="season-select" multiple size="5"></select>
-        </div>
-      </div>
-      <p class="filter-hint">Click options to select several. Choosing an "All" option clears the others.</p>
-      <div class="filter-grid filter-grid-params" aria-label="Generation parameters">
-        <div class="filter-field">
-          <label for="warningLevel-1">Warning level</label>
-          <select id="warningLevel-1" class="warning-level">
-            <option value="warning" selected>Warning (0–24 h)</option>
-            <option value="watch">Watch (24–48 h)</option>
-          </select>
-        </div>
-        <div class="filter-field"><label for="xHours-1">Start offset (hours)</label><input id="xHours-1" class="x-hours" type="number" min="0" step="1" value="0"></div>
-        <div class="filter-field"><label for="yHours-1">End offset (hours)</label><input id="yHours-1" class="y-hours" type="number" min="1" step="1" value="24"></div>
-      </div>
-      <fieldset class="base-time-filter">
-        <legend>Base times (UTC)</legend>
-        <label for="baseTime00-1"><input id="baseTime00-1" class="base-time-hour" type="checkbox" value="0" checked> 00:00</label>
-        <label for="baseTime06-1"><input id="baseTime06-1" class="base-time-hour" type="checkbox" value="6" checked> 06:00</label>
-        <label for="baseTime12-1"><input id="baseTime12-1" class="base-time-hour" type="checkbox" value="12" checked> 12:00</label>
-        <label for="baseTime18-1"><input id="baseTime18-1" class="base-time-hour" type="checkbox" value="18" checked> 18:00</label>
-      </fieldset>
-      <div class="instance-actions">
-        <button class="generate-table" type="button">Generate / refresh tables</button>
-        <span class="instance-status" role="status" aria-live="polite"></span>
-      </div>
+			<div id="tableInstances" aria-live="polite">
+				<section class="table-instance" data-instance="1">
+					<div class="instance-heading">
+						<h2>Verification table 1</h2>
+						<button class="remove-instance" type="button" disabled>
+							Remove table
+						</button>
+					</div>
+					<fieldset class="filter-grid">
+						<legend class="visually-hidden">
+							Verification filters
+						</legend>
+						<div class="filter-field">
+							<label for="cycloneSelect-1">Cyclone</label>
+							<div class="filter-control-box cyclone-control-box">
+								<input
+									id="cycloneSearch-1"
+									class="cyclone-search"
+									type="search"
+									placeholder="Search cyclones by name or ID…"
+									autocomplete="off"
+								>
+								<select
+									id="cycloneSelect-1"
+									class="cyclone-select"
+									multiple
+									size="5"
+								></select>
+							</div>
+						</div>
+						<div class="filter-field">
+							<label for="stateSelect-1">State / region</label>
+							<div class="filter-control-box">
+								<select
+									id="stateSelect-1"
+									class="state-select"
+									multiple
+									size="5"
+								></select>
+							</div>
+						</div>
+						<div class="filter-field">
+							<label for="seasonSelect-1">Season</label>
+							<div class="filter-control-box">
+								<select
+									id="seasonSelect-1"
+									class="season-select"
+									multiple
+									size="5"
+								></select>
+							</div>
+						</div>
+					</fieldset>
+					<p class="filter-hint">
+						Click options to select several. Choosing an "All"
+						option clears the others.
+					</p>
+					<fieldset class="filter-grid filter-grid-params">
+						<legend class="visually-hidden">
+							Generation parameters
+						</legend>
+						<div class="filter-field">
+							<label for="warningLevel-1">Warning level</label>
+							<select id="warningLevel-1" class="warning-level">
+								<option value="warning" selected>
+									Warning (0–24 h)
+								</option>
+								<option value="watch">Watch (24–48 h)</option>
+							</select>
+						</div>
+						<div class="filter-field">
+							<label for="xHours-1">Start offset (hours)</label>
+							<input
+								id="xHours-1"
+								class="x-hours"
+								type="number"
+								min="0"
+								step="1"
+								value="0"
+							>
+						</div>
+						<div class="filter-field">
+							<label for="yHours-1">End offset (hours)</label>
+							<input
+								id="yHours-1"
+								class="y-hours"
+								type="number"
+								min="1"
+								step="1"
+								value="24"
+							>
+						</div>
+					</fieldset>
+					<fieldset class="base-time-filter">
+						<legend>Base times (UTC)</legend>
+						<label for="baseTime00-1"
+							><input
+								id="baseTime00-1"
+								class="base-time-hour"
+								type="checkbox"
+								value="0"
+								checked
+							>
+							00:00</label
+						>
+						<label for="baseTime06-1"
+							><input
+								id="baseTime06-1"
+								class="base-time-hour"
+								type="checkbox"
+								value="6"
+								checked
+							>
+							06:00</label
+						>
+						<label for="baseTime12-1"
+							><input
+								id="baseTime12-1"
+								class="base-time-hour"
+								type="checkbox"
+								value="12"
+								checked
+							>
+							12:00</label
+						>
+						<label for="baseTime18-1"
+							><input
+								id="baseTime18-1"
+								class="base-time-hour"
+								type="checkbox"
+								value="18"
+								checked
+							>
+							18:00</label
+						>
+					</fieldset>
+					<div class="instance-actions">
+						<button class="generate-table" type="button">
+							Generate / refresh tables
+						</button>
+						<span
+							class="instance-status"
+							role="status"
+							aria-live="polite"
+						></span>
+					</div>
+					<div
+						class="table-tabs"
+						role="tablist"
+						aria-label="Verification tables"
+					>
+						<button
+							class="tab-button active"
+							id="tab-area-1"
+							type="button"
+							role="tab"
+							aria-selected="true"
+							aria-controls="panel-area-1"
+						>
+							Table A: Forecast table
+						</button>
+						<button
+							class="tab-button"
+							id="tab-track-1"
+							type="button"
+							role="tab"
+							aria-selected="false"
+							aria-controls="panel-track-1"
+							tabindex="-1"
+						>
+							Table B: Observations
+						</button>
+						<button
+							class="tab-button"
+							id="tab-wind-1"
+							type="button"
+							role="tab"
+							aria-selected="false"
+							aria-controls="panel-wind-1"
+							tabindex="-1"
+						>
+							Table C: Filtered observations
+						</button>
+						<button
+							class="tab-button"
+							id="tab-warning-1"
+							type="button"
+							role="tab"
+							aria-selected="false"
+							aria-controls="panel-warning-1"
+							tabindex="-1"
+						>
+							Table D: Final forecast vs observations
+						</button>
+						<button
+							class="tab-button"
+							id="tab-summary-1"
+							type="button"
+							role="tab"
+							aria-selected="false"
+							aria-controls="panel-summary-1"
+							tabindex="-1"
+						>
+							Contingency matrix
+						</button>
+					</div>
 
-      <div class="table-tabs" role="tablist" aria-label="Verification tables">
-        <button class="tab-button active" id="tab-area-1" type="button" role="tab" aria-selected="true" aria-controls="panel-area-1">Table A: Forecast table</button>
-        <button class="tab-button" id="tab-track-1" type="button" role="tab" aria-selected="false" aria-controls="panel-track-1" tabindex="-1">Table B: Observations</button>
-        <button class="tab-button" id="tab-wind-1" type="button" role="tab" aria-selected="false" aria-controls="panel-wind-1" tabindex="-1">Table C: Filtered observations</button>
-        <button class="tab-button" id="tab-warning-1" type="button" role="tab" aria-selected="false" aria-controls="panel-warning-1" tabindex="-1">Table D: Final forecast vs observations</button>
-        <button class="tab-button" id="tab-summary-1" type="button" role="tab" aria-selected="false" aria-controls="panel-summary-1" tabindex="-1">Contingency matrix</button>
-      </div>
+					<section
+						class="table-panel active"
+						id="panel-area-1"
+						role="tabpanel"
+						aria-labelledby="tab-area-1"
+					>
+						<p class="layer-note">
+							Generate tables to load Table A from the API.
+						</p>
+					</section>
 
-      <section class="table-panel active" id="panel-area-1" role="tabpanel" aria-labelledby="tab-area-1">
-        <p class="layer-note">Generate tables to load Table A from the API.</p>
-      </section>
+					<section
+						class="table-panel"
+						id="panel-track-1"
+						role="tabpanel"
+						aria-labelledby="tab-track-1"
+						hidden
+					>
+						<p class="layer-note">
+							Generate tables to load Table B from the API.
+						</p>
+					</section>
 
-      <section class="table-panel" id="panel-track-1" role="tabpanel" aria-labelledby="tab-track-1" hidden>
-        <p class="layer-note">Generate tables to load Table B from the API.</p>
-      </section>
+					<section
+						class="table-panel"
+						id="panel-wind-1"
+						role="tabpanel"
+						aria-labelledby="tab-wind-1"
+						hidden
+					>
+						<p class="layer-note">
+							Generate tables to load Table C from the API.
+						</p>
+					</section>
 
-      <section class="table-panel" id="panel-wind-1" role="tabpanel" aria-labelledby="tab-wind-1" hidden>
-        <p class="layer-note">Generate tables to load Table C from the API.</p>
-      </section>
+					<section
+						class="table-panel"
+						id="panel-warning-1"
+						role="tabpanel"
+						aria-labelledby="tab-warning-1"
+						hidden
+					>
+						<p class="layer-note">
+							Generate tables to load Table D from the API.
+						</p>
+					</section>
 
-      <section class="table-panel" id="panel-warning-1" role="tabpanel" aria-labelledby="tab-warning-1" hidden>
-        <p class="layer-note">Generate tables to load Table D from the API.</p>
-      </section>
-
-      <section class="table-panel" id="panel-summary-1" role="tabpanel" aria-labelledby="tab-summary-1" hidden>
-        <p class="layer-note">Generate tables to load the combined contingency matrix and skill scores.</p>
-      </section>
-    </section>
-  </div>
-</main>
-<script src="assets/verification.js?v=contingency-background-jobs-20261009"></script>
-</body>
+					<section
+						class="table-panel"
+						id="panel-summary-1"
+						role="tabpanel"
+						aria-labelledby="tab-summary-1"
+						hidden
+					>
+						<p class="layer-note">
+							Generate tables to load the combined contingency
+							matrix and skill scores.
+						</p>
+					</section>
+				</section>
+			</div>
+		</main>
+		<script src="assets/time-format.js?v=hh-mm-display-20261010"></script>
+		<script
+			src="assets/verification.js?v=filename-search-normalization-20261010"
+		></script>
+	</body>
 </html>

@@ -139,21 +139,25 @@ def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
 
     with tempfile.TemporaryDirectory(prefix="cyclone-gml-") as temp_dir:
         staging_dir = Path(temp_dir)
+        print("Step 1 of 5 · Extracting GML archive")
         with zipfile.ZipFile(archive_path) as archive:
             for member in archive.infolist():
                 member_path = PurePosixPath(member.filename)
                 if member_path.is_absolute() or ".." in member_path.parts:
                     raise ValueError("ZIP contains an unsafe path")
             archive.extractall(staging_dir)
+            print(f"Extracted {len(archive.infolist()):,} archive entries")
 
         # Allow archives with a single top-level folder around the region dirs.
         input_dir = staging_dir
         children = list(staging_dir.iterdir())
         if len(children) == 1 and children[0].is_dir():
             input_dir = children[0]
-        print("=== Static viewer dataset generation ===")
+        print("Step 3 of 5 · Building static viewer datasets")
+        print("Converting GML bulletins to JSON and GeoJSON files")
         static_result = process_gml_dataset(input_dir, data_dir)
-        print("=== Database ingest: GML bulletins ===")
+        print("Static viewer datasets generated successfully")
+        print("Step 4 of 5 · Loading GML bulletins into the database")
         with SessionLocal() as session:
             stats = Stats()
             with ingest_run(
@@ -176,6 +180,7 @@ def process_uploaded_gml_archive(archive_path: Path, data_dir: Path) -> dict:
             f"Database GML ingest: {counts['rows_read']} files read, "
             f"{counts['rows_written']} written, {counts['rows_skipped']} unchanged"
         )
+        print("Step 5 of 5 · GML archive processing complete")
         static_result["database_gml_rows_written"] = counts["rows_written"]
         static_result["database_gml_rows_read"] = counts["rows_read"]
         return static_result

@@ -1,13 +1,17 @@
 {
-  "name": "cyclone-verification-frontend",
-  "private": true,
-  "version": "1.0.0",
-  "description": "TypeScript sources for the verification.html contingency-table page. Compiles to ../assets/verification.js, which is what the FastAPI app actually serves.",
-  "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch"
-  },
-  "devDependencies": {
-    "typescript": "^5.5.4"
-  }
+	"name": "cyclone-verification-frontend",
+	"private": true,
+	"version": "1.0.0",
+	"description": "TypeScript sources for the verification.html contingency-table page. Compiles to ../assets/verification.js, which is what the FastAPI app actually serves.",
+	"scripts": {
+		"build": "tsc && npm run format:build",
+		"watch": "tsc --watch",
+		"lint": "biome check ..",
+		"format": "biome check --write ..",
+		"format:build": "biome format --write ../assets/verification.js"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"typescript": "^5.5.4"
+	}
 }
