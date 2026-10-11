@@ -72,6 +72,19 @@ see [Data sources](#data-sources) below.
 [docs/architecture.md](docs/architecture.md) explains how the two pipelines,
 the backend layers and the viewer's data sources fit together.
 
+### Running with Docker
+
+To run the whole app in a container instead of installing Python locally, put
+your `data/` folder at the repository root and run:
+
+```bash
+docker compose up --build
+```
+
+Then open http://localhost:8000. The database and generated files are kept in
+`./data`, so they persist between runs. See [docs/docker.md](docs/docker.md)
+for loading data, configuration, and troubleshooting.
+
 ## The verification page (`verification.html`)
 
 Unlike the viewers below, this page is generated code: it is written in
