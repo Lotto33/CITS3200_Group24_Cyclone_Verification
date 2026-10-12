@@ -1365,6 +1365,9 @@ def generate_all_tables_for_disturbances(
     state: str | None = None,
     season: str | None = None,
     base_time_hours: list[int] | None = None,
+    locations: gpd.GeoDataFrame | None = None,
+    forecasts_by_id: dict[str, dict[str, dict]] | None = None,
+    tracks_by_id: dict[str, pd.DataFrame] | None = None,
 ) -> dict[str, object]:
     """Run the full Table A-D pipeline for each disturbance ID in turn (each
     still gets its own per-disturbance CSVs, same as generate_all_tables_for_disturbance),
@@ -1377,6 +1380,20 @@ def generate_all_tables_for_disturbances(
     )
     per_disturbance = {}
     table_d_frames = []
+    for label, mapping in (
+        ("forecasts", forecasts_by_id),
+        ("tracks", tracks_by_id),
+    ):
+        if mapping is not None:
+            missing = [
+                ident
+                for ident in disturbance_ids
+                if ident not in mapping or mapping[ident] is None
+            ]
+            if missing:
+                raise ValueError(
+                    f"Missing {label} for: {', '.join(missing)}"
+                )
     for disturbance_id in disturbance_ids:
         outputs = generate_all_tables_for_disturbance(
             disturbance_id,
@@ -1391,6 +1408,15 @@ def generate_all_tables_for_disturbances(
             state=state,
             season=season,
             base_time_hours=base_time_hours,
+            locations=locations,
+            forecasts=(
+                forecasts_by_id[disturbance_id]
+                if forecasts_by_id is not None else None
+            ),
+            track=(
+                tracks_by_id[disturbance_id]
+                if tracks_by_id is not None else None
+            ),
         )
         per_disturbance[disturbance_id] = outputs
         table_d_frames.append(outputs["table_d"])
