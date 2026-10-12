@@ -1,9 +1,9 @@
 """Verification loader and contingency arithmetic.
 
 The load-bearing test here is
-:func:`test_recomputed_counts_reproduce_the_committed_summary`: grouping the
-loaded pairs by outcome must give back exactly the numbers BoM's own generator
-wrote to ``_contingency_summary.csv``. If that holds, the chain from town
+:func:`test_summary_matches_the_csv_on_disk`: grouping the loaded pairs by
+outcome must give back exactly the numbers BoM's own generator wrote to
+``_contingency_summary.csv``. If that holds, the chain from town
 sheet, through the GML watch/warning areas, to the 2x2 table is intact.
 """
 
@@ -27,13 +27,6 @@ from app.services.loaders.verification import (
     discover,
     load_verification,
 )
-
-#: From the committed CSVs, verified by reading them.
-COMMITTED = {
-    "AU202526_02U": (281, 561, 28, 1885, 2755),
-    "AU202526_03U": (10, 9, 0, 0, 19),
-    "AU202526_05U": (0, 0, 0, 0, 0),
-}
 
 
 def test_contingency_summary_computes_the_documented_scores():
@@ -130,27 +123,9 @@ class TestAgainstCommittedCsvs:
         assert counts["table_c"] > 0
         assert counts["table_d"] > 0
 
-    def test_recomputed_counts_reproduce_the_committed_summary(self, loaded):
-        db, counts = loaded
-        for ident, expected in COMMITTED.items():
-            row = db.execute(
-                select(VerificationSummary).where(
-                    VerificationSummary.run_id == counts["run_id"],
-                    VerificationSummary.scope == SummaryScope.DISTURBANCE.value,
-                    VerificationSummary.scope_key == ident,
-                )
-            ).scalar_one()
-            got = (
-                row.hit,
-                row.false_alarm,
-                row.miss,
-                row.correct_negative,
-                row.total,
-            )
-            assert got == expected, ident
-
     def test_summary_matches_the_csv_on_disk(self, loaded):
-        """Read the CSVs here too, so the constants above cannot drift."""
+        """``data/`` is git-ignored and regenerated locally, so the expected
+        counts are read from it rather than hard-coded."""
         db, counts = loaded
         for ident, files in discover().items():
             path = files.get("contingency_summary")
@@ -179,7 +154,13 @@ class TestAgainstCommittedCsvs:
                 VerificationSummary.scope == SummaryScope.ALL.value,
             )
         ).scalar_one()
-        assert overall.total == sum(v[4] for v in COMMITTED.values())
+        per_disturbance = db.execute(
+            select(func.sum(VerificationSummary.total)).where(
+                VerificationSummary.run_id == counts["run_id"],
+                VerificationSummary.scope == SummaryScope.DISTURBANCE.value,
+            )
+        ).scalar_one()
+        assert overall.total == per_disturbance
 
     def test_outcome_agrees_with_forecast_and_observed(self, loaded):
         db, counts = loaded
@@ -242,3 +223,53 @@ class TestAgainstCommittedCsvs:
             )
         ).scalar_one()
         assert row.total == 0
+
+
+def test_discover_skips_combined_and_never_mixes_variants(tmp_path: Path):
+    kinds = ("table_a", "table_d", "contingency_summary")
+    names = [
+        "combined_level-warning_hours-0-24_date-20261010_table_d.csv",
+        *(f"AU202526_02U_{k}.csv" for k in kinds),
+        *(f"AU201617_24U_level-watch_hours-24-48_date-20261012_{k}.csv" for k in kinds),
+        *(f"AU201617_24U_level-warning_hours-0-24_date-20261011_{k}.csv" for k in kinds),
+    ]
+    for name in names:
+        (tmp_path / name).touch()
+
+    found = discover(tmp_path)
+
+    assert set(found) == {"AU202526_02U", "AU201617_24U"}
+    assert {p.name for p in found["AU201617_24U"].values()} == {
+        f"AU201617_24U_level-warning_hours-0-24_date-20261011_{k}.csv" for k in kinds
+    }
+
+
+def test_generated_times_round_trip_through_the_loader(tmp_path: Path):
+    """The generator writes explicit UTC and the loader reads it back unchanged.
+
+    Runs without ``data/``, so CI catches a format drift between the two --
+    the requires_data tests above are skipped there.
+    """
+    from datetime import UTC, datetime
+
+    import pandas as pd
+
+    from app.db.column_maps import CONTINGENCY_TM_FORMAT
+    from app.gen_cont_tables import utc_for_output
+    from app.services.loaders.common import to_datetime
+
+    naive = pd.Timestamp("2017-03-25 21:30")
+    frame = pd.DataFrame(
+        {"Time": [naive], "Base time": [naive], "Location": ["Hayman Is"]}
+    )
+    path = tmp_path / "table.csv"
+    utc_for_output(frame).to_csv(path, index=False)
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        row = next(csv.DictReader(handle))
+    expected = datetime(2017, 3, 25, 21, 30, tzinfo=UTC)
+    for column in ("Time", "Base time"):
+        assert row[column].endswith("+00:00"), column
+        assert to_datetime(row[column], CONTINGENCY_TM_FORMAT) == expected
+    # Files written before the offset was added still load, as UTC.
+    assert to_datetime("2017-03-25 21:30:00", CONTINGENCY_TM_FORMAT) == expected

@@ -313,5 +313,7 @@ CONTINGENCY_SUMMARY_COLUMNS: dict[str, str] = {
     "total": "total",
 }
 
-#: The contingency CSVs write timestamps as "YYYY-MM-DD HH:MM:SS".
+#: The contingency CSVs write timestamps as "YYYY-MM-DD HH:MM:SS+00:00" (see
+#: ``gen_cont_tables.utc_for_output``); files from before that carry no offset.
+#: ``to_datetime`` accepts both, reading the offset-free form as UTC.
 CONTINGENCY_TM_FORMAT = "%Y-%m-%d %H:%M:%S"

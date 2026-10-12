@@ -68,10 +68,16 @@ log = logging.getLogger(__name__)
 
 _SUFFIX_RE = re.compile(
     r"^(?P<dist>.+?)"
-    r"(?:_(?:season|state|base-times|level|hours)-[^_]+)*"
-    r"(?:_date-\d{8})?"
+    r"(?P<variant>(?:_(?:season|state|base-times|level|hours)-[^_]+)*)"
+    r"(?:_date-(?P<date>\d{8}))?"
     r"_(?P<kind>table_[abcd]|contingency_summary|contingency_matrix)\.csv$"
 )
+
+#: ``gen_cont_tables`` writes a cross-disturbance aggregate under this name.
+_COMBINED = "combined"
+
+#: The generator's defaults; an untagged (legacy) file was produced with them.
+_DEFAULT_VARIANT = {"level": "warning", "hours": "0-24"}
 
 CHILD_MODELS = (
     ForecastAdviceDistance,
@@ -87,18 +93,49 @@ def default_contingency_dir() -> Path:
 
 
 def discover(directory: Path | None = None) -> dict[str, dict[str, Path]]:
-    """``{disturbance_id: {kind: path}}`` for the files present."""
+    """``{disturbance_id: {kind: path}}`` for the files present.
+
+    The ``combined`` aggregate is not a disturbance and is skipped. When one
+    disturbance has several generator variants (e.g. warning 0-24 h and watch
+    24-48 h), all of its files come from a single variant -- mixing them would
+    pair one variant's forecasts with another's observations. The variant
+    matching the generator defaults wins, then the most recent date stamp.
+    """
     directory = directory or default_contingency_dir()
-    found: dict[str, dict[str, Path]] = {}
+    variants: dict[str, dict[tuple[str, str], dict[str, Path]]] = {}
     if not directory.is_dir():
-        return found
+        return {}
     for path in sorted(directory.glob("*.csv")):
         match = _SUFFIX_RE.match(path.name)
         if not match:
             log.warning("ignoring unrecognised contingency file %s", path.name)
             continue
-        found.setdefault(match.group("dist"), {})[match.group("kind")] = path
+        if match.group("dist") == _COMBINED:
+            continue
+        key = (match.group("variant"), match.group("date") or "")
+        variants.setdefault(match.group("dist"), {}).setdefault(key, {})[
+            match.group("kind")
+        ] = path
+
+    found: dict[str, dict[str, Path]] = {}
+    for ident, by_variant in variants.items():
+        chosen = max(by_variant, key=lambda k: (_is_default_variant(k[0]), k[1]))
+        if len(by_variant) > 1:
+            log.warning(
+                "%s has %d contingency variants; using %r",
+                ident,
+                len(by_variant),
+                "".join(chosen) or "untagged",
+            )
+        found[ident] = by_variant[chosen]
     return found
+
+
+def _is_default_variant(variant: str) -> bool:
+    tags = dict(
+        part.split("-", 1) for part in variant.split("_") if "-" in part
+    )
+    return all(tags.get(name, value) == value for name, value in _DEFAULT_VARIANT.items())
 
 
 def _read(path: Path, expected: dict[str, str]) -> pd.DataFrame:
