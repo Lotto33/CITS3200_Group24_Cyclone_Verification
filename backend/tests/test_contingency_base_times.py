@@ -4,6 +4,10 @@ from app.gen_cont_tables import filter_base_times
 from app.schemas.contigency import ContingencyRequest
 from app.services import contigency_service
 
+from contextlib import nullcontext
+from types import SimpleNamespace
+
+import pandas as pd
 
 def test_filter_base_times_uses_utc_hour_and_sorts_timestamps():
     times = [
@@ -44,6 +48,16 @@ def test_generation_service_forwards_base_time_hours(
     monkeypatch, tmp_path, disturbance_ids, expected_call
 ):
     captured = {}
+    # Minimal database records for the selected disturbances
+    disturbances = {
+        ident: SimpleNamespace(
+            id=i + 1,
+            disturbance_id=ident,
+            has_best_track=True,
+            observation_count=1,
+        )
+        for i, ident in enumerate(disturbance_ids)
+    }
 
     def single(*args, **kwargs):
         captured.update(kwargs)
@@ -76,6 +90,54 @@ def test_generation_service_forwards_base_time_hours(
     monkeypatch.setattr(
         contigency_service, "generate_all_tables_for_disturbances", multiple
     )
+
+    class FakeSession:
+        def execute(self, statement):
+            return self
+
+        def scalars(self):
+            return list(disturbances.values())
+
+    monkeypatch.setattr(
+        contigency_service,
+        "SessionLocal",
+        lambda: nullcontext(FakeSession()),
+    )
+
+    monkeypatch.setattr(
+        contigency_service,
+        "_db_locations",
+        lambda session: pd.DataFrame({
+            "state": ["WA"],
+        }),
+    )
+
+    monkeypatch.setattr(
+        contigency_service,
+        "_db_forecasts",
+        lambda session: {
+            disturbance.id: {"2026-03-24T00:00:00Z": {}}
+            for disturbance in disturbances.values()
+        },
+    )
+
+    monkeypatch.setattr(
+        contigency_service,
+        "latest_run_id",
+        lambda session, dataset: 1,
+    )
+
+    monkeypatch.setattr(
+        contigency_service,
+        "_db_tracks",
+        lambda session, run_id: {
+            disturbance.id: pd.DataFrame({
+                "LAT": [-20.0],
+                "LON": [120.0],
+            })
+            for disturbance in disturbances.values()
+        },
+    )
     request = ContingencyRequest(
         disturbance_ids=disturbance_ids,
         base_time_hours=[6, 18],
@@ -84,3 +146,4 @@ def test_generation_service_forwards_base_time_hours(
     contigency_service.generate_tables(request)
 
     assert captured["base_time_hours"] == [6, 18]
+    assert "locations" in captured
