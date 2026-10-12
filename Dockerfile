@@ -5,8 +5,8 @@ ENV PYTHONUNBUFFERED=1 \
     DATA_DIR=/app/data \
     DATABASE_URL=sqlite+pysqlite:////app/data/cyclone.db
 
-# The repo layout is kept under /app: the backend resolves the HTML pages,
-# assets/ and data/ relative to its own source location.
+# The repo layout is kept under /app: the backend resolves frontend/ (the HTML
+# pages and assets/) and data/ relative to its own source location.
 WORKDIR /app
 
 # Dependencies first so this layer is cached across code changes.
@@ -14,8 +14,9 @@ COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
 COPY backend ./backend
-COPY assets ./assets
-COPY homepage.html visualize.html verification.html startup.sh ./
+COPY frontend/assets ./frontend/assets
+COPY frontend/*.html ./frontend/
+COPY startup.sh ./
 
 # Editable install keeps the package at /app/backend (not site-packages).
 RUN pip install --no-deps -e backend

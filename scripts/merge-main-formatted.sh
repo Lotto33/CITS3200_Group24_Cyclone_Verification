@@ -24,13 +24,13 @@ while IFS= read -r f; do
 		git checkout --theirs -- "$f" && git add "$f"
 		echo "took main's version: $f"
 		;;
-	assets/verification.js)
+	frontend/assets/verification.js)
 		# Compiled from frontend/src/verification.ts: never merge it by hand.
 		git checkout --theirs -- "$f"
 		rebuild=1
 		echo "will rebuild: $f"
 		;;
-	assets/*.js | assets/*.css | *.html | frontend/src/*.ts)
+	frontend/assets/*.js | frontend/assets/*.css | frontend/*.html | frontend/src/*.ts)
 		if ! git show ":1:$f" >"$tmp/base" 2>/dev/null; then
 			remaining+=("$f")
 			echo "no common ancestor, resolve by hand: $f"
@@ -58,10 +58,10 @@ done < <(git diff --name-only --diff-filter=U)
 
 if [ "$rebuild" = 1 ]; then
 	if printf '%s\n' "${remaining[@]:-}" | grep -qx 'frontend/src/verification.ts'; then
-		echo "Resolve frontend/src/verification.ts, then: cd frontend && npm run build && git add ../assets/verification.js"
+		echo "Resolve frontend/src/verification.ts, then: cd frontend && npm run build && git add frontend/assets/verification.js"
 	else
-		(cd frontend && npm run build >/dev/null) && git add assets/verification.js
-		echo "rebuilt assets/verification.js from verification.ts"
+		(cd frontend && npm run build >/dev/null) && git add frontend/assets/verification.js
+		echo "rebuilt frontend/assets/verification.js from verification.ts"
 	fi
 fi
 

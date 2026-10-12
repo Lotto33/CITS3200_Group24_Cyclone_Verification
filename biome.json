@@ -3,8 +3,8 @@
 	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
 	"files": {
 		"includes": [
-			"assets/**",
-			"*.html",
+			"frontend/assets/**",
+			"frontend/*.html",
 			"frontend/src/**",
 			"frontend/package.json",
 			"frontend/tsconfig.json"
@@ -30,7 +30,7 @@
 	},
 	"overrides": [
 		{
-			"includes": ["assets/verification.js"],
+			"includes": ["frontend/assets/verification.js"],
 			"linter": { "enabled": false }
 		}
 	]

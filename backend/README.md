@@ -207,7 +207,7 @@ uvicorn app.main:app --reload
 - Health check: http://127.0.0.1:8000/health
 - Map viewer: http://127.0.0.1:8000/visualize.html (`/` redirects there), with
   the repository's `data/` folder mounted at `/data` and the pages' CSS/JS at
-  `/assets`
+  `/assets` (the pages and assets live in `frontend/`)
 - Contingency page: http://127.0.0.1:8000/verification.html
 
 ```bash

@@ -670,19 +670,6 @@
 		select: HTMLSelectElement,
 		searchInput: HTMLInputElement | null,
 	): void {
-		// Plain clicks toggle an option; the native list box needs Cmd/Ctrl-click.
-		select.addEventListener("mousedown", (event) => {
-			const option = event.target;
-			const state = selectStates.get(select);
-			if (!(option instanceof HTMLOptionElement) || !state) return;
-			event.preventDefault();
-			select.focus();
-			const next = new Set(state.selected);
-			if (next.has(option.value)) next.delete(option.value);
-			else next.add(option.value);
-			applySelection(select, next, [option.value]);
-			select.dispatchEvent(new Event("change"));
-		});
 		// Keyboard selection still goes through the native change event.
 		select.addEventListener("change", () => {
 			const state = selectStates.get(select);

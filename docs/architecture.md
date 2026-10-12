@@ -169,15 +169,16 @@ reference; this is the shape:
 | `GET /verification-runs`, `/{id}/summary`, `/{id}/pairs` | Contingency results |
 
 `app/main.py` also serves the pages themselves: `/visualize.html`,
-`/verification.html`, the split CSS/JS at `/assets`, and the repository's
-`data/` folder at `/data`. Serving the pages from the same origin as the API
+`/verification.html` (from `frontend/`), the split CSS/JS at `/assets`
+(`frontend/assets/`), and the repository's `data/` folder at `/data`. Serving the pages from the same origin as the API
 is what lets the viewer use relative URLs for both.
 
 ## Where the visualizer gets its data
 
-[`assets/visualize.js`](../assets/visualize.js) fetches everything with
-relative URLs, so it works both under the FastAPI app and under a plain
-static server — with one difference, covered below.
+[`frontend/assets/visualize.js`](../frontend/assets/visualize.js) fetches everything with
+relative URLs, so it needs `/data` and `/assets` mounted beside the page, as
+the FastAPI app does. If the API itself is unreachable it degrades in one
+place, covered below.
 
 | Layer on the page | Fetched from | Produced by | Falls back to |
 |---|---|---|---|
@@ -197,7 +198,7 @@ The verification is scored on the interpolated 15-minute grid, not on the raw
 computed from the 15-minute grid shows a track the numbers were never
 computed against — so the page asks the API for the grid first.
 
-The loader in `assets/visualize.js` normalises both sources into one shape
+The loader in `frontend/assets/visualize.js` normalises both sources into one shape
 and tags it with a `source` field:
 
 ```js

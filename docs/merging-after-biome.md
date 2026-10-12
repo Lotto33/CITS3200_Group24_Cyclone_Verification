@@ -5,7 +5,7 @@ For developers whose branch was cut **before** the Biome formatting landed on
 
 ## Why it conflicts
 
-The formatting commit rewrote almost every line in `assets/`, the `*.html`
+The formatting commit rewrote almost every line in `frontend/assets/`, the `frontend/*.html`
 pages and `frontend/src/`. For git, every line you touched, and every line you
 didn't, looks changed on both sides. Don't fix that by hand, and don't run the
 formatter on your branch first: that makes it worse (it turns every line into a
@@ -61,8 +61,8 @@ config, then three-way merging those. Only real overlaps are left for you.
 
    It prints one line per conflicted file, for example
    `merged cleanly: visualize.html` or
-   `REAL conflicts left: assets/visualize.js (1 hunks)`. It also takes main's
-   `package.json` / lockfile and rebuilds `assets/verification.js` for you.
+   `REAL conflicts left: frontend/assets/visualize.js (1 hunks)`. It also takes main's
+   `package.json` / lockfile and rebuilds `frontend/assets/verification.js` for you.
 
 6. **Resolve what's left.** Only genuine overlaps remain: your edit and someone
    else's touch the same code. Search for `<<<<<<< yours`, then pick or combine
@@ -78,7 +78,7 @@ config, then three-way merging those. Only real overlaps are left for you.
    npm run build       # always run if you changed frontend/src/verification.ts
    ```
 
-   `assets/verification.js` can merge without a conflict yet be stale: it only
+   `frontend/assets/verification.js` can merge without a conflict yet be stale: it only
    contains your `verification.ts` change after `npm run build`. CI's "compiled
    assets are up to date" check fails if you skip this.
 
@@ -104,7 +104,7 @@ git add path/to/file
 
 ## Don't
 
-- Hand-edit `assets/verification.js`. It is compiled: resolve
+- Hand-edit `frontend/assets/verification.js`. It is compiled: resolve
   `frontend/src/verification.ts`, then run `npm run build`.
 - Run `npm run format` before merging.
 - Rebase. It replays every commit and repeats the conflicts at each one.

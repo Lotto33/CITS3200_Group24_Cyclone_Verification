@@ -350,7 +350,7 @@ the backend layers and the viewer's data sources fit together.
 ## The verification page (`verification.html`)
 
 Unlike the viewers below, this page is generated code: it is written in
-TypeScript under `frontend/src/` and compiled to `assets/verification.js`,
+TypeScript under `frontend/src/` and compiled to `frontend/assets/verification.js`,
 which is what `verification.html` and the FastAPI app actually serve. It
 calls `POST /api/v1/contingency-tables/` to build a real contingency table
 and skill scores for a cyclone/season/state selection. Rebuild it after
@@ -362,18 +362,18 @@ npm install
 npm run build     # or: npm run watch
 ```
 
-The compiled `assets/verification.js` is committed, so this step is only
+The compiled `frontend/assets/verification.js` is committed, so this step is only
 needed when changing `frontend/src/verification.ts`. `npm run build` also
 formats the compiled file with Biome.
 
 ### Frontend lint and formatting
 
-All frontend code (`assets/*.js`, `assets/*.css`, the `*.html` pages and
-`frontend/src/*.ts`) is formatted and linted with [Biome](https://biomejs.dev/)
+All frontend code (`frontend/assets/*.js`, `frontend/assets/*.css`, the
+`frontend/*.html` pages and `frontend/src/*.ts`) is formatted and linted with [Biome](https://biomejs.dev/)
 (tabs, width 4; see `biome.json`). CI fails on any Biome error, or if
-`assets/verification.js` no longer matches what `frontend/src/verification.ts`
+`frontend/assets/verification.js` no longer matches what `frontend/src/verification.ts`
 compiles to. Warnings are reported but do not fail CI. The compiled
-`assets/verification.js` is formatted but not linted. Before pushing:
+`frontend/assets/verification.js` is formatted but not linted. Before pushing:
 
 ```bash
 cd frontend
@@ -527,10 +527,10 @@ for its cyclone list, bulletins and towns, so those steps are still required.
 Only the best-track overlay comes from the database, and it falls back to
 `data/best_track/<distId>.json` when the API cannot answer.
 
-Any static server on the repository root works too, e.g.
-`python -m http.server 8000` -- the viewer works there, with the best-track
-overlay falling back to the 6-hourly fixes. That is also how to open
-[visualize_ol.html](http://localhost:8000/visualize_ol.html) (OpenLayers).
+The pages live in `frontend/` (HTML in `frontend/`, CSS/JS in
+`frontend/assets/`) while `data/` stays at the repository root, so the FastAPI
+app, which mounts both at the URLs the pages expect, is the supported way to
+serve them. A plain static server pointed at the root will not find `data/`.
 
 ## Uploading a GML archive
 

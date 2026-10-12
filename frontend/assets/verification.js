@@ -563,7 +563,6 @@
 					renderSelect(select);
 				});
 	}
-
 	function populateSelect(select, options, defaults) {
 		const available = new Set(options.map((option) => option.value));
 		const chosen = defaults.filter((value) => available.has(value));
