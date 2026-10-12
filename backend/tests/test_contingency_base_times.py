@@ -1,13 +1,13 @@
+from contextlib import nullcontext
+from types import SimpleNamespace
+
+import pandas as pd
 import pytest
 
 from app.gen_cont_tables import filter_base_times
 from app.schemas.contigency import ContingencyRequest
 from app.services import contigency_service
 
-from contextlib import nullcontext
-from types import SimpleNamespace
-
-import pandas as pd
 
 def test_filter_base_times_uses_utc_hour_and_sorts_timestamps():
     times = [
@@ -44,9 +44,7 @@ def test_contingency_request_rejects_empty_or_unknown_base_times():
     ("disturbance_ids", "expected_call"),
     [(["AU202526_34U"], "single"), (["AU202526_34U", "AU202526_35U"], "multiple")],
 )
-def test_generation_service_forwards_base_time_hours(
-    monkeypatch, tmp_path, disturbance_ids, expected_call
-):
+def test_generation_service_forwards_base_time_hours(monkeypatch, tmp_path, disturbance_ids, expected_call):
     captured = {}
     # Minimal database records for the selected disturbances
     disturbances = {
@@ -84,12 +82,8 @@ def test_generation_service_forwards_base_time_hours(
         }
 
     monkeypatch.setattr(contigency_service.settings, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(
-        contigency_service, "generate_all_tables_for_disturbance", single
-    )
-    monkeypatch.setattr(
-        contigency_service, "generate_all_tables_for_disturbances", multiple
-    )
+    monkeypatch.setattr(contigency_service, "generate_all_tables_for_disturbance", single)
+    monkeypatch.setattr(contigency_service, "generate_all_tables_for_disturbances", multiple)
 
     class FakeSession:
         def execute(self, statement):
@@ -107,18 +101,17 @@ def test_generation_service_forwards_base_time_hours(
     monkeypatch.setattr(
         contigency_service,
         "_db_locations",
-        lambda session: pd.DataFrame({
-            "state": ["WA"],
-        }),
+        lambda session: pd.DataFrame(
+            {
+                "state": ["WA"],
+            }
+        ),
     )
 
     monkeypatch.setattr(
         contigency_service,
         "_db_forecasts",
-        lambda session: {
-            disturbance.id: {"2026-03-24T00:00:00Z": {}}
-            for disturbance in disturbances.values()
-        },
+        lambda session: {disturbance.id: {"2026-03-24T00:00:00Z": {}} for disturbance in disturbances.values()},
     )
 
     monkeypatch.setattr(
@@ -131,10 +124,12 @@ def test_generation_service_forwards_base_time_hours(
         contigency_service,
         "_db_tracks",
         lambda session, run_id: {
-            disturbance.id: pd.DataFrame({
-                "LAT": [-20.0],
-                "LON": [120.0],
-            })
+            disturbance.id: pd.DataFrame(
+                {
+                    "LAT": [-20.0],
+                    "LON": [120.0],
+                }
+            )
             for disturbance in disturbances.values()
         },
     )

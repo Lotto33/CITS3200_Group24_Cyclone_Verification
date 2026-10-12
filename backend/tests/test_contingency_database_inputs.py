@@ -1,4 +1,3 @@
-
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -20,10 +19,12 @@ def test_single_disturbance_uses_database_inputs(monkeypatch, tmp_path):
 
     locations = pd.DataFrame({"state": ["WA"]})
     forecasts = {"2026-03-24T00:00:00Z": {}}
-    track = pd.DataFrame({
-        "LAT": [-20.0],
-        "LON": [120.0],
-    })
+    track = pd.DataFrame(
+        {
+            "LAT": [-20.0],
+            "LON": [120.0],
+        }
+    )
 
     class FakeSession:
         def execute(self, statement):
