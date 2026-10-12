@@ -153,6 +153,13 @@ python -m app.cli verification --keep-table-b              # also store Table B 
 python -m app.cli verification --dir ../data/contingency_tables  # import CSVs instead
 ```
 
+When importing with `--dir`, the `combined_*` aggregate files are skipped, and
+a disturbance's files always come from a single generator variant. If a
+disturbance has several (e.g. `level-warning_hours-0-24` and
+`level-watch_hours-24-48`), the warning 0–24 h variant is preferred, then the
+newest date stamp; the choice is logged. Times are read as UTC with or without
+a `+00:00` suffix.
+
 Tables A, C and D and the summaries are stored. Table B -- every relevant
 town's distance to the wind radii at every 15-minute step -- is computed but
 not stored unless `--keep-table-b` is given: it is ~93% of the rows (3.3M of

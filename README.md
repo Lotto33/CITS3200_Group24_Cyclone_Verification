@@ -648,6 +648,12 @@ Season-selected combined runs include the season too, for example
 season filter is applied, those filter components are omitted. The run date is
 the date on which the CSVs are generated.
 
+All times are UTC. The `Time` (Table B) and `Base time` (Tables A, C, D)
+columns are written with an explicit offset, e.g. `2025-11-18 00:30:00+00:00`.
+The inputs are UTC too: best-track `TM` per BoM's database specification, and
+every GML time carries a `Z` suffix. CSVs generated before the offset was added
+have no suffix; they are still read as UTC.
+
 Progress plus the final contingency stats and matrix are also printed to the
 console as the script runs.
 

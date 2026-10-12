@@ -242,3 +242,34 @@ def test_discover_skips_combined_and_never_mixes_variants(tmp_path: Path):
     assert {p.name for p in found["AU201617_24U"].values()} == {
         f"AU201617_24U_level-warning_hours-0-24_date-20261011_{k}.csv" for k in kinds
     }
+
+
+def test_generated_times_round_trip_through_the_loader(tmp_path: Path):
+    """The generator writes explicit UTC and the loader reads it back unchanged.
+
+    Runs without ``data/``, so CI catches a format drift between the two --
+    the requires_data tests above are skipped there.
+    """
+    from datetime import UTC, datetime
+
+    import pandas as pd
+
+    from app.db.column_maps import CONTINGENCY_TM_FORMAT
+    from app.gen_cont_tables import utc_for_output
+    from app.services.loaders.common import to_datetime
+
+    naive = pd.Timestamp("2017-03-25 21:30")
+    frame = pd.DataFrame(
+        {"Time": [naive], "Base time": [naive], "Location": ["Hayman Is"]}
+    )
+    path = tmp_path / "table.csv"
+    utc_for_output(frame).to_csv(path, index=False)
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        row = next(csv.DictReader(handle))
+    expected = datetime(2017, 3, 25, 21, 30, tzinfo=UTC)
+    for column in ("Time", "Base time"):
+        assert row[column].endswith("+00:00"), column
+        assert to_datetime(row[column], CONTINGENCY_TM_FORMAT) == expected
+    # Files written before the offset was added still load, as UTC.
+    assert to_datetime("2017-03-25 21:30:00", CONTINGENCY_TM_FORMAT) == expected

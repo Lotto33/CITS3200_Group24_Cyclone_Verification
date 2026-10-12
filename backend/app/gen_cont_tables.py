@@ -1218,6 +1218,24 @@ def _output_filename_prefix(
     return "_".join(parts)
 
 
+_OUTPUT_TIME_COLUMNS = ("Time", "Base time")
+
+
+def utc_for_output(frame: pd.DataFrame) -> pd.DataFrame:
+    """Mark the time columns as UTC for writing to CSV.
+
+    Every input time is UTC (best track TM per BoM's database spec, GML times
+    carry "Z"), and the tables compute in naive UTC wall time because pandas
+    cannot compare naive and aware values. The offset is attached only here,
+    at the file boundary, so the CSVs say "+00:00" explicitly.
+    """
+    frame = frame.copy()
+    for column in _OUTPUT_TIME_COLUMNS:
+        if column in frame.columns:
+            frame[column] = pd.to_datetime(frame[column], utc=True)
+    return frame
+
+
 def generate_all_tables_for_disturbance(
     disturbance_id: str,
     output_dir: str | Path | None = None,
@@ -1340,7 +1358,7 @@ def generate_all_tables_for_disturbance(
             ("contingency_matrix", matrix.reset_index()),
         ):
             out_path = out_dir / f"{output_prefix}_{name}.csv"
-            frame.to_csv(out_path, index=False)
+            utc_for_output(frame).to_csv(out_path, index=False)
             written.append(out_path)
             print(f"[write]   {out_path} ({len(frame)} row(s))")
 
@@ -1457,7 +1475,7 @@ def generate_all_tables_for_disturbances(
             y_hours=y_hours,
         )
         combined_table_path = out_dir / f"{output_prefix}_table_d.csv"
-        combined_table_d.to_csv(combined_table_path, index=False)
+        utc_for_output(combined_table_d).to_csv(combined_table_path, index=False)
         print(f"[write]   {combined_table_path} ({len(combined_table_d)} row(s))")
         combined_summary_path = out_dir / f"{output_prefix}_contingency_summary.csv"
         pd.DataFrame([combined_stats]).to_csv(combined_summary_path, index=False)
