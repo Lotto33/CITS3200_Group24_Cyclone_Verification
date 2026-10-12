@@ -126,7 +126,9 @@ def load_best_track(cyclone_id: str) -> pd.DataFrame:
     df = load_full_best_track()
     df = df[df.DISTURBANCE_ID == cyclone_id].copy()
     print(f"[best_track] {len(df)} row(s) matched DISTURBANCE_ID == {cyclone_id!r}")
-    df["TM"] = pd.to_datetime(df["TM"])
+    # UTC wall time, naive: the interpolated CSV carries "+00:00" while the raw
+    # one does not, and Table B must come out the same either way.
+    df["TM"] = pd.to_datetime(df["TM"], utc=True).dt.tz_localize(None)
     # LINEAR_COLS assumes the raw BOM CSV's fixed schema. The preprocessed
     # best_track_interpolated.csv (see _best_track_is_preprocessed) may not
     # carry every one of these columns (e.g. CENTRAL_PRES) -- coerce only

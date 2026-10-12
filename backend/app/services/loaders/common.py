@@ -36,6 +36,7 @@ _BLANKS = {"", "-", "nan", "NaN", "None", "null", "NULL"}
 
 _DISTURBANCE_ID_RE = re.compile(r"^AU(\d{4})(\d{2})?_(\d{2})([A-Z])$")
 _TEST_ID_SUFFIXES = ("_97U", "_98U", "_99U")
+_UTC_OFFSET_RE = re.compile(r"(?:[+-]\d{2}:?\d{2}|Z)$")
 
 
 def clean_cell(value: Any) -> str | None:
@@ -102,6 +103,9 @@ def to_datetime(value: Any, fmt: str, *, field: str = "") -> datetime | None:
     The format is always explicit: ``best_track.csv`` writes
     ``YYYY-MM-DD HH:MM`` while the OTCR export writes ``DD/MM/YYYY H:MM``, and
     inference would read ``03/11/2016`` as 11 March.
+
+    A trailing UTC offset (``+00:00``, ``Z``) is also accepted and converted:
+    pandas writes one when a timezone-aware column reaches ``to_csv``.
     """
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
@@ -110,6 +114,12 @@ def to_datetime(value: Any, fmt: str, *, field: str = "") -> datetime | None:
         return None
     try:
         return datetime.strptime(text, fmt).replace(tzinfo=UTC)
+    except ValueError:
+        pass
+    try:
+        if not _UTC_OFFSET_RE.search(text):
+            raise ValueError(text)
+        return datetime.strptime(text, fmt + "%z").astimezone(UTC)
     except ValueError as exc:
         raise ValueError(
             f"{field or 'value'}: {text!r} does not match format {fmt!r}"
